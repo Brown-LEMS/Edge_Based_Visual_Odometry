@@ -177,7 +177,7 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 10;
+    int num_pairs = 2;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
     std::vector<cv::Mat> right_ref_disparity_maps;
@@ -243,7 +243,9 @@ void Dataset::PerformEdgeBasedVO() {
         std::vector<cv::Mat> curr_left_pyramid, curr_right_pyramid;
         std::vector<cv::Mat> next_left_pyramid, next_right_pyramid;
 
-        BuildImagePyramids(curr_left_image, next_left_image, 2, curr_left_pyramid, next_left_pyramid);
+        int num_levels = 2;
+
+        BuildImagePyramids(curr_left_image, next_left_image, num_levels, curr_left_pyramid, next_left_pyramid);
 
         const cv::Mat& left_ref_map = left_ref_disparity_maps[i]; 
         const cv::Mat& right_ref_map = right_ref_disparity_maps[i];
@@ -308,43 +310,8 @@ void Dataset::PerformEdgeBasedVO() {
             right_third_order_edges_orientation
         );
 
-        std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
-        std::vector<cv::Point3d> points_linear = LinearTriangulatePoints(match_result.confirmed_matches);
+        std::vector<cv::Point3d> points_linear = Calculate3DPoints(match_result.confirmed_matches);
         std::vector<Eigen::Vector3d> orientations_3d = Calculate3DOrientations(match_result.confirmed_matches);
-
-        ////////////////////////////////TESTING 3D EDGES//////////////////////////////////////
-        // std::vector<OrientedPoint3D> oriented_points;
-
-        // for (size_t i = 0; i < points_opencv.size(); ++i) {
-        //     OrientedPoint3D op;
-        //     op.position = points_opencv[i];
-        //     op.orientation = orientations_3d[i];
-        //     oriented_points.push_back(op);
-        // }
-
-
-        // if (points_opencv.size() != points_linear.size()) {
-        //     std::cerr << "Mismatch in number of 3D points: OpenCV=" << points_opencv.size()
-        //             << ", Linear=" << points_linear.size() << "\n";
-        // } else {
-        //     std::cout << "Comparing " << points_opencv.size() << " 3D points...\n";
-
-        //     double total_error = 0.0;
-        //     for (size_t i = 0; i < points_opencv.size(); ++i) {
-        //         const auto& pt1 = points_opencv[i];
-        //         const auto& pt2 = points_linear[i];
-
-        //         double error = cv::norm(pt1 - pt2);
-        //         total_error += error;
-
-        //         std::cout << "Point " << i << ": OpenCV = [" << pt1 << "], "
-        //                 << "Linear = [" << pt2 << "], "
-        //                 << "Error = " << error << "\n";
-        //     }
-
-        //     std::cout << "Average triangulation error: "
-        //             << (total_error / points_opencv.size()) << " units.\n";
-        // }
 
         cv::Mat left_visualization, right_visualization;
         cv::cvtColor(left_edge_map, left_visualization, cv::COLOR_GRAY2BGR);
@@ -356,18 +323,65 @@ void Dataset::PerformEdgeBasedVO() {
         int total_matches = static_cast<int>(match_result.confirmed_matches.size());
         int index = 0;
 
+        std::vector<cv::Point2d> tracked_left_edges;
+
         for (const auto& [left_edge, right_edge] : match_result.confirmed_matches) {
-            cv::Scalar color = PickUniqueColor(index, total_matches);
+            // cv::Scalar color = PickUniqueColor(index, total_matches);
 
             cv::Point2d left_position = left_edge.position;
             cv::Point2d right_position = right_edge.position;
 
-            cv::circle(merged_visualization, left_position, 4, color, cv::FILLED);
-            cv::Point2d right_shifted(right_position.x + left_visualization.cols, right_position.y);
-            cv::circle(merged_visualization, right_shifted, 4, color, cv::FILLED);
-            cv::line(merged_visualization, left_position, right_shifted, color, 1);
+            tracked_left_edges.push_back(left_edge.position);
+
+            // cv::circle(merged_visualization, left_position, 4, color, cv::FILLED);
+            // cv::Point2d right_shifted(right_position.x + left_visualization.cols, right_position.y);
+            // cv::circle(merged_visualization, right_shifted, 4, color, cv::FILLED);
+            // cv::line(merged_visualization, left_position, right_shifted, color, 1);
 
             ++index;
+        }
+
+        std::vector<cv::Point2d> current_points;
+
+        double scale = 1.0 / std::pow(2.0, num_levels - 1);
+        for (const auto& edge : tracked_left_edges) {
+            current_points.emplace_back(edge.x * scale, edge.y * scale);
+        }
+
+        for (int level = num_levels - 1; level >= 0; --level) {
+            const cv::Mat& curr_image = curr_left_pyramid[level];
+            const cv::Mat& next_image = next_left_pyramid[level];
+
+            std::vector<cv::Point2d> displacements = TrackEdgesWithOpticalFlow(curr_image, next_image, current_points, 7);
+
+            for (size_t i = 0; i < current_points.size(); ++i) {
+                current_points[i] += displacements[i]; // Apply displacement
+            }
+
+            if (level > 0) {
+                for (auto& pt : current_points) {
+                    pt *= 2.0; // Upscale for next finer level
+                }
+            }
+        }
+
+        int max_displayed = 10;
+        int matches_to_show = std::min(max_displayed, total_matches);
+
+        for (int i = 0; i < matches_to_show; ++i) {
+            const cv::Point2d& left_point = tracked_left_edges[i];
+            const cv::Point2d& right_point = current_points[i];
+            cv::Scalar color = PickUniqueColor(i, matches_to_show);
+
+            // Draw left point (in original left image)
+            cv::circle(merged_visualization, left_point, 4, color, cv::FILLED);
+
+            // Draw right point (shifted by width of left image)
+            cv::Point2d right_shifted(right_point.x + left_visualization.cols, right_point.y);
+            cv::circle(merged_visualization, right_shifted, 4, color, cv::FILLED);
+
+            // Draw line connecting the two
+            cv::line(merged_visualization, left_point, right_shifted, color, 1);
         }
 
         std::string save_path = output_path + "/edge_matches_image" + std::to_string(i) + ".png";
@@ -1673,73 +1687,66 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 std::vector<cv::Point3d> Dataset::Calculate3DPoints(
     const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
 ) {
-    std::vector<cv::Point3d> points_3d;
+    std::vector<cv::Point3d> triangulated_points;
 
     if (confirmed_matches.empty()) {
-        std::cerr << "WARNING: No confirmed matches to triangulate.\n";
-        return points_3d;
+        std::cerr << "WARNING: No confirmed matches to triangulate using linear method.\n";
+        return triangulated_points;
     }
 
-    cv::Mat K_left = (cv::Mat_<double>(3, 3) <<
-        left_intr[0], 0,            left_intr[2],
-        0,           left_intr[1], left_intr[3],
-        0,           0,            1);
+    Eigen::Matrix3d K;
+    K << left_intr[0], 0, left_intr[2],
+         0, left_intr[1], left_intr[3],
+         0, 0, 1;
 
-    cv::Mat K_right = (cv::Mat_<double>(3, 3) <<
-        right_intr[0], 0,             right_intr[2],
-        0,            right_intr[1], right_intr[3],
-        0,            0,             1);
-
-    cv::Mat R_left = cv::Mat::eye(3, 3, CV_64F);
-    cv::Mat T_left = cv::Mat::zeros(3, 1, CV_64F);
-
-    cv::Mat R_right(3, 3, CV_64F);
+    Eigen::Matrix3d R;
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
-            R_right.at<double>(i, j) = rot_mat_21[i][j];
+            R(i, j) = rot_mat_21[i][j];
 
-    cv::Mat T_right = (cv::Mat_<double>(3, 1) <<
-        trans_vec_21[0],
-        trans_vec_21[1],
-        trans_vec_21[2]);
+    Eigen::Vector3d T(trans_vec_21[0], trans_vec_21[1], trans_vec_21[2]);
 
-    cv::Mat extrinsic_left, extrinsic_right;
-    cv::hconcat(R_left, T_left, extrinsic_left);
-    cv::hconcat(R_right, T_right, extrinsic_right);
+    for (const auto& [left_edge, right_edge] : confirmed_matches) {
+        std::vector<Eigen::Vector2d> pts;
+        pts.emplace_back(left_edge.position.x, left_edge.position.y);
+        pts.emplace_back(right_edge.position.x, right_edge.position.y);
 
-    cv::Mat P_left = K_left * extrinsic_left;
-    cv::Mat P_right = K_right * extrinsic_right;
+        std::vector<Eigen::Vector2d> pts_meters;
+        for (const auto& pt : pts) {
+            Eigen::Vector3d homo_pt(pt.x(), pt.y(), 1.0);
+            Eigen::Vector3d pt_cam = K.inverse() * homo_pt;
+            pts_meters.emplace_back(pt_cam.x(), pt_cam.y());
+        }
 
-    std::vector<cv::Point2f> points_left, points_right;
-    for (const auto& [left, right] : confirmed_matches) {
-        points_left.emplace_back(static_cast<cv::Point2f>(left.position));
-        points_right.emplace_back(static_cast<cv::Point2f>(right.position));
-    }
+        Eigen::MatrixXd A(4, 4); 
 
-    cv::Mat points_4d_homogeneous;
-    cv::triangulatePoints(P_left, P_right, points_left, points_right, points_4d_homogeneous);
+        A.row(0) << 0.0, -1.0, pts_meters[0].y(), 0.0;
+        A.row(1) << 1.0,  0.0, -pts_meters[0].x(), 0.0;
 
-    int skipped = 0;
-    for (int i = 0; i < points_4d_homogeneous.cols; ++i) {
-        float w = points_4d_homogeneous.at<float>(3, i);
-        if (std::abs(w) > 1e-5) {
-            points_3d.emplace_back(
-                points_4d_homogeneous.at<float>(0, i) / w,
-                points_4d_homogeneous.at<float>(1, i) / w,
-                points_4d_homogeneous.at<float>(2, i) / w
-            );
-        } else {
-            ++skipped;
+        Eigen::Matrix3d Rp = R;
+        Eigen::Vector3d Tp = T;
+        Eigen::Vector2d mp = pts_meters[1];
+
+        A.row(2) << mp.y() * Rp(2, 0) - Rp(1, 0),
+                    mp.y() * Rp(2, 1) - Rp(1, 1),
+                    mp.y() * Rp(2, 2) - Rp(1, 2),
+                    mp.y() * Tp.z()   - Tp.y();
+
+        A.row(3) << Rp(0, 0) - mp.x() * Rp(2, 0),
+                    Rp(0, 1) - mp.x() * Rp(2, 1),
+                    Rp(0, 2) - mp.x() * Rp(2, 2),
+                    Tp.x()   - mp.x() * Tp.z();
+
+        Eigen::Matrix4d ATA = A.transpose() * A;
+        Eigen::Vector4d gamma = ATA.jacobiSvd(Eigen::ComputeFullV).matrixV().col(3);
+
+        if (std::abs(gamma(3)) > 1e-5) {
+            gamma /= gamma(3);
+            triangulated_points.emplace_back(gamma(0), gamma(1), gamma(2));
         }
     }
 
-    int total = static_cast<int>(points_4d_homogeneous.cols);
-    if (skipped > 0.1 * total) {
-        std::cerr << "WARNING: " << skipped << " out of " << total
-                << " triangulated points had near-zero depth (w ≈ 0) and were skipped.\n";
-    }
-
-    return points_3d;
+    return triangulated_points;
 }
 
 std::vector<Eigen::Vector3d> Dataset::Calculate3DOrientations(
@@ -1812,70 +1819,211 @@ void Dataset::BuildImagePyramids(
     cv::buildPyramid(image_two_float, pyramid_two, num_levels - 1);
 }
 
-std::vector<cv::Point3d> Dataset::LinearTriangulatePoints(
-    const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
+std::vector<cv::Point2d> Dataset::TrackEdgesWithOpticalFlow(
+    const cv::Mat& image_one,
+    const cv::Mat& image_two,
+    const std::vector<cv::Point2d>& keypoints,
+    int patch_size
 ) {
-    std::vector<cv::Point3d> triangulated_points;
+    cv::Mat Img1, Img2;
+    image_one.convertTo(Img1, CV_64F);
+    image_two.convertTo(Img2, CV_64F);
 
-    if (confirmed_matches.empty()) {
-        std::cerr << "WARNING: No confirmed matches to triangulate using linear method.\n";
-        return triangulated_points;
-    }
+    int w = std::floor(patch_size / 2.0);
 
-    Eigen::Matrix3d K;
-    K << left_intr[0], 0, left_intr[2],
-         0, left_intr[1], left_intr[3],
-         0, 0, 1;
+    cv::Mat Img1_padded, Img2_padded;
+    cv::copyMakeBorder(Img1, Img1_padded, w+1, w+1, w+1, w+1, cv::BORDER_REPLICATE);
+    cv::copyMakeBorder(Img2, Img2_padded, w+1, w+1, w+1, w+1, cv::BORDER_REPLICATE);
 
-    Eigen::Matrix3d R;
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            R(i, j) = rot_mat_21[i][j];
+    cv::Mat Ix, Iy;
+    cv::Sobel(Img2_padded, Ix, CV_64F, 1, 0, 3);
+    cv::Sobel(Img2_padded, Iy, CV_64F, 0, 1, 3);
+    cv::Mat It = Img2_padded - Img1_padded;
 
-    Eigen::Vector3d T(trans_vec_21[0], trans_vec_21[1], trans_vec_21[2]);
+    std::vector<cv::Point2d> displacements;
+    displacements.reserve(keypoints.size());
 
-    for (const auto& [left_edge, right_edge] : confirmed_matches) {
-        std::vector<Eigen::Vector2d> pts;
-        pts.emplace_back(left_edge.position.x, left_edge.position.y);
-        pts.emplace_back(right_edge.position.x, right_edge.position.y);
+    for (const auto& pt : keypoints) {
+        double cx = pt.x + w + 1;
+        double cy = pt.y + w + 1;
 
-        std::vector<Eigen::Vector2d> pts_meters;
-        for (const auto& pt : pts) {
-            Eigen::Vector3d homo_pt(pt.x(), pt.y(), 1.0);
-            Eigen::Vector3d pt_cam = K.inverse() * homo_pt;
-            pts_meters.emplace_back(pt_cam.x(), pt_cam.y());
+        std::vector<double> Ix_patch, Iy_patch, It_patch;
+        for (int dx = -w; dx <= w; ++dx) {
+            for (int dy = -w; dy <= w; ++dy) {
+                cv::Point2d sample_pt(cx + dx, cy + dy);
+                double ix = Bilinear_Interpolation<double>(Ix, sample_pt);
+                double iy = Bilinear_Interpolation<double>(Iy, sample_pt);
+                double it = Bilinear_Interpolation<double>(It, sample_pt);
+
+                if (std::isnan(ix) || std::isnan(iy) || std::isnan(it))
+                    continue;
+
+                Ix_patch.push_back(ix);
+                Iy_patch.push_back(iy);
+                It_patch.push_back(it);
+            }
         }
 
-        Eigen::MatrixXd A(4, 4); 
-
-        A.row(0) << 0.0, -1.0, pts_meters[0].y(), 0.0;
-        A.row(1) << 1.0,  0.0, -pts_meters[0].x(), 0.0;
-
-        Eigen::Matrix3d Rp = R;
-        Eigen::Vector3d Tp = T;
-        Eigen::Vector2d mp = pts_meters[1];
-
-        A.row(2) << mp.y() * Rp(2, 0) - Rp(1, 0),
-                    mp.y() * Rp(2, 1) - Rp(1, 1),
-                    mp.y() * Rp(2, 2) - Rp(1, 2),
-                    mp.y() * Tp.z()   - Tp.y();
-
-        A.row(3) << Rp(0, 0) - mp.x() * Rp(2, 0),
-                    Rp(0, 1) - mp.x() * Rp(2, 1),
-                    Rp(0, 2) - mp.x() * Rp(2, 2),
-                    Tp.x()   - mp.x() * Tp.z();
-
-        Eigen::Matrix4d ATA = A.transpose() * A;
-        Eigen::Vector4d gamma = ATA.jacobiSvd(Eigen::ComputeFullV).matrixV().col(3);
-
-        if (std::abs(gamma(3)) > 1e-5) {
-            gamma /= gamma(3);
-            triangulated_points.emplace_back(gamma(0), gamma(1), gamma(2));
+        if (Ix_patch.empty()) {
+            displacements.emplace_back(0.0, 0.0);
+            continue;
         }
+
+        int N = static_cast<int>(Ix_patch.size());
+        cv::Mat A(N, 2, CV_64F);
+        cv::Mat b(N, 1, CV_64F);
+        for (int i = 0; i < N; ++i) {
+            A.at<double>(i, 0) = Ix_patch[i];
+            A.at<double>(i, 1) = Iy_patch[i];
+            b.at<double>(i) = -It_patch[i];
+        }
+
+        cv::Mat dP;
+        cv::solve(A, b, dP, cv::DECOMP_SVD);
+        displacements.emplace_back(dP.at<double>(0), dP.at<double>(1));
     }
 
-    return triangulated_points;
+    return displacements;
 }
+
+// std::vector<cv::Point2d> Dataset::TrackEdgesWithOpticalFlow(
+//     const cv::Mat& image_one,
+//     const cv::Mat& image_two,
+//     const std::vector<cv::Point2d>& keypoints,
+//     int patch_size
+// ) {
+//     cv::Mat Img1, Img2;
+//     image_one.convertTo(Img1, CV_64F);
+//     image_two.convertTo(Img2, CV_64F);
+
+//     int w = std::floor(patch_size / 2.0);
+
+//     cv::Mat Img1_padded, Img2_padded;
+//     cv::copyMakeBorder(Img1, Img1_padded, w+1, w+1, w+1, w+1, cv::BORDER_REPLICATE);
+//     cv::copyMakeBorder(Img2, Img2_padded, w+1, w+1, w+1, w+1, cv::BORDER_REPLICATE);
+
+//     // Compute gradients
+//     cv::Mat Ix, Iy;
+//     cv::Sobel(Img2_padded, Ix, CV_64F, 1, 0, 3);
+//     cv::Sobel(Img2_padded, Iy, CV_64F, 0, 1, 3);
+//     cv::Mat It = Img1_padded - Img2_padded;
+
+//     std::vector<cv::Point2d> displacements;
+//     displacements.reserve(keypoints.size());
+
+//     for (const auto& pt : keypoints) {
+//         int cx = static_cast<int>(pt.x) + w + 1;
+//         int cy = static_cast<int>(pt.y) + w + 1;
+
+//         cv::Mat Ix_patch(patch_size, patch_size, CV_64F);
+//         cv::Mat Iy_patch(patch_size, patch_size, CV_64F);
+//         cv::Mat It_patch(patch_size, patch_size, CV_64F);
+
+//         for (int dx = -w; dx <= w; ++dx) {
+//             for (int dy = -w; dy <= w; ++dy) {
+//                 int x = cx + dx;
+//                 int y = cy + dy;
+
+//                 int px = dx + w;
+//                 int py = dy + w;
+
+//                 Ix_patch.at<double>(py, px) = Ix.at<double>(y, x);
+//                 Iy_patch.at<double>(py, px) = Iy.at<double>(y, x);
+//                 It_patch.at<double>(py, px) = It.at<double>(y, x);
+//             }
+//         }
+
+//         // Flatten the patches into vectors
+//         cv::Mat A(patch_size * patch_size, 2, CV_64F);
+//         cv::Mat b(patch_size * patch_size, 1, CV_64F);
+//         for (int i = 0; i < patch_size * patch_size; ++i) {
+//             A.at<double>(i, 0) = Ix_patch.at<double>(i);
+//             A.at<double>(i, 1) = Iy_patch.at<double>(i);
+//             b.at<double>(i) = -It_patch.at<double>(i);
+//         }
+
+//         // Solve for dP using least squares
+//         cv::Mat dP;
+//         cv::solve(A, b, dP, cv::DECOMP_SVD);
+//         displacements.emplace_back(dP.at<double>(0), dP.at<double>(1));
+//     }
+
+//     return displacements;
+// }
+
+
+// std::vector<cv::Point2d> Dataset::TrackEdgesWithOpticalFlow(
+//     const cv::Mat& image_one,
+//     const cv::Mat& image_two,
+//     const std::vector<cv::Point2d>& keypoints,
+//     int patch_size
+// ) {
+//     int half_patch = std::ceil(patch_size / 2.0);
+//     std::vector<cv::Point2d> tracked_points;
+
+//     cv::Mat Ix, Iy;
+//     cv::Sobel(image_one, Ix, CV_32F, 1, 0, 3);
+//     cv::Sobel(image_one, Iy, CV_32F, 0, 1, 3);
+
+//     for (const auto& point : keypoints) {
+//         double x = point.x;
+//         double y = point.y;
+
+//         bool in_bounds = (x - half_patch >= 0 && x + half_patch < image_one.cols &&
+//                           y - half_patch >= 0 && y + half_patch < image_one.rows);
+
+//         if (in_bounds) {
+//             cv::Point2f center(static_cast<float>(x), static_cast<float>(y));
+//             cv::Size size(patch_size, patch_size);
+
+//             cv::Mat patch_I1, patch_I2, patch_Ix, patch_Iy;
+//             cv::getRectSubPix(image_one, size, center, patch_I1);
+//             cv::getRectSubPix(image_two, size, center, patch_I2);
+//             cv::getRectSubPix(Ix, size, center, patch_Ix);
+//             cv::getRectSubPix(Iy, size, center, patch_Iy);
+
+//             if (patch_I1.type() != CV_32F) patch_I1.convertTo(patch_I1, CV_32F);
+//             if (patch_I2.type() != CV_32F) patch_I2.convertTo(patch_I2, CV_32F);
+//             if (patch_Ix.type() != CV_32F) patch_Ix.convertTo(patch_Ix, CV_32F);
+//             if (patch_Iy.type() != CV_32F) patch_Iy.convertTo(patch_Iy, CV_32F);
+
+//             int N = patch_size * patch_size;
+//             cv::Mat A(N, 2, CV_32F);
+//             cv::Mat b(N, 1, CV_32F);
+//             int index = 0;
+
+//             for (int py = 0; py < patch_size; ++py) {
+//                 for (int px = 0; px < patch_size; ++px) {
+//                     float ix = patch_Ix.at<float>(py, px);
+//                     float iy = patch_Iy.at<float>(py, px);
+//                     float it = patch_I2.at<float>(py, px) - patch_I1.at<float>(py, px);
+
+//                     A.at<float>(index, 0) = ix;
+//                     A.at<float>(index, 1) = iy;
+//                     b.at<float>(index, 0) = it;
+//                     ++index;
+//                 }
+//             }
+
+//             cv::Mat dP;
+//             bool success = cv::solve(A, b, dP, cv::DECOMP_NORMAL | cv::DECOMP_SVD);
+
+//             if (success) {
+//                 double dx = dP.at<float>(0);
+//                 double dy = dP.at<float>(1);
+//                 tracked_points.push_back(point + cv::Point2d(dx, dy));
+//             } else {
+//                 std::cerr << "WARNING: Could not get displacement for point: " << point << std::endl;
+//                 // tracked_points.push_back(point); 
+//             }
+//         } else {
+//             std::cerr << "WARNING: Point out of bounds: " << point << std::endl;
+//             // tracked_points.push_back(point);
+//         }
+//     }
+
+//     return tracked_points;
+// }
 
 double Dataset::ComputeNCC(const cv::Mat& patch_one, const cv::Mat& patch_two){
     double mean_one = (cv::mean(patch_one))[0];

@@ -199,7 +199,7 @@ private:
     const cv::Mat& secondary_image, const std::vector<cv::Point2d>& selected_ground_truth_edges = std::vector<cv::Point2d>());
 
     std::vector<cv::Point3d> Calculate3DPoints(
-        const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
+    const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
     );
 
     std::vector<Eigen::Vector3d> Calculate3DOrientations(
@@ -212,9 +212,11 @@ private:
     std::vector<cv::Mat>& pyramid_one,
     std::vector<cv::Mat>& pyramid_two);
 
-    std::vector<cv::Point3d> LinearTriangulatePoints(
-    const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
-    );
+    std::vector<cv::Point2d> TrackEdgesWithOpticalFlow(
+    const cv::Mat& image_one,
+    const cv::Mat& image_two,
+    const std::vector<cv::Point2d>& keypoints,
+    int patch_size);
 
    double ComputeNCC(const cv::Mat& patch_one, const cv::Mat& patch_two);
 
@@ -261,9 +263,7 @@ private:
    std::vector<std::pair<cv::Mat, cv::Mat>> LoadEuRoCImages(const std::string& csv_path, const std::string& left_path, const std::string& right_path, int num_images);
    
    std::vector<std::pair<cv::Mat, cv::Mat>> LoadETH3DImages(const std::string &stereo_pairs_path, int num_images);
-   
-   std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
-   
+      
    std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
    
    std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
