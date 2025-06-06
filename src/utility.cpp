@@ -8,7 +8,6 @@
 #include <opencv2/opencv.hpp>
 #include <Eigen/Core>
 #include <Eigen/Dense>
-#include <glog/logging.h>
 
 #include "Dataset.h"
 #include "definitions.h"

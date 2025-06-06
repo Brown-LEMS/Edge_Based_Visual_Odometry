@@ -14,6 +14,10 @@
 #include "../include/toed/cpu_toed.hpp"
 #include "../include/definitions.h"
 
+// ==============================================================================================================
+// Third-Order Edge Detection: This code is borrowed from https://github.com/C-H-Chien/Third-Order-Edge-Detector
+// ==============================================================================================================
+
 // ==================================== Constructor ===================================
 // Define parameters used by functions in the class and allocate 2d arrays dynamically
 // ====================================================================================
@@ -30,8 +34,12 @@ ThirdOrderEdgeDetectionCPU::ThirdOrderEdgeDetectionCPU( int H, int W ) {
     interp_img_height = img_height*2;
     interp_img_width  = img_width*2;
 
-    // openmp threads
-    omp_threads = NUM_OF_CPU_CORES;
+    //> Define openmp threads, either use the available number of cores on tha machine or define the use of cores
+#if USE_DEFINED_NUM_OF_CORES
+    omp_threads = USE_NUM_CORES_FOR_OMP;
+#else
+    omp_threads = omp_get_num_procs();
+#endif
     img            = new double[img_height*img_width];
 
     // -- interpolated image map --

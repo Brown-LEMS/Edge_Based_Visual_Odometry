@@ -10,6 +10,7 @@
 #include <Eigen/Geometry>
 #include <yaml-cpp/yaml.h>
 #include <opencv2/opencv.hpp>
+
 #include "definitions.h"
 #include "Frame.h"
 #include "utility.h"
@@ -153,6 +154,7 @@ public:
 
 private:
    YAML::Node config_file;
+   int omp_threads;
 
    std::string dataset_type;
    std::string dataset_path;
@@ -311,6 +313,8 @@ private:
 
    //> CH: shared pointer to the class of third-order edge detector
    std::shared_ptr< ThirdOrderEdgeDetectionCPU > TOED = nullptr;
+
+   std::vector< cv::Point2d > ground_truth_right_edges_after_lowe;
 };
 
 

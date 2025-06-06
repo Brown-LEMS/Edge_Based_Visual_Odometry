@@ -2,12 +2,14 @@
 #include <stdlib.h>
 #include <stdexcept>
 #include <iostream>
-#include <gflags/gflags.h>
-#include <glog/logging.h>
 #include <yaml-cpp/yaml.h>
 #include "../include/definitions.h"
 #include "../include/Dataset.h"
 #include "../include/Pipeline.h"
+
+#if USE_GLOGS
+#include <glog/logging.h>
+#endif
 
 // =======================================================================================================
 // main_VO: main function for LEMS VO pipeline

@@ -287,6 +287,44 @@ void write_cvMat_to_File( std::string file_Path, cv::Mat Input_Mat ) {
     Test_File_Write_Stream.close();
 }
 
+cv::Point2d Epipolar_Shift( 
+    cv::Point2d original_edge_location, double edge_orientation, \
+    std::vector<double> epipolar_line_coeffs, bool& b_pass_epipolar_tengency_check )
+{
+    cv::Point2d corrected_edge;
+    assert(epipolar_line_coeffs.size() == 3);
+    double EL_coeff_A = epipolar_line_coeffs[0];
+    double EL_coeff_B = epipolar_line_coeffs[1];
+    double EL_coeff_C = epipolar_line_coeffs[2];
+    double a1_line  = -epipolar_line_coeffs[0] / epipolar_line_coeffs[1];
+    double b1_line  = -1;
+    double c1_line  = -epipolar_line_coeffs[2] / epipolar_line_coeffs[1];
+    
+    //> Parameters of the line passing through the original edge along its direction (tangent) vector
+    double a_edgeH2 = tan(edge_orientation);
+    double b_edgeH2 = -1;
+    double c_edgeH2 = -(a_edgeH2*original_edge_location.x - original_edge_location.y); //−(a⋅x2−y2)
+
+    //> Find the intersected point of the two lines
+    corrected_edge.x = (b1_line * c_edgeH2 - b_edgeH2 * c1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
+    corrected_edge.y = (c1_line * a_edgeH2 - c_edgeH2 * a1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
+    
+    //> Find (i) the displacement between the original edge and the corrected edge, and \
+    //       (ii) the intersection angle between the epipolar line and the line passing through the original edge along its direction vector
+    double epipolar_shift_displacement = cv::norm(corrected_edge - original_edge_location);
+    double m_epipolar = -a1_line / b1_line; //> Slope of epipolar line
+    double angle_diff_rad = abs(edge_orientation - atan(m_epipolar));
+    double angle_diff_deg = angle_diff_rad * (180.0 / M_PI);
+    if (angle_diff_deg > 180){
+        angle_diff_deg -= 180;
+    }
+
+    //> check if the corrected edge passes the epoplar tengency test (intersection angle < 4 degrees and displacement < 6 pixels)
+    b_pass_epipolar_tengency_check = (epipolar_shift_displacement < 6 && abs(angle_diff_deg - 0) > 4 && abs(angle_diff_deg - 180) > 4) ? (true) : (false);
+    
+    return corrected_edge;
+}
+
 int main(int argc, char **argv) {
 
 #define TEST_OPENCV_OPERATION               (true)

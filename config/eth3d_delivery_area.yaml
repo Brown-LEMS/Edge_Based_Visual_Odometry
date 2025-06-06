@@ -1,9 +1,11 @@
 # ETH3D Low-Resolution, Multi-View Delivery Area Dataset
 
 # Dataset Details
-dataset_dir: "/Users/saulll./Desktop/Independent Study/datasets"
-output_dir: "/Users/saulll./Desktop/Independent Study/outputs"
-sequence_name: "delivery_area"
+# dataset_dir: "/Users/saulll./Desktop/Independent Study/datasets"
+# output_dir: "/Users/saulll./Desktop/Independent Study/outputs"
+dataset_dir: "/gpfs/data/bkimia/Datasets/"
+output_dir: "/gpfs/data/bkimia/cchien3/Edge_Based_Visual_Odometry/outputs"
+sequence_name: "ETH3D/stereo/delivery_area_rig_stereo_pairs_gt/delivery_area"
 dataset_type: "ETH3D"
 
 # Stereo Intrinsic Parameters
