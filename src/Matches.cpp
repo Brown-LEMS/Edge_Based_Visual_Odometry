@@ -3,7 +3,7 @@
 /*
     calculate the epipolar line for each edge point using the fundamental matrix.
 */
-std::vector<Eigen::Vector3d> Dataset::CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<cv::Point2d> &edges)
+std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<cv::Point2d> &edges)
 {
     std::vector<Eigen::Vector3d> epipolar_lines;
 
@@ -20,10 +20,214 @@ std::vector<Eigen::Vector3d> Dataset::CalculateEpipolarLine(const Eigen::Matrix3
 }
 
 /*
+    Perform an epipolar shift on the original edge location based on the epipolar line coefficients.
+    The function checks if the corrected edge passes the epipolar tengency test.
+*/
+cv::Point2d PerformEpipolarShift(
+    cv::Point2d original_edge_location, double edge_orientation,
+    std::vector<double> epipolar_line_coeffs, bool &b_pass_epipolar_tengency_check)
+{
+    cv::Point2d corrected_edge;
+    assert(epipolar_line_coeffs.size() == 3);
+    double EL_coeff_A = epipolar_line_coeffs[0];
+    double EL_coeff_B = epipolar_line_coeffs[1];
+    double EL_coeff_C = epipolar_line_coeffs[2];
+    double a1_line = -epipolar_line_coeffs[0] / epipolar_line_coeffs[1];
+    double b1_line = -1;
+    double c1_line = -epipolar_line_coeffs[2] / epipolar_line_coeffs[1];
+
+    //> Parameters of the line passing through the original edge along its direction (tangent) vector
+    double a_edgeH2 = tan(edge_orientation);
+    double b_edgeH2 = -1;
+    double c_edgeH2 = -(a_edgeH2 * original_edge_location.x - original_edge_location.y); // −(a⋅x2−y2)
+
+    //> Find the intersected point of the two lines
+    corrected_edge.x = (b1_line * c_edgeH2 - b_edgeH2 * c1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
+    corrected_edge.y = (c1_line * a_edgeH2 - c_edgeH2 * a1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
+
+    //> Find (i) the displacement between the original edge and the corrected edge, and
+    //       (ii) the intersection angle between the epipolar line and the line passing through the original edge along its direction vector
+    double epipolar_shift_displacement = cv::norm(corrected_edge - original_edge_location);
+    double m_epipolar = -a1_line / b1_line; //> Slope of epipolar line
+    double angle_diff_rad = abs(edge_orientation - atan(m_epipolar));
+    double angle_diff_deg = angle_diff_rad * (180.0 / M_PI);
+    if (angle_diff_deg > 180)
+    {
+        angle_diff_deg -= 180;
+    }
+
+    //> check if the corrected edge passes the epoplar tengency test (intersection angle < 4 degrees and displacement < 6 pixels)
+    b_pass_epipolar_tengency_check = (epipolar_shift_displacement < EPIP_TENGENCY_PROXIM_THRESH && abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
+
+    return corrected_edge;
+}
+
+/*
+    Extract edges that are close to the epipolar line within a specified distance threshold.
+    Returns a pair of vectors: one for the extracted edge locations and one for their orientations.
+*/
+std::pair<std::vector<cv::Point2d>, std::vector<double>> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<cv::Point2d> &edge_locations, const std::vector<double> &edge_orientations, double distance_threshold)
+{
+    std::vector<cv::Point2d> extracted_edges;
+    std::vector<double> extracted_orientations;
+
+    if (edge_locations.size() != edge_orientations.size())
+    {
+        throw std::runtime_error("Edge locations and orientations size mismatch.");
+    }
+
+    for (size_t i = 0; i < edge_locations.size(); ++i)
+    {
+        const auto &edge = edge_locations[i];
+        double x = edge.x;
+        double y = edge.y;
+
+        double distance = std::abs(epipolar_line(0) * x + epipolar_line(1) * y + epipolar_line(2)) / std::sqrt((epipolar_line(0) * epipolar_line(0)) + (epipolar_line(1) * epipolar_line(1)));
+
+        if (distance < distance_threshold)
+        {
+            extracted_edges.push_back(edge);
+            extracted_orientations.push_back(edge_orientations[i]);
+        }
+    }
+
+    return {extracted_edges, extracted_orientations};
+}
+
+/*
+    Cluster the shifted edges based on their proximity and orientation.
+    Returns a vector of clusters, where each cluster contains a pair of vectors:
+    one for the edge points and one for their corresponding orientations.
+    The clustering is based on a distance threshold and an orientation difference threshold.
+*/
+std::vector<std::pair<std::vector<cv::Point2d>, std::vector<double>>> ClusterEpipolarShiftedEdges(std::vector<cv::Point2d> &valid_shifted_edges, std::vector<double> &valid_shifted_orientations)
+{
+    std::vector<std::pair<std::vector<cv::Point2d>, std::vector<double>>> clusters;
+
+    if (valid_shifted_edges.empty() || valid_shifted_orientations.empty())
+    {
+        return clusters;
+    }
+
+    std::vector<std::pair<cv::Point2d, double>> edge_orientation_pairs;
+    for (size_t i = 0; i < valid_shifted_edges.size(); ++i)
+    {
+        edge_orientation_pairs.emplace_back(valid_shifted_edges[i], valid_shifted_orientations[i]);
+    }
+
+    std::sort(edge_orientation_pairs.begin(), edge_orientation_pairs.end(),
+              [](const std::pair<cv::Point2d, double> &a, const std::pair<cv::Point2d, double> &b)
+              {
+                  return a.first.x < b.first.x;
+              });
+
+    valid_shifted_edges.clear();
+    valid_shifted_orientations.clear();
+    for (const auto &pair : edge_orientation_pairs)
+    {
+        valid_shifted_edges.push_back(pair.first);
+        valid_shifted_orientations.push_back(pair.second);
+    }
+
+    std::vector<cv::Point2d> current_cluster_edges;
+    std::vector<double> current_cluster_orientations;
+    current_cluster_edges.push_back(valid_shifted_edges[0]);
+    current_cluster_orientations.push_back(valid_shifted_orientations[0]);
+
+    for (size_t i = 1; i < valid_shifted_edges.size(); ++i)
+    {
+        double distance = cv::norm(valid_shifted_edges[i] - valid_shifted_edges[i - 1]);
+        double orientation_difference = std::abs(valid_shifted_orientations[i] - valid_shifted_orientations[i - 1]);
+
+        if (distance <= EDGE_CLUSTER_THRESH && orientation_difference < 5.0)
+        {
+            current_cluster_edges.push_back(valid_shifted_edges[i]);
+            current_cluster_orientations.push_back(valid_shifted_orientations[i]);
+        }
+        else
+        {
+            clusters.emplace_back(current_cluster_edges, current_cluster_orientations);
+            current_cluster_edges.clear();
+            current_cluster_orientations.clear();
+            current_cluster_edges.push_back(valid_shifted_edges[i]);
+            current_cluster_orientations.push_back(valid_shifted_orientations[i]);
+        }
+    }
+
+    if (!current_cluster_edges.empty())
+    {
+        clusters.emplace_back(current_cluster_edges, current_cluster_orientations);
+    }
+
+    return clusters;
+}
+
+/*
+    Extract patches from the image based on the cluster centers and shifted edge points.
+    The function checks if the patches are within bounds before extracting them.
+*/
+void ExtractClusterPatches(
+    int patch_size,
+    const cv::Mat &image,
+    const std::vector<EdgeCluster> &cluster_centers,
+    const std::vector<cv::Point2d> *right_edges,
+    const std::vector<cv::Point2d> &shifted_one,
+    const std::vector<cv::Point2d> &shifted_two,
+    std::vector<EdgeCluster> &cluster_centers_out,
+    std::vector<cv::Point2d> *filtered_right_edges_out,
+    std::vector<cv::Mat> &patch_set_one_out,
+    std::vector<cv::Mat> &patch_set_two_out)
+{
+    int half_patch = std::ceil(patch_size / 2);
+
+    for (int i = 0; i < shifted_one.size(); i++)
+    {
+        double x1 = shifted_one[i].x;
+        double y1 = shifted_one[i].y;
+        double x2 = shifted_two[i].x;
+        double y2 = shifted_two[i].y;
+
+        bool in_bounds_one = (x1 - half_patch >= 0 && x1 + half_patch < image.cols &&
+                              y1 - half_patch >= 0 && y1 + half_patch < image.rows);
+        bool in_bounds_two = (x2 - half_patch >= 0 && x2 + half_patch < image.cols &&
+                              y2 - half_patch >= 0 && y2 + half_patch < image.rows);
+
+        if (in_bounds_one && in_bounds_two)
+        {
+            cv::Point2f center1(static_cast<float>(x1), static_cast<float>(y1));
+            cv::Point2f center2(static_cast<float>(x2), static_cast<float>(y2));
+            cv::Size size(patch_size, patch_size);
+
+            cv::Mat patch1, patch2;
+            cv::getRectSubPix(image, size, center1, patch1);
+            cv::getRectSubPix(image, size, center2, patch2);
+
+            if (patch1.type() != CV_32F)
+            {
+                patch1.convertTo(patch1, CV_32F);
+            }
+            if (patch2.type() != CV_32F)
+            {
+                patch2.convertTo(patch2, CV_32F);
+            }
+
+            patch_set_one_out.push_back(patch1);
+            patch_set_two_out.push_back(patch2);
+            cluster_centers_out.push_back(cluster_centers[i]);
+
+            if (right_edges && filtered_right_edges_out)
+            {
+                filtered_right_edges_out->push_back((*right_edges)[i]);
+            }
+        }
+    }
+}
+
+/*
     Calculate orthogonal shifts for edge points based on their orientations.
     Returns two vectors of shifted points, one for each orthogonal direction.
 */
-std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<cv::Point2d> &edge_points, const std::vector<double> &orientations, double shift_magnitude)
+std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<cv::Point2d> &edge_points, const std::vector<double> &orientations, double shift_magnitude, Dataset &dataset)
 {
     std::vector<cv::Point2d> shifted_points_one;
     std::vector<cv::Point2d> shifted_points_two;
@@ -70,7 +274,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         left_edge_orientations.push_back(std::get<2>(data));
     }
 
-    auto [left_orthogonal_one, left_orthogonal_two] = CalculateOrthogonalShifts(left_edge_coords, left_edge_orientations, ORTHOGONAL_SHIFT_MAG);
+    auto [left_orthogonal_one, left_orthogonal_two] = CalculateOrthogonalShifts(left_edge_coords, left_edge_orientations, ORTHOGONAL_SHIFT_MAG, dataset);
 
     std::vector<cv::Point2d> filtered_left_edges;
     std::vector<double> filtered_left_orientations;
@@ -93,8 +297,8 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         &ground_truth_right_edges,
         &filtered_ground_truth_right_edges);
 
-    Eigen::Matrix3d fundamental_matrix_21 = ConvertToEigenMatrix(dataset.fund_mat_21);
-    Eigen::Matrix3d fundamental_matrix_12 = ConvertToEigenMatrix(dataset.fund_mat_12);
+    Eigen::Matrix3d fundamental_matrix_21 = ConvertToEigenMatrix(dataset.get_fund_mat_21());
+    Eigen::Matrix3d fundamental_matrix_12 = ConvertToEigenMatrix(dataset.get_fund_mat_12());
 
     std::vector<Eigen::Vector3d> epipolar_lines_right = CalculateEpipolarLine(fundamental_matrix_21, filtered_left_edges);
 
@@ -107,8 +311,8 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         left_patch_set_two,
         epipolar_lines_right,
         right_image,
-        filtered_ground_truth_right_edges,
-        dataset);
+        dataset,
+        filtered_ground_truth_right_edges);
 
     ///////////////////////////////REVERSE DIRECTION///////////////////////////////
     std::vector<cv::Point2d> reverse_primary_edges;
@@ -128,7 +332,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         }
     }
 
-    auto [right_orthogonal_one, right_orthogonal_two] = CalculateOrthogonalShifts(reverse_primary_edges, reverse_primary_orientations, ORTHOGONAL_SHIFT_MAG);
+    auto [right_orthogonal_one, right_orthogonal_two] = CalculateOrthogonalShifts(reverse_primary_edges, reverse_primary_orientations, ORTHOGONAL_SHIFT_MAG, dataset);
 
     std::vector<cv::Point2d> filtered_right_edges;
     std::vector<double> filtered_right_orientations;
@@ -200,7 +404,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
                             ConfirmedMatchEdge right_confirmed{right_position, right_orientation};
                             confirmed_matches.emplace_back(left_confirmed, right_confirmed);
 
-                            cv::Point2d GT_right_edge_location = ground_truth_right_edges_after_lowe[forward_left_index];
+                            cv::Point2d GT_right_edge_location = dataset.ground_truth_right_edges_after_lowe[forward_left_index];
                             if (cv::norm(right_position - GT_right_edge_location) <= MATCH_TOL)
                             {
                                 bct_true_positive++;
@@ -238,7 +442,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     int matches_after_bct = static_cast<int>(confirmed_matches.size());
     std::cout << "Number of matches after BCT: " << matches_after_bct << std::endl;
-    std::cout << "Number of stacked GT right edges: " << ground_truth_right_edges_after_lowe.size() << std::endl;
+    std::cout << "Number of stacked GT right edges: " << dataset.ground_truth_right_edges_after_lowe.size() << std::endl;
 
     // double per_image_bct_precision = (matches_before_bct > 0) ? static_cast<double>(matches_after_bct) / matches_before_bct: 0.0;
     double per_image_bct_precision = (matches_before_bct > 0) ? bct_true_positive / (double)(matches_after_bct) : 0.0;
@@ -263,8 +467,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 //> MARK: Main Edge Pairing
 EdgeMatchResult CalculateMatches(const std::vector<cv::Point2d> &selected_primary_edges, const std::vector<double> &selected_primary_orientations, const std::vector<cv::Point2d> &secondary_edge_coords,
                                  const std::vector<double> &secondary_edge_orientations, const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
-                                 const cv::Mat &secondary_image, const std::vector<cv::Point2d> &selected_ground_truth_edges,
-                                 Dataset &dataset)
+                                 const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges)
 {
     auto total_start = std::chrono::high_resolution_clock::now();
 
@@ -370,7 +573,7 @@ EdgeMatchResult CalculateMatches(const std::vector<cv::Point2d> &selected_primar
         const int skip = 1;
 
 //> Start looping over left edges
-#pragma omp for schedule(static, omp_threads) reduction(+ : epi_true_positive, epi_false_negative, epi_true_negative, disp_true_positive, disp_false_negative, shift_true_positive, shift_false_negative, cluster_true_positive, cluster_false_negative, cluster_true_negative, ncc_true_positive, ncc_false_negative, lowe_true_positive, lowe_false_negative, per_edge_epi_precision, per_edge_disp_precision, per_edge_shift_precision, per_edge_clust_precision, per_edge_ncc_precision, per_edge_lowe_precision, epi_edges_evaluated, disp_edges_evaluated, shift_edges_evaluated, clust_edges_evaluated, ncc_edges_evaluated, lowe_edges_evaluated)
+#pragma omp for schedule(static, dataset.get_omp_threads()) reduction(+ : epi_true_positive, epi_false_negative, epi_true_negative, disp_true_positive, disp_false_negative, shift_true_positive, shift_false_negative, cluster_true_positive, cluster_false_negative, cluster_true_negative, ncc_true_positive, ncc_false_negative, lowe_true_positive, lowe_false_negative, per_edge_epi_precision, per_edge_disp_precision, per_edge_shift_precision, per_edge_clust_precision, per_edge_ncc_precision, per_edge_lowe_precision, epi_edges_evaluated, disp_edges_evaluated, shift_edges_evaluated, clust_edges_evaluated, ncc_edges_evaluated, lowe_edges_evaluated)
         for (size_t i = 0; i < selected_primary_edges.size(); i += skip)
         {
             const auto &primary_edge = selected_primary_edges[i];
@@ -710,7 +913,8 @@ EdgeMatchResult CalculateMatches(const std::vector<cv::Point2d> &selected_primar
             auto [secondary_orthogonal_one, secondary_orthogonal_two] = CalculateOrthogonalShifts(
                 cluster_coords,
                 cluster_orientations,
-                ORTHOGONAL_SHIFT_MAG);
+                ORTHOGONAL_SHIFT_MAG,
+                dataset);
 
             std::vector<EdgeCluster> filtered_cluster_centers;
             std::vector<cv::Mat> secondary_patch_set_one;
@@ -1081,7 +1285,7 @@ EdgeMatchResult CalculateMatches(const std::vector<cv::Point2d> &selected_primar
 
     for (const auto &local_GT_right_edges_stack : local_GT_right_edges_after_lowe)
     {
-        ground_truth_right_edges_after_lowe.insert(ground_truth_right_edges_after_lowe.end(), local_GT_right_edges_stack.begin(), local_GT_right_edges_stack.end());
+        dataset.ground_truth_right_edges_after_lowe.insert(dataset.ground_truth_right_edges_after_lowe.end(), local_GT_right_edges_stack.begin(), local_GT_right_edges_stack.end());
     }
 
     return EdgeMatchResult{

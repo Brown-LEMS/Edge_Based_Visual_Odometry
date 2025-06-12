@@ -198,7 +198,10 @@ Dataset::Dataset(YAML::Node config_map, bool use_GCC_filter) : config_file(confi
     Total_Num_Of_Imgs = 0;
 }
 
-void load_dataset(std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs, std::string dataset_type, int num_pairs)
+void Dataset::load_dataset(std::vector<std::pair<cv::Mat, cv::Mat>> &image_pairs,
+                           const std::string &dataset_type,
+                           std::vector<cv::Mat> &left_ref_disparity_maps,
+                           int num_pairs)
 {
     if (dataset_type == "EuRoC")
     {
@@ -265,52 +268,6 @@ void Dataset::VisualizeGTRightEdge(const cv::Mat &left_image, const cv::Mat &rig
 
     cv::imshow("Ground Truth Disparity Edges Visualization", merged_visualization);
     cv::waitKey(0);
-}
-
-void Dataset::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
-{
-    forward_gt_data.clear();
-
-    static size_t total_rows_written = 0;
-    static int file_index = 1;
-    static std::ofstream csv_file;
-    static const size_t max_rows_per_file = 1'000'000;
-
-    if (!csv_file.is_open())
-    {
-        std::string filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
-        csv_file.open(filename, std::ios::out);
-    }
-
-    for (size_t i = 0; i < left_third_order_edges_locations.size(); i++)
-    {
-        const cv::Point2d &left_edge = left_third_order_edges_locations[i];
-        double orientation = left_third_order_edges_orientation[i];
-
-        double disparity = Bilinear_Interpolation(disparity_map, left_edge);
-
-        if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
-        {
-            continue;
-        }
-
-        cv::Point2d right_edge(left_edge.x - disparity, left_edge.y);
-        forward_gt_data.emplace_back(left_edge, right_edge, orientation);
-
-        if (total_rows_written >= max_rows_per_file)
-        {
-            csv_file.close();
-            ++file_index;
-            total_rows_written = 0;
-            std::string next_filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
-            csv_file.open(next_filename, std::ios::out);
-        }
-
-        csv_file << disparity << "\n";
-        ++total_rows_written;
-    }
-
-    csv_file.flush();
 }
 
 void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image)
@@ -627,69 +584,6 @@ cv::Mat Dataset::LoadDisparityFromCSV(const std::string &path)
     }
 
     return disparity;
-}
-
-void Dataset::WriteEdgesToBinary(const std::string &filepath,
-                                 const std::vector<cv::Point2d> &locations,
-                                 const std::vector<double> &orientations)
-{
-    std::ofstream ofs(filepath, std::ios::binary);
-    if (!ofs.is_open())
-    {
-        std::cerr << "ERROR: Could not open binary file for writing: " << filepath << std::endl;
-        return;
-    }
-
-    size_t size = locations.size();
-    ofs.write(reinterpret_cast<const char *>(&size), sizeof(size));
-    ofs.write(reinterpret_cast<const char *>(locations.data()), sizeof(cv::Point2d) * size);
-    ofs.write(reinterpret_cast<const char *>(orientations.data()), sizeof(double) * size);
-}
-
-void Dataset::ReadEdgesFromBinary(const std::string &filepath,
-                                  std::vector<cv::Point2d> &locations,
-                                  std::vector<double> &orientations)
-{
-    std::ifstream ifs(filepath, std::ios::binary);
-    if (!ifs.is_open())
-    {
-        std::cerr << "ERROR: Could not open binary file for reading: " << filepath << std::endl;
-        return;
-    }
-
-    size_t size = 0;
-    ifs.read(reinterpret_cast<char *>(&size), sizeof(size));
-
-    locations.resize(size);
-    orientations.resize(size);
-
-    ifs.read(reinterpret_cast<char *>(locations.data()), sizeof(cv::Point2d) * size);
-    ifs.read(reinterpret_cast<char *>(orientations.data()), sizeof(double) * size);
-}
-
-void Dataset::ProcessEdges(const cv::Mat &image,
-                           const std::string &filepath,
-                           std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
-                           std::vector<cv::Point2d> &locations,
-                           std::vector<double> &orientations)
-{
-    std::string path = filepath + ".bin";
-
-    if (std::filesystem::exists(path))
-    {
-        // std::cout << "Loading edge data from: " << path << std::endl;
-        ReadEdgesFromBinary(path, locations, orientations);
-    }
-    else
-    {
-        // std::cout << "Running third-order edge detector..." << std::endl;
-        toed->get_Third_Order_Edges(image);
-        locations = toed->toed_locations;
-        orientations = toed->toed_orientations;
-
-        WriteEdgesToBinary(path, locations, orientations);
-        // std::cout << "Saved edge data to: " << path << std::endl;
-    }
 }
 
 void Dataset::Load_GT_Poses(std::string GT_Poses_File_Path)

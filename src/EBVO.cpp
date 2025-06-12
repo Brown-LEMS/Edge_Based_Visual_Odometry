@@ -1,13 +1,12 @@
+#include <filesystem>
+#include <unordered_set>
 #include "EBVO.h"
 #include "Dataset.h"
 #include "Matches.h"
 
-EBVO(YAML::Node config_map, bool use_GCC_filter = false)
-{
-    dataset = Dataset(config_map, use_GCC_filter);
-}
+EBVO::EBVO(YAML::Node config_map, bool use_GCC_filter) : dataset(config_map, use_GCC_filter) {}
 
-void PerformEdgeBasedVO();
+void EBVO::PerformEdgeBasedVO()
 {
     // The main processing function that performs edge-based visual odometry on a sequence of stereo image pairs.
     // It loads images, detects edges, matches them, and evaluates the matching performance.
@@ -44,7 +43,7 @@ void PerformEdgeBasedVO();
     std::vector<RecallMetrics> all_forward_recall_metrics;
     std::vector<BidirectionalMetrics> all_bct_metrics;
 
-    load_dataset(image_pairs, dataset_type, num_pairs);
+    dataset.load_dataset(image_pairs, dataset.get_dataset_type(), left_ref_disparity_maps, num_pairs);
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -79,13 +78,13 @@ void PerformEdgeBasedVO();
             next_left_pyramid,
             next_right_pyramid);
 
-        ncc_one_vs_err.clear();
-        ncc_two_vs_err.clear();
+        dataset.ncc_one_vs_err.clear();
+        dataset.ncc_two_vs_err.clear();
         dataset.ground_truth_right_edges_after_lowe.clear();
 
         std::cout << "Image Pair #" << i << "\n";
-        cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
-        cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
+        cv::Mat left_calib = (cv::Mat_<double>(3, 3) << dataset.left_intr[0], 0, dataset.left_intr[2], 0, dataset.left_intr[1], dataset.left_intr[3], 0, 0, 1);
+        cv::Mat right_calib = (cv::Mat_<double>(3, 3) << dataset.right_intr[0], 0, dataset.right_intr[2], 0, dataset.right_intr[1], dataset.right_intr[3], 0, 0, 1);
         cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs);
         cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs);
 
@@ -95,13 +94,13 @@ void PerformEdgeBasedVO();
 
         if (dataset.Total_Num_Of_Imgs == 0)
         {
-            img_height = left_undistorted.rows;
-            img_width = left_undistorted.cols;
+            dataset.img_height = left_undistorted.rows;
+            dataset.img_width = left_undistorted.cols;
 
-            TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(img_height, img_width));
+            TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(dataset.img_height, dataset.img_width));
         }
 
-        std::string edge_dir = dataset.output_path + "/edges";
+        std::string edge_dir = dataset.get_output_path() + "/edges";
         std::filesystem::create_directories(edge_dir);
 
         std::string left_edge_path = edge_dir + "/left_edges_" + std::to_string(i);
@@ -111,7 +110,7 @@ void PerformEdgeBasedVO();
         std::cout << "Number of edges on the left image: " << dataset.left_third_order_edges_locations.size() << std::endl;
 
         ProcessEdges(right_undistorted, right_edge_path, TOED, dataset.right_third_order_edges_locations, dataset.right_third_order_edges_orientation);
-        std::cout << "Number of edges on the right image: " << right_third_order_edges_locations.size() << std::endl;
+        std::cout << "Number of edges on the right image: " << dataset.right_third_order_edges_locations.size() << std::endl;
 
         dataset.Total_Num_Of_Imgs++;
 
@@ -140,8 +139,9 @@ void PerformEdgeBasedVO();
         StereoMatchResult match_result = DisplayMatches(
             left_undistorted,
             right_undistorted,
-            right_third_order_edges_locations,
-            right_third_order_edges_orientation);
+            dataset.right_third_order_edges_locations,
+            dataset.right_third_order_edges_orientation,
+            dataset);
 
 #if 0
         std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
@@ -350,7 +350,7 @@ void PerformEdgeBasedVO();
     double avg_total_time = (total_images > 0) ? total_image_time / total_images : 0.0;
     double avg_bct_time = (total_images > 0) ? total_bct_time / total_images : 0.0;
 
-    std::string edge_stat_dir = output_path + "/edge_stats";
+    std::string edge_stat_dir = dataset.get_output_path() + "/edge_stats";
     std::filesystem::create_directories(edge_stat_dir);
 
     std::ofstream recall_csv(edge_stat_dir + "/recall_metrics.csv");
@@ -618,171 +618,35 @@ void PerformEdgeBasedVO();
                   << std::fixed << std::setprecision(4) << avg_bct_precision * 100 << "\n";
 }
 
-/*
-    Extract patches from the image based on the cluster centers and shifted edge points.
-    The function checks if the patches are within bounds before extracting them.
-*/
-void ExtractClusterPatches(
-    int patch_size,
-    const cv::Mat &image,
-    const std::vector<EdgeCluster> &cluster_centers,
-    const std::vector<cv::Point2d> *right_edges,
-    const std::vector<cv::Point2d> &shifted_one,
-    const std::vector<cv::Point2d> &shifted_two,
-    std::vector<EdgeCluster> &cluster_centers_out,
-    std::vector<cv::Point2d> *filtered_right_edges_out,
-    std::vector<cv::Mat> &patch_set_one_out,
-    std::vector<cv::Mat> &patch_set_two_out)
+void EBVO::ProcessEdges(const cv::Mat &image,
+                        const std::string &filepath,
+                        std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
+                        std::vector<cv::Point2d> &locations,
+                        std::vector<double> &orientations)
 {
-    int half_patch = std::ceil(patch_size / 2);
+    std::string path = filepath + ".bin";
 
-    for (int i = 0; i < shifted_one.size(); i++)
+    if (std::filesystem::exists(path))
     {
-        double x1 = shifted_one[i].x;
-        double y1 = shifted_one[i].y;
-        double x2 = shifted_two[i].x;
-        double y2 = shifted_two[i].y;
-
-        bool in_bounds_one = (x1 - half_patch >= 0 && x1 + half_patch < image.cols &&
-                              y1 - half_patch >= 0 && y1 + half_patch < image.rows);
-        bool in_bounds_two = (x2 - half_patch >= 0 && x2 + half_patch < image.cols &&
-                              y2 - half_patch >= 0 && y2 + half_patch < image.rows);
-
-        if (in_bounds_one && in_bounds_two)
-        {
-            cv::Point2f center1(static_cast<float>(x1), static_cast<float>(y1));
-            cv::Point2f center2(static_cast<float>(x2), static_cast<float>(y2));
-            cv::Size size(patch_size, patch_size);
-
-            cv::Mat patch1, patch2;
-            cv::getRectSubPix(image, size, center1, patch1);
-            cv::getRectSubPix(image, size, center2, patch2);
-
-            if (patch1.type() != CV_32F)
-            {
-                patch1.convertTo(patch1, CV_32F);
-            }
-            if (patch2.type() != CV_32F)
-            {
-                patch2.convertTo(patch2, CV_32F);
-            }
-
-            patch_set_one_out.push_back(patch1);
-            patch_set_two_out.push_back(patch2);
-            cluster_centers_out.push_back(cluster_centers[i]);
-
-            if (right_edges && filtered_right_edges_out)
-            {
-                filtered_right_edges_out->push_back((*right_edges)[i]);
-            }
-        }
+        // std::cout << "Loading edge data from: " << path << std::endl;
+        ReadEdgesFromBinary(path, locations, orientations);
     }
-}
-
-/*
-    Cluster the shifted edges based on their proximity and orientation.
-    Returns a vector of clusters, where each cluster contains a pair of vectors:
-    one for the edge points and one for their corresponding orientations.
-    The clustering is based on a distance threshold and an orientation difference threshold.
-*/
-std::vector<std::pair<std::vector<cv::Point2d>, std::vector<double>>> Dataset::ClusterEpipolarShiftedEdges(std::vector<cv::Point2d> &valid_shifted_edges, std::vector<double> &valid_shifted_orientations)
-{
-    std::vector<std::pair<std::vector<cv::Point2d>, std::vector<double>>> clusters;
-
-    if (valid_shifted_edges.empty() || valid_shifted_orientations.empty())
+    else
     {
-        return clusters;
+        // std::cout << "Running third-order edge detector..." << std::endl;
+        toed->get_Third_Order_Edges(image);
+        locations = toed->toed_locations;
+        orientations = toed->toed_orientations;
+
+        WriteEdgesToBinary(path, locations, orientations);
+        // std::cout << "Saved edge data to: " << path << std::endl;
     }
-
-    std::vector<std::pair<cv::Point2d, double>> edge_orientation_pairs;
-    for (size_t i = 0; i < valid_shifted_edges.size(); ++i)
-    {
-        edge_orientation_pairs.emplace_back(valid_shifted_edges[i], valid_shifted_orientations[i]);
-    }
-
-    std::sort(edge_orientation_pairs.begin(), edge_orientation_pairs.end(),
-              [](const std::pair<cv::Point2d, double> &a, const std::pair<cv::Point2d, double> &b)
-              {
-                  return a.first.x < b.first.x;
-              });
-
-    valid_shifted_edges.clear();
-    valid_shifted_orientations.clear();
-    for (const auto &pair : edge_orientation_pairs)
-    {
-        valid_shifted_edges.push_back(pair.first);
-        valid_shifted_orientations.push_back(pair.second);
-    }
-
-    std::vector<cv::Point2d> current_cluster_edges;
-    std::vector<double> current_cluster_orientations;
-    current_cluster_edges.push_back(valid_shifted_edges[0]);
-    current_cluster_orientations.push_back(valid_shifted_orientations[0]);
-
-    for (size_t i = 1; i < valid_shifted_edges.size(); ++i)
-    {
-        double distance = cv::norm(valid_shifted_edges[i] - valid_shifted_edges[i - 1]);
-        double orientation_difference = std::abs(valid_shifted_orientations[i] - valid_shifted_orientations[i - 1]);
-
-        if (distance <= EDGE_CLUSTER_THRESH && orientation_difference < 5.0)
-        {
-            current_cluster_edges.push_back(valid_shifted_edges[i]);
-            current_cluster_orientations.push_back(valid_shifted_orientations[i]);
-        }
-        else
-        {
-            clusters.emplace_back(current_cluster_edges, current_cluster_orientations);
-            current_cluster_edges.clear();
-            current_cluster_orientations.clear();
-            current_cluster_edges.push_back(valid_shifted_edges[i]);
-            current_cluster_orientations.push_back(valid_shifted_orientations[i]);
-        }
-    }
-
-    if (!current_cluster_edges.empty())
-    {
-        clusters.emplace_back(current_cluster_edges, current_cluster_orientations);
-    }
-
-    return clusters;
-}
-
-/*
-    Extract edges that are close to the epipolar line within a specified distance threshold.
-    Returns a pair of vectors: one for the extracted edge locations and one for their orientations.
-*/
-std::pair<std::vector<cv::Point2d>, std::vector<double>> Dataset::ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<cv::Point2d> &edge_locations, const std::vector<double> &edge_orientations, double distance_threshold)
-{
-    std::vector<cv::Point2d> extracted_edges;
-    std::vector<double> extracted_orientations;
-
-    if (edge_locations.size() != edge_orientations.size())
-    {
-        throw std::runtime_error("Edge locations and orientations size mismatch.");
-    }
-
-    for (size_t i = 0; i < edge_locations.size(); ++i)
-    {
-        const auto &edge = edge_locations[i];
-        double x = edge.x;
-        double y = edge.y;
-
-        double distance = std::abs(epipolar_line(0) * x + epipolar_line(1) * y + epipolar_line(2)) / std::sqrt((epipolar_line(0) * epipolar_line(0)) + (epipolar_line(1) * epipolar_line(1)));
-
-        if (distance < distance_threshold)
-        {
-            extracted_edges.push_back(edge);
-            extracted_orientations.push_back(edge_orientations[i]);
-        }
-    }
-
-    return {extracted_edges, extracted_orientations};
 }
 
 /*
     Pick a random edge
 */
-std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> Dataset::PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height)
+std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> EBVO::PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height)
 {
     std::vector<cv::Point2d> valid_edges;
     std::vector<double> valid_orientations;
@@ -831,45 +695,86 @@ std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2
     return {selected_points, selected_orientations, selected_ground_truth_points};
 }
 
-/*
-    Perform an epipolar shift on the original edge location based on the epipolar line coefficients.
-    The function checks if the corrected edge passes the epipolar tengency test.
-*/
-cv::Point2d Dataset::PerformEpipolarShift(
-    cv::Point2d original_edge_location, double edge_orientation,
-    std::vector<double> epipolar_line_coeffs, bool &b_pass_epipolar_tengency_check)
+void EBVO::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
 {
-    cv::Point2d corrected_edge;
-    assert(epipolar_line_coeffs.size() == 3);
-    double EL_coeff_A = epipolar_line_coeffs[0];
-    double EL_coeff_B = epipolar_line_coeffs[1];
-    double EL_coeff_C = epipolar_line_coeffs[2];
-    double a1_line = -epipolar_line_coeffs[0] / epipolar_line_coeffs[1];
-    double b1_line = -1;
-    double c1_line = -epipolar_line_coeffs[2] / epipolar_line_coeffs[1];
+    dataset.forward_gt_data.clear();
 
-    //> Parameters of the line passing through the original edge along its direction (tangent) vector
-    double a_edgeH2 = tan(edge_orientation);
-    double b_edgeH2 = -1;
-    double c_edgeH2 = -(a_edgeH2 * original_edge_location.x - original_edge_location.y); // −(a⋅x2−y2)
+    static size_t total_rows_written = 0;
+    static int file_index = 1;
+    static std::ofstream csv_file;
+    static const size_t max_rows_per_file = 1'000'000;
 
-    //> Find the intersected point of the two lines
-    corrected_edge.x = (b1_line * c_edgeH2 - b_edgeH2 * c1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
-    corrected_edge.y = (c1_line * a_edgeH2 - c_edgeH2 * a1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
-
-    //> Find (i) the displacement between the original edge and the corrected edge, and
-    //       (ii) the intersection angle between the epipolar line and the line passing through the original edge along its direction vector
-    double epipolar_shift_displacement = cv::norm(corrected_edge - original_edge_location);
-    double m_epipolar = -a1_line / b1_line; //> Slope of epipolar line
-    double angle_diff_rad = abs(edge_orientation - atan(m_epipolar));
-    double angle_diff_deg = angle_diff_rad * (180.0 / M_PI);
-    if (angle_diff_deg > 180)
+    if (!csv_file.is_open())
     {
-        angle_diff_deg -= 180;
+        std::string filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
+        csv_file.open(filename, std::ios::out);
     }
 
-    //> check if the corrected edge passes the epoplar tengency test (intersection angle < 4 degrees and displacement < 6 pixels)
-    b_pass_epipolar_tengency_check = (epipolar_shift_displacement < EPIP_TENGENCY_PROXIM_THRESH && abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
+    for (size_t i = 0; i < left_third_order_edges_locations.size(); i++)
+    {
+        const cv::Point2d &left_edge = left_third_order_edges_locations[i];
+        double orientation = left_third_order_edges_orientation[i];
 
-    return corrected_edge;
+        double disparity = Bilinear_Interpolation(disparity_map, left_edge);
+
+        if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
+        {
+            continue;
+        }
+
+        cv::Point2d right_edge(left_edge.x - disparity, left_edge.y);
+        dataset.forward_gt_data.emplace_back(left_edge, right_edge, orientation);
+
+        if (total_rows_written >= max_rows_per_file)
+        {
+            csv_file.close();
+            ++file_index;
+            total_rows_written = 0;
+            std::string next_filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
+            csv_file.open(next_filename, std::ios::out);
+        }
+
+        csv_file << disparity << "\n";
+        ++total_rows_written;
+    }
+
+    csv_file.flush();
+}
+
+void EBVO::ReadEdgesFromBinary(const std::string &filepath,
+                               std::vector<cv::Point2d> &locations,
+                               std::vector<double> &orientations)
+{
+    std::ifstream ifs(filepath, std::ios::binary);
+    if (!ifs.is_open())
+    {
+        std::cerr << "ERROR: Could not open binary file for reading: " << filepath << std::endl;
+        return;
+    }
+
+    size_t size = 0;
+    ifs.read(reinterpret_cast<char *>(&size), sizeof(size));
+
+    locations.resize(size);
+    orientations.resize(size);
+
+    ifs.read(reinterpret_cast<char *>(locations.data()), sizeof(cv::Point2d) * size);
+    ifs.read(reinterpret_cast<char *>(orientations.data()), sizeof(double) * size);
+}
+
+void EBVO::WriteEdgesToBinary(const std::string &filepath,
+                              const std::vector<cv::Point2d> &locations,
+                              const std::vector<double> &orientations)
+{
+    std::ofstream ofs(filepath, std::ios::binary);
+    if (!ofs.is_open())
+    {
+        std::cerr << "ERROR: Could not open binary file for writing: " << filepath << std::endl;
+        return;
+    }
+
+    size_t size = locations.size();
+    ofs.write(reinterpret_cast<const char *>(&size), sizeof(size));
+    ofs.write(reinterpret_cast<const char *>(locations.data()), sizeof(cv::Point2d) * size);
+    ofs.write(reinterpret_cast<const char *>(orientations.data()), sizeof(double) * size);
 }

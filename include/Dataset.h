@@ -141,7 +141,7 @@ public:
     Dataset(YAML::Node, bool);
 
     static void onMouse(int event, int x, int y, int, void *);
-
+    void load_dataset(std::vector<std::pair<cv::Mat, cv::Mat>> &image_pairs, const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps, int num_pairs);
     unsigned Total_Num_Of_Imgs;
     int img_height, img_width;
 
@@ -162,6 +162,19 @@ public:
 
     std::vector<cv::Point2d> ground_truth_right_edges_after_lowe;
 
+    std::vector<std::vector<double>> get_fund_mat_21() { return fund_mat_21; };
+    std::vector<std::vector<double>> get_fund_mat_12() { return fund_mat_12; };
+
+    std::string get_dataset_type() { return dataset_type; }
+    std::string get_output_path() { return output_path; }
+    int get_omp_threads() const { return omp_threads; }
+    // these two were private in the original code, but are made public for access in EBVO.cpp
+    std::vector<double> left_intr;
+    std::vector<double> right_intr;
+
+    std::vector<double> left_dist_coeffs;
+    std::vector<double> right_dist_coeffs;
+
 private:
     YAML::Node config_file;
     int omp_threads;
@@ -179,16 +192,14 @@ private:
     std::vector<int> left_res;
     int left_rate;
     std::string left_model;
-    std::vector<double> left_intr;
+
     std::string left_dist_model;
-    std::vector<double> left_dist_coeffs;
 
     std::vector<int> right_res;
     int right_rate;
     std::string right_model;
-    std::vector<double> right_intr;
+
     std::string right_dist_model;
-    std::vector<double> right_dist_coeffs;
 
     std::vector<std::vector<double>> rot_mat_21;
     std::vector<double> trans_vec_21;
@@ -219,23 +230,7 @@ private:
 
     cv::Mat LoadDisparityFromCSV(const std::string &path);
 
-    void WriteEdgesToBinary(const std::string &filepath,
-                            const std::vector<cv::Point2d> &locations,
-                            const std::vector<double> &orientations);
-
-    void ReadEdgesFromBinary(const std::string &filepath,
-                             std::vector<cv::Point2d> &locations,
-                             std::vector<double> &orientations);
-
-    void ProcessEdges(const cv::Mat &image,
-                      const std::string &filepath,
-                      std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
-                      std::vector<cv::Point2d> &locations,
-                      std::vector<double> &orientations);
-
     void VisualizeGTRightEdge(const cv::Mat &left_image, const cv::Mat &right_image, const std::vector<std::pair<cv::Point2d, cv::Point2d>> &edge_pairs);
-
-    void CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image);
 
     void CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image);
 
