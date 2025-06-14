@@ -23,7 +23,7 @@
 #define MATCH_TOL                       (3)     //> in pixels
 
 #define MEASURE_TIMINGS                 (false)
-#define DISPLAY_STERO_EDGE_MATCHES      (false)
+#define DISPLAY_STERO_EDGE_MATCHES      (true)
 
 //> Define output file folder
 #define OUTPUT_WRITE_PATH               std::string("../output_files/")

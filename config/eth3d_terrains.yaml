@@ -1,33 +1,31 @@
-# ETH3D Low-Resolution, Multi-View Delivery Area Dataset
+# ETH3D Low-Resolution, Multi-View Terrains Dataset
 
 # Dataset Details
-dataset_dir: "/Users/saulll./Desktop/Independent Study/datasets"
-output_dir: "/Users/saulll./Desktop/Independent Study/delivery_area_outputs"
-# dataset_dir: "/gpfs/data/bkimia/Datasets/"
-# output_dir: "/gpfs/data/bkimia/cchien3/Edge_Based_Visual_Odometry/outputs"
-sequence_name: "delivery_area"
+dataset_dir: "/users/slopezlu/battlestation/independent_study/datasets"
+output_dir: "/users/slopezlu/battlestation/independent_study/outputs"
+sequence_name: "terrains"
 dataset_type: "ETH3D"
 
 # Stereo Intrinsic Parameters
 left_camera:
-  resolution: [942, 489]
-  intrinsics: [541.764, 541.764, 553.869, 232.396]
+  resolution: [940, 491]
+  intrinsics: [529.673, 529.673, 546.793, 283.888]
   distortion_coefficients: [0, 0, 0, 0]
 
 right_camera:
-  resolution: [942, 489]
-  intrinsics: [541.764, 541.764, 553.869, 232.396]
+  resolution: [940, 491]
+  intrinsics: [529.673, 529.673, 546.793, 283.888]
   distortion_coefficients: [0, 0, 0, 0]
 
 # Stereo Extrinsic Parameters
 stereo:
-  #Left Image to Right Image
+  # Left Image to Right Image
   R21:
   - [1.000000000000000, 0.000000000000000, 0.000000000000000]
   - [0.000000000000000, 1.000000000000000, 0.000000000000000]
   - [0.000000000000000, 0.000000000000000, 1.000000000000000]
 
-  T21: [-0.059891300000001, 0.000000000000001, 0.000000000000001]
+  T21: [-0.0603992000000000, 0.000000000000001, 0.000000000000001]
   
   F21: 
   - [0.000000000000000,   0.000000000000000,  0.000000000000000]
@@ -40,12 +38,12 @@ stereo:
   - [0.000000000000000,   1.000000000000000,  0.000000000000000]
   - [0.000000000000000,   0.000000000000000,   1.000000000000000]
 
-  T12: [0.059891300000001, -0.000000000000001, -0.000000000000001]
+  T12: [0.0603992000000000, -0.000000000000001, -0.000000000000001]
   
   F12: 
   - [0.000000000000000,  0.000000000000000,   0.000000000000000]
   - [0.000000000000000,  0.000000000000000,  -0.000110548689097]
   - [0.000000000000000,   0.000110548689097,  0.000000000000000]
 
-  focal_length: 541.764
-  baseline: 0.0599101
+  focal_length: 529.673
+  baseline: 0.0603992

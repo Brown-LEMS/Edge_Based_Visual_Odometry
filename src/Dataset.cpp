@@ -30,7 +30,6 @@
 #include <boost/filesystem.hpp>
 #endif
 
-
 cv::Mat merged_visualization_global;
 
 // =======================================================================================================
@@ -196,7 +195,7 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 100000;
+    int num_pairs = 3;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
     // std::vector<cv::Mat> right_ref_disparity_maps;
@@ -1103,8 +1102,8 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
     cv::Point2d ground_truth_edge;
 
     //MAKE SURE TO UPDATE THIS ACCORDINGLY
-    // int skip = (!selected_ground_truth_edges.empty()) ? 100 : 1;
-    const int skip = 1;
+    int skip = (!selected_ground_truth_edges.empty()) ? 1000 : 1;
+    //const int skip = 1;
 
     //> Start looping over left edges
     #pragma omp for schedule(static, omp_threads) reduction(+: epi_true_positive, epi_false_negative, epi_true_negative, disp_true_positive, disp_false_negative, shift_true_positive, shift_false_negative, cluster_true_positive, cluster_false_negative, cluster_true_negative, ncc_true_positive, ncc_false_negative, lowe_true_positive, lowe_false_negative, per_edge_epi_precision, per_edge_disp_precision, per_edge_shift_precision, per_edge_clust_precision, per_edge_ncc_precision, per_edge_lowe_precision, epi_edges_evaluated, disp_edges_evaluated, shift_edges_evaluated, clust_edges_evaluated, ncc_edges_evaluated, lowe_edges_evaluated)

@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED( VERSION 2.8 )
+CMAKE_MINIMUM_REQUIRED( VERSION 3.5 )
 message(STATUS "CMake version: ${CMAKE_VERSION}")
 
 set(CMAKE_CXX_STANDARD "17")
@@ -9,7 +9,7 @@ endif()
 
 PROJECT(EDGE_BASED_VO)
 
-# set(SAUL_BUILD 1)
+set(SAUL_BUILD 1)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g -Wall" CACHE STRING "" FORCE)
 
@@ -25,7 +25,6 @@ FIND_PACKAGE(Eigen3 REQUIRED)
 FIND_PACKAGE(OpenCV REQUIRED)
 FIND_PACKAGE(OpenMP REQUIRED)
 FIND_PACKAGE(Boost REQUIRED)
-# FIND_PACKAGE(yaml-cpp REQUIRED)
 
 message("\n=====OpenCV Library=====")
 message(STATUS "[Directory]:    ${OpenCV_DIR}")
@@ -37,16 +36,21 @@ message( "========================\n")
 if(DEFINED SAUL_BUILD)
   #> for MACOS
   set(THIRD_PARTY_LIBS
-      ${OpenCV_LIBS}
-      ${Eigen_LIBS}        
-      ${GLOG_LIBRARIES}
-      ${GFLAGS_LIBRARIES}
-      pthread
-      ${CSparse_LIBRARY}
-      /usr/local/lib/libyaml-cpp.so
-    )
-  include_directories(/usr/local/include/yaml-cpp)
-  include_directories(${EIGEN3_INCLUDE_DIR} ${CSPARSE_INCLUDE_DIR})
+  ${OpenCV_LIBS}
+  ${Eigen_LIBS}
+  ${GLOG_LIBRARIES}
+  ${GFLAGS_LIBRARIES}
+  pthread
+  ${CSparse_LIBRARY}
+  yaml-cpp
+)
+
+include_directories(
+  ${EIGEN3_INCLUDE_DIR}
+  ${CSPARSE_INCLUDE_DIR}
+  /opt/homebrew/include
+)
+link_directories(/opt/homebrew/lib)
 else()
   #> for Brown CCV Oscars
   set(THIRD_PARTY_LIBS

@@ -1,0 +1,49 @@
+# ETH3D Low-Resolution, Multi-View Electro Dataset
+
+# Dataset Details
+dataset_dir: "/users/slopezlu/battlestation/independent_study/datasets"
+output_dir: "/users/slopezlu/battlestation/independent_study/outputs"
+sequence_name: "electro"
+dataset_type: "ETH3D"
+
+# Stereo Intrinsic Parameters
+left_camera:
+  resolution: [927, 489]
+  intrinsics: [543.757, 543.757, 520.987, 293.208]
+  distortion_coefficients: [0, 0, 0, 0]
+
+right_camera:
+  resolution: [927, 489]
+  intrinsics: [543.757, 543.757, 520.987, 293.208]
+  distortion_coefficients: [0, 0, 0, 0]
+
+# Stereo Extrinsic Parameters
+stereo:
+  # Left Image to Right Image
+  R21:
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+
+  T21: [-0.0598296, 0.0, 0.0]
+
+  F21:
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+
+  # Right Image to Left Image
+  R12:
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+
+  T12: [0.0598296, 0.0, 0.0]
+
+  F12:
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+
+  focal_length: 543.757
+  baseline: 0.0598296
