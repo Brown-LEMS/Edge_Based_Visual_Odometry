@@ -1206,11 +1206,11 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
         auto start_epi = std::chrono::high_resolution_clock::now();
 #endif
 
-        std::pair<std::vector<cv::Point2d>, std::vector<double>> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edge_coords, secondary_edge_orientations, 0.5);
+        std::pair<std::vector<cv::Point2d>, std::vector<double>> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edge_coords, secondary_edge_orientations, EPIP_DISTANCE_THRESH);
         std::vector<cv::Point2d> secondary_candidate_edges = secondary_candidates_data.first;
         std::vector<double> secondary_candidate_orientations = secondary_candidates_data.second;
 
-        std::pair<std::vector<cv::Point2d>, std::vector<double>> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edge_coords, secondary_edge_orientations, 3);
+        std::pair<std::vector<cv::Point2d>, std::vector<double>> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edge_coords, secondary_edge_orientations, EPIP_DISTANCE_TEST_THRESH);
         std::vector<cv::Point2d> test_secondary_candidate_edges = test_secondary_candidates_data.first;
 
         // epi_input_counts.push_back(secondary_edge_coords.size());
@@ -1492,10 +1492,9 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
         auto end_patch = std::chrono::high_resolution_clock::now();
         time_patch += std::chrono::duration<double, std::milli>(end_patch - start_patch).count();
         //> MARK: NCC
-       ///////////////////////////////NCC THRESHOLD/////////////////////////////////////////////////////
        auto start_ncc = std::chrono::high_resolution_clock::now();
 #endif
-
+    ///////////////////////////////NCC THRESHOLD/////////////////////////////////////////////////////
     //    patch_output_counts.push_back(filtered_cluster_centers.size());
        local_patch_output_counts[thread_id].push_back(filtered_cluster_centers.size());
 
@@ -1596,9 +1595,9 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
         auto end_ncc = std::chrono::high_resolution_clock::now();
         time_ncc += std::chrono::duration<double, std::milli>(end_ncc - start_ncc).count();
         //> MARK: Lowe's Ratio Test
-        ///////////////////////////////LOWES RATIO TEST//////////////////////////////////////////////
         auto start_lowe = std::chrono::high_resolution_clock::now();
 #endif
+        ///////////////////////////////LOWES RATIO TEST//////////////////////////////////////////////
         // lowe_input_counts.push_back(passed_ncc_matches.size());
         local_lowe_input_counts[thread_id].push_back(passed_ncc_matches.size());
 
