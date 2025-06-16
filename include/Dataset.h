@@ -200,6 +200,11 @@ private:
     const std::vector<double>& secondary_edge_orientations, const std::vector<cv::Mat>& primary_patch_set_one, const std::vector<cv::Mat>& primary_patch_set_two, const std::vector<Eigen::Vector3d>& epipolar_lines_secondary, 
     const cv::Mat& secondary_image, const std::vector<cv::Point2d>& selected_ground_truth_edges = std::vector<cv::Point2d>());
 
+    void SaveReprojectionOverlay(const std::string& image_path,
+        const std::vector<cv::Point2f>& original_points,
+        const std::vector<cv::Point2f>& reprojected_points,
+        const std::string& output_path);
+
     std::vector<cv::Point3d> Calculate3DPoints(
         const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
     );

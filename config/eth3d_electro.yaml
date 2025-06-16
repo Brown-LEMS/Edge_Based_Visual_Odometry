@@ -1,49 +1,49 @@
 # ETH3D Low-Resolution, Multi-View Electro Dataset
 
 # Dataset Details
-dataset_dir: "/users/slopezlu/battlestation/independent_study/datasets"
-output_dir: "/users/slopezlu/battlestation/independent_study/outputs"
+dataset_dir: "/Users/saulll./Desktop/Independent Study/datasets"
+output_dir: "/Users/saulll./Desktop/Independent Study/electro_outputs"
 sequence_name: "electro"
 dataset_type: "ETH3D"
 
 # Stereo Intrinsic Parameters
 left_camera:
-  resolution: [927, 489]
-  intrinsics: [543.757, 543.757, 520.987, 293.208]
+  resolution: [942, 489]
+  intrinsics: [541.764, 541.764, 553.869, 232.396]
   distortion_coefficients: [0, 0, 0, 0]
 
 right_camera:
-  resolution: [927, 489]
-  intrinsics: [543.757, 543.757, 520.987, 293.208]
+  resolution: [942, 489]
+  intrinsics: [541.764, 541.764, 553.869, 232.396]
   distortion_coefficients: [0, 0, 0, 0]
 
 # Stereo Extrinsic Parameters
 stereo:
-  # Left Image to Right Image
+  #Left Image to Right Image
   R21:
-    - [1.0, 0.0, 0.0]
-    - [0.0, 1.0, 0.0]
-    - [0.0, 0.0, 1.0]
+  - [1.000000000000000, 0.000000000000000, 0.000000000000000]
+  - [0.000000000000000, 1.000000000000000, 0.000000000000000]
+  - [0.000000000000000, 0.000000000000000, 1.000000000000000]
 
-  T21: [-0.0598296, 0.0, 0.0]
+  T21: [-0.059891300000001, 0.000000000000001, 0.000000000000001]
+  
+  F21: 
+  - [0.000000000000000,   0.000000000000000,  0.000000000000000]
+  - [0.000000000000000,  0.000000000000000,   0.000110548689097]
+  - [0.000000000000000,  -0.000110548689097,  0.000000000000000]
 
-  F21:
-    - [0.0, 0.0, 0.0]
-    - [0.0, 0.0, 0.0]
-    - [0.0, 0.0, 0.0]
-
-  # Right Image to Left Image
+  #Right Image to Left Image
   R12:
-    - [1.0, 0.0, 0.0]
-    - [0.0, 1.0, 0.0]
-    - [0.0, 0.0, 1.0]
+  - [1.000000000000000,  0.000000000000000,  0.000000000000000]
+  - [0.000000000000000,   1.000000000000000,  0.000000000000000]
+  - [0.000000000000000,   0.000000000000000,   1.000000000000000]
 
-  T12: [0.0598296, 0.0, 0.0]
+  T12: [0.059891300000001, -0.000000000000001, -0.000000000000001]
+  
+  F12: 
+  - [0.000000000000000,  0.000000000000000,   0.000000000000000]
+  - [0.000000000000000,  0.000000000000000,  -0.000110548689097]
+  - [0.000000000000000,   0.000110548689097,  0.000000000000000]
 
-  F12:
-    - [0.0, 0.0, 0.0]
-    - [0.0, 0.0, 0.0]
-    - [0.0, 0.0, 0.0]
-
-  focal_length: 543.757
-  baseline: 0.0598296
+  focal_length: 541.764
+  baseline: 0.0599101

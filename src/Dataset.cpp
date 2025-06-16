@@ -195,10 +195,9 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 480;
+    int num_pairs = 2;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
-    // std::vector<cv::Mat> right_ref_disparity_maps;
     std::vector<double> max_disparity_values;
 
     std::vector<double> per_image_avg_before_epi;
@@ -243,7 +242,6 @@ void Dataset::PerformEdgeBasedVO() {
         std::string stereo_pairs_path = dataset_path + "/" + sequence_name + "/stereo_pairs";
         image_pairs = LoadETH3DImages(stereo_pairs_path, num_pairs);
         left_ref_disparity_maps = LoadETH3DLeftReferenceMaps(stereo_pairs_path, num_pairs);
-        // right_ref_disparity_maps = LoadETH3DRightReferenceMaps(stereo_pairs_path, num_pairs);
     }
 
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -252,13 +250,11 @@ void Dataset::PerformEdgeBasedVO() {
 
     std::cout << "There are " << image_pairs.size() << " image pairs" << std::endl;
 
-    //Figure out a solution for this (will skip the last image pair)
     for (size_t i = 0; i < image_pairs.size()-1; ++i) {
         const cv::Mat& curr_left_img = image_pairs[i].first;
         const cv::Mat& curr_right_img = image_pairs[i].second;
 
         const cv::Mat& left_ref_map = left_ref_disparity_maps[i]; 
-        // const cv::Mat& right_ref_map = right_ref_disparity_maps[i];
 
         const cv::Mat& next_left_img = image_pairs[i + 1].first;
         const cv::Mat& next_right_img = image_pairs[i + 1].second;
@@ -329,19 +325,7 @@ void Dataset::PerformEdgeBasedVO() {
             }
         }
 
-        //Useful for getting optimal disparity threshold for dataset
-        if (i % 10 == 0) {
-            std::cout << "[LOG] Saving disparity data for frame #" << i << "\n";
-            CalculateGTRightEdge(
-                left_third_order_edges_locations,
-                left_third_order_edges_orientation,
-                left_ref_map,
-                left_edge_map,
-                right_edge_map,
-                output_path);
-        }
-
-        // CalculateGTRightEdge(left_third_order_edges_locations, left_third_order_edges_orientation, left_ref_map, left_edge_map, right_edge_map, output_path);
+        CalculateGTRightEdge(left_third_order_edges_locations, left_third_order_edges_orientation, left_ref_map, left_edge_map, right_edge_map, output_path);
         // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map, output_path);
 
         StereoMatchResult match_result = DisplayMatches(
@@ -351,45 +335,100 @@ void Dataset::PerformEdgeBasedVO() {
             right_third_order_edges_orientation
         );
 
-#if 0
-        std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
-        std::vector<cv::Point3d> points_linear = LinearTriangulatePoints(match_result.confirmed_matches);
-        std::vector<Eigen::Vector3d> orientations_3d = Calculate3DOrientations(match_result.confirmed_matches);
-
-        std::vector<OrientedPoint3D> oriented_points;
-
-        for (size_t i = 0; i < points_opencv.size(); ++i) {
-            OrientedPoint3D op;
-            op.position = points_opencv[i];
-            op.orientation = orientations_3d[i];
-            oriented_points.push_back(op);
-        }
-
-
-        if (points_opencv.size() != points_linear.size()) {
-            std::cerr << "Mismatch in number of 3D points: OpenCV=" << points_opencv.size()
-                    << ", Linear=" << points_linear.size() << "\n";
-        } else {
-            std::cout << "Comparing " << points_opencv.size() << " 3D points...\n";
-
-            double total_error = 0.0;
-            for (size_t i = 0; i < points_opencv.size(); ++i) {
-                const auto& pt1 = points_opencv[i];
-                const auto& pt2 = points_linear[i];
-
-                double error = cv::norm(pt1 - pt2);
-                total_error += error;
-
-                std::cout << "Point " << i << ": OpenCV = [" << pt1 << "], "
-                        << "Linear = [" << pt2 << "], "
-                        << "Error = " << error << "\n";
+        if (i == 0) {
+            std::string save_im0 = output_path + "/im0.png";
+            cv::imwrite(save_im0, left_undistorted); 
+        
+            std::vector<cv::Point3d> points_3d = Calculate3DPoints(match_result.confirmed_matches);
+        
+            std::vector<cv::Point2f> reprojected_left_points;
+            std::vector<cv::Point2f> original_left_points;
+        
+            cv::Mat K_left = (cv::Mat_<double>(3, 3) <<
+                left_intr[0], 0, left_intr[2],
+                0, left_intr[1], left_intr[3],
+                0, 0, 1);
+            cv::Mat R_left = cv::Mat::eye(3, 3, CV_64F);
+            cv::Mat T_left = cv::Mat::zeros(3, 1, CV_64F);
+        
+            // Build overlay
+            for (size_t j = 0; j < points_3d.size(); ++j) {
+                const auto& pt = points_3d[j];
+                const auto& [left_edge, _] = match_result.confirmed_matches[j];
+        
+                cv::Mat X = (cv::Mat_<double>(3, 1) << pt.x, pt.y, pt.z);
+                cv::Mat x_proj = K_left * (R_left * X + T_left);
+                cv::Point2f proj_pt(
+                    static_cast<float>(x_proj.at<double>(0, 0) / x_proj.at<double>(2, 0)),
+                    static_cast<float>(x_proj.at<double>(1, 0) / x_proj.at<double>(2, 0))
+                );
+        
+                reprojected_left_points.push_back(proj_pt);
+                original_left_points.push_back(left_edge.position);
             }
-
-            std::cout << "Average triangulation error: "
-                    << (total_error / points_opencv.size()) << " units.\n";
+        
+            std::string overlay_path = output_path + "/reprojection_overlay.png";
+            SaveReprojectionOverlay(output_path + "/im0.png", original_left_points, reprojected_left_points, overlay_path);
+        
+            // Filtered 3D points and intensities
+            std::vector<std::tuple<cv::Point3d, uchar>> filtered_points;
+        
+            for (size_t j = 0; j < points_3d.size(); ++j) {
+                const auto& pt = points_3d[j];
+                const auto& [left_edge, _] = match_result.confirmed_matches[j];
+        
+                cv::Mat X = (cv::Mat_<double>(3, 1) << pt.x, pt.y, pt.z);
+                cv::Mat x_proj = K_left * (R_left * X + T_left);
+                cv::Point2f proj_pt(
+                    static_cast<float>(x_proj.at<double>(0, 0) / x_proj.at<double>(2, 0)),
+                    static_cast<float>(x_proj.at<double>(1, 0) / x_proj.at<double>(2, 0))
+                );
+        
+                double repro_error = cv::norm(proj_pt - cv::Point2f(left_edge.position));
+        
+                if (pt.z > 0.2 && pt.z < 20.0 && repro_error < 1.0) {
+                    uchar intensity = 128;
+                    cv::Point2i pixel = left_edge.position;
+                    if (pixel.x >= 0 && pixel.x < left_undistorted.cols &&
+                        pixel.y >= 0 && pixel.y < left_undistorted.rows) {
+                        intensity = left_undistorted.at<uchar>(pixel);
+                    }
+        
+                    filtered_points.emplace_back(pt, intensity);
+                }
+            }
+        
+            std::string ply_path = output_path + "/reconstructed_edges_3D_colored.ply";
+            std::ofstream ply_file(ply_path);
+            if (!ply_file.is_open()) {
+                std::cerr << "Failed to open PLY file for writing: " << ply_path << "\n";
+            } else {
+                // Write correct header with filtered point count
+                ply_file << "ply\n";
+                ply_file << "format ascii 1.0\n";
+                ply_file << "element vertex " << filtered_points.size() << "\n";
+                ply_file << "property float x\n";
+                ply_file << "property float y\n";
+                ply_file << "property float z\n";
+                ply_file << "property uchar red\n";
+                ply_file << "property uchar green\n";
+                ply_file << "property uchar blue\n";
+                ply_file << "end_header\n";
+        
+                for (const auto& [pt, intensity] : filtered_points) {
+                    ply_file << pt.x << " " << pt.y << " " << pt.z << " "
+                             << static_cast<int>(intensity) << " "
+                             << static_cast<int>(intensity) << " "
+                             << static_cast<int>(intensity) << "\n";
+                }
+        
+                ply_file.close();
+                std::cout << "[INFO] Saved " << filtered_points.size()
+                          << " filtered 3D points to " << ply_path << "\n";
+            }
         }
-#endif
-
+               
+        
 #if DISPLAY_STERO_EDGE_MATCHES
         cv::Mat left_visualization, right_visualization;
         cv::cvtColor(left_edge_map, left_visualization, cv::COLOR_GRAY2BGR);
@@ -1860,7 +1899,59 @@ std::vector<cv::Point3d> Dataset::Calculate3DPoints(
                 << " triangulated points had near-zero depth (w ≈ 0) and were skipped.\n";
     }
 
+    for (size_t i = 0; i < points_3d.size(); ++i) {
+        cv::Mat X = (cv::Mat_<double>(3, 1) << 
+            points_3d[i].x, 
+            points_3d[i].y, 
+            points_3d[i].z);
+    
+        // Left camera
+        cv::Mat X_cam_left = R_left * X + T_left;
+        cv::Mat x_proj_left = K_left * X_cam_left;
+        cv::Point2d reprojected_left(
+            x_proj_left.at<double>(0, 0) / x_proj_left.at<double>(2, 0),
+            x_proj_left.at<double>(1, 0) / x_proj_left.at<double>(2, 0)
+        );
+    
+        // Right camera
+        cv::Mat X_cam_right = R_right * X + T_right;
+        cv::Mat x_proj_right = K_right * X_cam_right;
+        cv::Point2d reprojected_right(
+            x_proj_right.at<double>(0, 0) / x_proj_right.at<double>(2, 0),
+            x_proj_right.at<double>(1, 0) / x_proj_right.at<double>(2, 0)
+        );
+    
+        // Compare to actual 2D matched positions
+        const auto& [left_edge, right_edge] = confirmed_matches[i];
+        double error_left = cv::norm(reprojected_left - left_edge.position);
+        double error_right = cv::norm(reprojected_right - right_edge.position);
+    
+        std::cout << "Point " << i << ": "
+                  << "Left reprojection error = " << error_left
+                  << ", Right reprojection error = " << error_right << "\n";
+    }    
+
     return points_3d;
+}
+
+void Dataset::SaveReprojectionOverlay(const std::string& image_path,
+    const std::vector<cv::Point2f>& original_points,
+    const std::vector<cv::Point2f>& reprojected_points,
+    const std::string& output_path) {
+cv::Mat image = cv::imread(image_path);
+if (image.empty()) {
+std::cerr << "Failed to load image for reprojection overlay: " << image_path << "\n";
+return;
+}
+
+for (size_t i = 0; i < original_points.size(); ++i) {
+cv::circle(image, original_points[i], 2, cv::Scalar(0, 255, 0), -1);  // Green circle
+cv::drawMarker(image, reprojected_points[i], cv::Scalar(0, 0, 255),
+cv::MARKER_CROSS, 5, 1);  // Red cross
+}
+
+cv::imwrite(output_path, image);
+std::cout << "[INFO] Reprojection overlay saved to " << output_path << "\n";
 }
 
 std::vector<Eigen::Vector3d> Dataset::Calculate3DOrientations(
