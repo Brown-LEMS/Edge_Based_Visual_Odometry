@@ -92,11 +92,27 @@ struct RecallMetrics {
 struct SourceEdge {
     cv::Point2d position;
     double orientation;
+
+    bool operator==(const SourceEdge& other) const {
+        return position == other.position && orientation == other.orientation;
+    }
 };
+
+namespace std {
+    template<>
+    struct hash<SourceEdge> {
+        std::size_t operator()(const SourceEdge& se) const {
+            std::size_t h1 = std::hash<double>()(se.position.x);
+            std::size_t h2 = std::hash<double>()(se.position.y);
+            std::size_t h3 = std::hash<double>()(se.orientation);
+            return ((h1 ^ (h2 << 1)) >> 1) ^ (h3 << 1);
+        }
+    };
+}
 
 struct EdgeMatchResult {
     RecallMetrics recall_metrics;
-    std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches; 
+    std::unordered_map<SourceEdge, std::vector<EdgeMatch>> edge_to_cluster_matches;
 };
 
 struct BidirectionalMetrics{

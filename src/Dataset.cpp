@@ -857,7 +857,12 @@ void Dataset::PerformEdgeBasedVO() {
         << std::fixed << std::setprecision(4) << avg_bct_precision * 100 << "\n";
 }
 
-StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::Mat& right_image, std::vector<cv::Point2d> right_edge_coords, std::vector<double> right_edge_orientations) {
+StereoMatchResult Dataset::DisplayMatches(
+    const cv::Mat& left_image,
+    const cv::Mat& right_image,
+    std::vector<cv::Point2d> right_edge_coords,
+    std::vector<double> right_edge_orientations) {
+
     ///////////////////////////////FORWARD DIRECTION///////////////////////////////
     std::vector<cv::Point2d> left_edge_coords;
     std::vector<cv::Point2d> ground_truth_right_edges;
@@ -870,32 +875,24 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
     }
 
     std::cout << "\n[Forward GT Data]\n"
-          << "  Left edge coords: " << left_edge_coords.size() << "\n"
-          << "  Left orientations: " << left_edge_orientations.size() << "\n"
-          << "  GT right edges: " << ground_truth_right_edges.size() << "\n";
+              << "  Left edge coords: " << left_edge_coords.size() << "\n"
+              << "  Left orientations: " << left_edge_orientations.size() << "\n"
+              << "  GT right edges: " << ground_truth_right_edges.size() << "\n";
 
     auto [left_orthogonal_one, left_orthogonal_two] = CalculateOrthogonalShifts(left_edge_coords, left_edge_orientations, ORTHOGONAL_SHIFT_MAG);
 
     std::vector<cv::Point2d> filtered_left_edges;
     std::vector<double> filtered_left_orientations;
     std::vector<cv::Point2d> filtered_ground_truth_right_edges;
-
     std::vector<cv::Mat> left_patch_set_one;
     std::vector<cv::Mat> left_patch_set_two;
 
     ExtractPatches(
-        PATCH_SIZE,
-        left_image,
-        left_edge_coords,
-        left_edge_orientations,
-        left_orthogonal_one,
-        left_orthogonal_two,
-        filtered_left_edges,
-        filtered_left_orientations,
-        left_patch_set_one,
-        left_patch_set_two,
-        &ground_truth_right_edges,
-        &filtered_ground_truth_right_edges
+        PATCH_SIZE, left_image, left_edge_coords, left_edge_orientations,
+        left_orthogonal_one, left_orthogonal_two,
+        filtered_left_edges, filtered_left_orientations,
+        left_patch_set_one, left_patch_set_two,
+        &ground_truth_right_edges, &filtered_ground_truth_right_edges
     );
 
     Eigen::Matrix3d fundamental_matrix_21 = ConvertToEigenMatrix(fund_mat_21);
@@ -903,21 +900,16 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
 
     std::vector<Eigen::Vector3d> epipolar_lines_right = CalculateEpipolarLine(fundamental_matrix_21, filtered_left_edges);
 
-    std::cout << "\n[Foward CalculateMatches]\n"
-          << "  Filtered left edges: " << filtered_left_edges.size() << "\n"
-          << "  Filtered left orientations: " << filtered_left_orientations.size() << "\n"
-          << "  Filtered GT right edges: " << filtered_ground_truth_right_edges.size() << "\n";
-
+    std::cout << "\n[Forward CalculateMatches]\n"
+              << "  Filtered left edges: " << filtered_left_edges.size() << "\n"
+              << "  Filtered left orientations: " << filtered_left_orientations.size() << "\n"
+              << "  Filtered GT right edges: " << filtered_ground_truth_right_edges.size() << "\n";
 
     EdgeMatchResult forward_match = CalculateMatches(
-        filtered_left_edges,
-        filtered_left_orientations,
-        right_edge_coords,
-        right_edge_orientations,
-        left_patch_set_one,
-        left_patch_set_two,
-        epipolar_lines_right,
-        right_image,
+        filtered_left_edges, filtered_left_orientations,
+        right_edge_coords, right_edge_orientations,
+        left_patch_set_one, left_patch_set_two,
+        epipolar_lines_right, right_image,
         filtered_ground_truth_right_edges
     );
 
@@ -925,130 +917,115 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
     std::vector<cv::Point2d> reverse_primary_edges;
     std::vector<double> reverse_primary_orientations;
 
-    for (const auto& match_pair : forward_match.edge_to_cluster_matches) {
-        const EdgeMatch& match_info = match_pair.second;
-
-        for (const auto& edge : match_info.contributing_edges) {
-            reverse_primary_edges.push_back(edge);
-        }
-        for (const auto& orientation : match_info.contributing_orientations) {
-            reverse_primary_orientations.push_back(orientation);
+    for (const auto& [source_edge, match_vec] : forward_match.edge_to_cluster_matches) {
+        for (const auto& match : match_vec) {
+            for (size_t i = 0; i < match.contributing_edges.size(); ++i) {
+                reverse_primary_edges.push_back(match.contributing_edges[i]);
+                reverse_primary_orientations.push_back(match.contributing_orientations[i]);
+            }
         }
     }
+
+    std::cout << "\n[Reverse Preparation]\n"
+              << "  Reverse primary edges: " << reverse_primary_edges.size() << "\n";
 
     auto [right_orthogonal_one, right_orthogonal_two] = CalculateOrthogonalShifts(reverse_primary_edges, reverse_primary_orientations, ORTHOGONAL_SHIFT_MAG);
 
     std::vector<cv::Point2d> filtered_right_edges;
     std::vector<double> filtered_right_orientations;
-    std::vector<cv::Point2d> filtered_ground_truth_left_edges;
-
     std::vector<cv::Mat> right_patch_set_one;
     std::vector<cv::Mat> right_patch_set_two;
 
     ExtractPatches(
-        PATCH_SIZE,
-        right_image,
-        reverse_primary_edges,
-        reverse_primary_orientations,
-        right_orthogonal_one,
-        right_orthogonal_two,
-        filtered_right_edges,
-        filtered_right_orientations,
-        right_patch_set_one,
-        right_patch_set_two,
-        nullptr,
-        nullptr
+        PATCH_SIZE, right_image,
+        reverse_primary_edges, reverse_primary_orientations,
+        right_orthogonal_one, right_orthogonal_two,
+        filtered_right_edges, filtered_right_orientations,
+        right_patch_set_one, right_patch_set_two,
+        nullptr, nullptr
     );
 
     std::vector<Eigen::Vector3d> epipolar_lines_left = CalculateEpipolarLine(fundamental_matrix_12, filtered_right_edges);
 
     EdgeMatchResult reverse_match = CalculateMatches(
-        filtered_right_edges,
-        filtered_right_orientations,
-        left_edge_coords,
-        left_edge_orientations,
-        right_patch_set_one,
-        right_patch_set_two,
-        epipolar_lines_left,
-        left_image
+        filtered_right_edges, filtered_right_orientations,
+        left_edge_coords, left_edge_orientations,
+        right_patch_set_one, right_patch_set_two,
+        epipolar_lines_left, left_image
     );
 
+    ///////////////////////////////BIDIRECTIONAL CONSISTENCY///////////////////////////////
     std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>> confirmed_matches;
 
     int matches_before_bct = static_cast<int>(forward_match.edge_to_cluster_matches.size());
-    std::cout << "Number of matches before BCT: " << matches_before_bct << std::endl;
+    std::cout << "\n[BCT] Matches before BCT: " << matches_before_bct << "\n";
 
     auto bct_start = std::chrono::high_resolution_clock::now();
-
     int forward_left_index = 0;
     int bct_true_positive = 0;
-    for (const auto& [left_oriented_edge, patch_match_forward] : forward_match.edge_to_cluster_matches) {
+
+    for (const auto& [left_oriented_edge, match_vec] : forward_match.edge_to_cluster_matches) {
         const cv::Point2d& left_position = left_oriented_edge.position;
         const double left_orientation = left_oriented_edge.orientation;
 
-        const auto& right_contributing_edges = patch_match_forward.contributing_edges;
-        const auto& right_contributing_orientations = patch_match_forward.contributing_orientations;
-        bool break_flag = false;
-        for (size_t i = 0; i < right_contributing_edges.size(); ++i) {
-            break_flag = false;
-            const cv::Point2d& right_position = right_contributing_edges[i];
-            const double right_orientation = right_contributing_orientations[i];
+        for (const auto& patch_match_forward : match_vec) {
+            const auto& right_contributing_edges = patch_match_forward.contributing_edges;
+            const auto& right_contributing_orientations = patch_match_forward.contributing_orientations;
 
-            for (const auto& [rev_right_edge, patch_match_rev] : reverse_match.edge_to_cluster_matches) {
-                if (cv::norm(rev_right_edge.position - right_position) <= MATCH_TOL) {
+            for (size_t i = 0; i < right_contributing_edges.size(); ++i) {
+                const cv::Point2d& right_position = right_contributing_edges[i];
+                const double right_orientation = right_contributing_orientations[i];
 
-                    for (const auto& rev_contributing_left : patch_match_rev.contributing_edges) {
-                        if (cv::norm(rev_contributing_left - left_position) <= MATCH_TOL) { 
-                            ConfirmedMatchEdge left_confirmed{left_position, left_orientation};
-                            ConfirmedMatchEdge right_confirmed{right_position, right_orientation};
-                            confirmed_matches.emplace_back(left_confirmed, right_confirmed);
+                for (const auto& [rev_right_edge, patch_matches_rev] : reverse_match.edge_to_cluster_matches) {
+                    if (cv::norm(rev_right_edge.position - right_position) <= MATCH_TOL) {
+                        for (const auto& single_rev_match : patch_matches_rev) {
+                            for (const auto& rev_contributing_left : single_rev_match.contributing_edges) {
+                                if (cv::norm(rev_contributing_left - left_position) <= MATCH_TOL) {
+                                    std::cout << "[BCT Match] Left: " << left_position
+                                              << " | Right: " << right_position
+                                              << " | GT Index: " << forward_left_index << "\n";
 
-                            cv::Point2d GT_right_edge_location = ground_truth_right_edges_after_lowe[forward_left_index];
-                            if (cv::norm(right_position - GT_right_edge_location) <= MATCH_TOL) {
-                                bct_true_positive++;
+                                    if (forward_left_index < ground_truth_right_edges_after_lowe.size()) {
+                                        const auto& GT_right = ground_truth_right_edges_after_lowe[forward_left_index];
+                                        double gt_dist = cv::norm(right_position - GT_right);
+                                        std::cout << "  GT Pos: " << GT_right << " | Distance to match: " << gt_dist << "\n";
+
+                                        if (gt_dist <= MATCH_TOL)
+                                            bct_true_positive++;
+                                    }
+
+                                    confirmed_matches.emplace_back(
+                                        ConfirmedMatchEdge{left_position, left_orientation},
+                                        ConfirmedMatchEdge{right_position, right_orientation}
+                                    );
+                                    goto next_forward;
+                                }
                             }
-                            break_flag = true;
-                            break;
                         }
                     }
                 }
-                if (break_flag) break;
             }
-            if (break_flag) break;
         }
+    next_forward:
         forward_left_index++;
     }
-
-    // //> Measure the recall of bidirectional consistency test
-    // int bct_true_positive = 0;
-    // for (int i = 0; i < confirmed_matches.size(); i++) {
-    //     ConfirmedMatchEdge right_confirmed = confirmed_matches[i].second;
-    //     cv::Point2d right_edge_location = right_confirmed.position;
-    //     cv::Point2d GT_right_edge_location = ground_truth_right_edges_after_lowe[i];
-    //     if (cv::norm(right_edge_location - GT_right_edge_location) <= MATCH_TOL) {
-    //         bct_true_positive++;
-    //     }
-    // }
-    std::cout << "BCT true positives: " << bct_true_positive << std::endl;
 
     auto bct_end = std::chrono::high_resolution_clock::now();
     double total_time_bct = std::chrono::duration<double, std::milli>(bct_end - bct_start).count();
 
-    double per_image_bct_time = (matches_before_bct > 0) ? total_time_bct / matches_before_bct : 0.0;
-
     int matches_after_bct = static_cast<int>(confirmed_matches.size());
-    std::cout << "Number of matches after BCT: " << matches_after_bct << std::endl;
-    std::cout << "Number of stacked GT right edges: " << ground_truth_right_edges_after_lowe.size() << std::endl;
+    double per_image_bct_time = (matches_before_bct > 0) ? total_time_bct / matches_before_bct : 0.0;
+    double per_image_bct_precision = (matches_after_bct > 0) ? bct_true_positive / static_cast<double>(matches_after_bct) : 0.0;
 
-    // double per_image_bct_precision = (matches_before_bct > 0) ? static_cast<double>(matches_after_bct) / matches_before_bct: 0.0;
-    double per_image_bct_precision = (matches_before_bct > 0) ? bct_true_positive / (double)(matches_after_bct) : 0.0;
-    std::cout << "BCT precision = " << per_image_bct_precision << std::endl;
+    int bct_denominator = forward_match.recall_metrics.lowe_true_positive + forward_match.recall_metrics.lowe_false_negative;
+    double bct_recall = (bct_denominator > 0) ? bct_true_positive / static_cast<double>(bct_denominator) : 0.0;
 
-    int bct_denonimator = forward_match.recall_metrics.lowe_true_positive + forward_match.recall_metrics.lowe_false_negative;
-    // int bct_true_positives = static_cast<int>(confirmed_matches.size());
-
-    double bct_recall = (bct_denonimator > 0) ? bct_true_positive / (double)(bct_denonimator) : 0.0;
-    std::cout << "BCT recall = " << bct_recall << std::endl;
+    std::cout << "\n[BCT Results]\n"
+              << "  True Positives: " << bct_true_positive << "\n"
+              << "  Matches After BCT: " << matches_after_bct << "\n"
+              << "  Precision: " << per_image_bct_precision << "\n"
+              << "  Recall: " << bct_recall << "\n"
+              << "  Time per match (ms): " << per_image_bct_time << "\n";
 
     BidirectionalMetrics bidirectional_metrics;
     bidirectional_metrics.matches_before_bct = matches_before_bct;
@@ -1057,8 +1034,11 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
     bidirectional_metrics.per_image_bct_precision = per_image_bct_precision;
     bidirectional_metrics.per_image_bct_time = per_image_bct_time;
 
-    return StereoMatchResult{forward_match, reverse_match, confirmed_matches, bidirectional_metrics};
+    return StereoMatchResult{
+        forward_match, reverse_match, confirmed_matches, bidirectional_metrics
+    };
 }
+
 
 //> MARK: Main Edge Pairing
 EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& selected_primary_edges, const std::vector<double>& selected_primary_orientations, const std::vector<cv::Point2d>& secondary_edge_coords, 
@@ -1090,10 +1070,10 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
     double total_time;
 
     //> CH: this is a global structure of final_matches
-    std::vector<std::pair<SourceEdge, EdgeMatch>> final_matches;
+    std::unordered_map<SourceEdge, std::vector<EdgeMatch>> final_matches;
 
     //> CH: this is local structure of final matches
-    std::vector< std::vector<std::pair<SourceEdge, EdgeMatch>> > local_final_matches(omp_get_max_threads());
+    std::vector<std::unordered_map<SourceEdge, std::vector<EdgeMatch>>> local_final_matches(omp_get_max_threads());
 
     //> CH: Local structures of all counts
     std::vector< std::vector<int> > local_epi_input_counts(omp_get_max_threads());
@@ -1606,48 +1586,46 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
         EdgeMatch best_match;
         double best_score = -1;
 
-        if(passed_ncc_matches.size() >= 2){
+        if (passed_ncc_matches.size() >= 2) {
             EdgeMatch second_best_match;
             double second_best_score = -1;
-
-            for(const auto& match : passed_ncc_matches){
-                if(match.final_score > best_score){
+        
+            for (const auto& match : passed_ncc_matches) {
+                if (match.final_score > best_score) {
                     second_best_score = best_score;
                     second_best_match = best_match;
-
+        
                     best_score = match.final_score;
                     best_match = match;
-                }
-                else if (match.final_score > second_best_score){
+                } else if (match.final_score > second_best_score) {
                     second_best_score = match.final_score;
                     second_best_match = match;
                 }
             }
+        
             double lowe_ratio = second_best_score / best_score;
-
-            if (lowe_ratio < 1) {
-                if (!selected_ground_truth_edges.empty()) {
-                    local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
-                    if (cv::norm(best_match.coord - ground_truth_edge) <= 3.0) {
-                        lowe_precision_numerator++;
-                        lowe_true_positive++;
-                    }
-                    else {
-                        lowe_false_negative++;
-                    }
+        
+            SourceEdge source_edge{primary_edge, primary_orientation};
+        
+            if (!selected_ground_truth_edges.empty()) {
+                local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
+        
+                // Accept if either match is close enough to GT
+                if (cv::norm(best_match.coord - ground_truth_edge) <= 3.0 ||
+                    cv::norm(second_best_match.coord - ground_truth_edge) <= 3.0) {
+                    lowe_precision_numerator++;
+                    lowe_true_positive++;
+                } else {
+                    lowe_false_negative++;
                 }
-                SourceEdge source_edge {primary_edge, primary_orientation};
-                // final_matches.emplace_back(source_edge, best_match);
-                local_final_matches[thread_id].emplace_back(source_edge, best_match);
-                // lowe_output_counts.push_back(1);
-                local_lowe_output_counts[thread_id].push_back(1);
             }
-            else {
-                lowe_false_negative++;
-                // lowe_output_counts.push_back(0);
-                local_lowe_output_counts[thread_id].push_back(0);
-            }
-        }   
+        
+            // 🔧 MODIFIED: Keep both matches regardless of Lowe ratio
+            local_final_matches[thread_id][source_edge].push_back(best_match);
+            local_final_matches[thread_id][source_edge].push_back(second_best_match);
+            local_lowe_output_counts[thread_id].push_back(2); // 🔧 We kept 2 matches
+        }
+        
         else if (passed_ncc_matches.size() == 1){
             best_match = passed_ncc_matches[0];
 
@@ -1662,9 +1640,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
             }
             
             SourceEdge source_edge {primary_edge, primary_orientation};
-            // final_matches.emplace_back(source_edge, best_match);
-            local_final_matches[thread_id].emplace_back(source_edge, best_match);
-            // lowe_output_counts.push_back(1);
+            local_final_matches[thread_id][source_edge].push_back(best_match);
             local_lowe_output_counts[thread_id].push_back(1);
         }
         else {
@@ -1763,9 +1739,16 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
     double per_image_total_time = (selected_primary_edges.size() > 0) ? (total_time / selected_primary_edges.size()) : 0.0;
 
     //> CH: stack all local_final_matches to a global final_matches
-    for (const auto& local_matches: local_final_matches) {
-        final_matches.insert(final_matches.end(), local_matches.begin(), local_matches.end());
-    }
+    for (const auto& local_map : local_final_matches) {
+        for (const auto& [source_edge, edge_matches] : local_map) {
+            // If key already exists, append new matches
+            final_matches[source_edge].insert(
+                final_matches[source_edge].end(),
+                edge_matches.begin(),
+                edge_matches.end()
+            );
+        }
+    }    
 
     for (const auto& local_counts: local_epi_input_counts)  epi_input_counts.insert(epi_input_counts.end(), local_counts.begin(), local_counts.end());
     for (const auto& local_counts: local_epi_output_counts) epi_output_counts.insert(epi_output_counts.end(), local_counts.begin(), local_counts.end());
