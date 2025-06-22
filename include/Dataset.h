@@ -92,27 +92,11 @@ struct RecallMetrics {
 struct SourceEdge {
     cv::Point2d position;
     double orientation;
-
-    bool operator==(const SourceEdge& other) const {
-        return position == other.position && orientation == other.orientation;
-    }
 };
-
-namespace std {
-    template<>
-    struct hash<SourceEdge> {
-        std::size_t operator()(const SourceEdge& se) const {
-            std::size_t h1 = std::hash<double>()(se.position.x);
-            std::size_t h2 = std::hash<double>()(se.position.y);
-            std::size_t h3 = std::hash<double>()(se.orientation);
-            return ((h1 ^ (h2 << 1)) >> 1) ^ (h3 << 1);
-        }
-    };
-}
 
 struct EdgeMatchResult {
     RecallMetrics recall_metrics;
-    std::unordered_map<SourceEdge, std::vector<EdgeMatch>> edge_to_cluster_matches;
+    std::vector<std::pair<SourceEdge, std::vector<EdgeMatch>>> source_to_cluster_matches;
 };
 
 struct BidirectionalMetrics{
@@ -216,11 +200,6 @@ private:
     const std::vector<double>& secondary_edge_orientations, const std::vector<cv::Mat>& primary_patch_set_one, const std::vector<cv::Mat>& primary_patch_set_two, const std::vector<Eigen::Vector3d>& epipolar_lines_secondary, 
     const cv::Mat& secondary_image, const std::vector<cv::Point2d>& selected_ground_truth_edges = std::vector<cv::Point2d>());
 
-    void SaveReprojectionOverlay(const std::string& image_path,
-        const std::vector<cv::Point2f>& original_points,
-        const std::vector<cv::Point2f>& reprojected_points,
-        const std::string& output_path);
-
     std::vector<cv::Point3d> Calculate3DPoints(
         const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
     );
@@ -289,11 +268,11 @@ private:
    
    std::vector<std::pair<cv::Mat, cv::Mat>> LoadETH3DImages(const std::string &stereo_pairs_path, int num_images);
    
-   std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
+   //std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
    
    std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
    
-   std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
+   //std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
    
    void WriteDisparityToBinary(const std::string& filepath, const cv::Mat& disparity_map);
    
@@ -317,9 +296,9 @@ private:
 
    void VisualizeGTRightEdge(const cv::Mat &left_image, const cv::Mat &right_image, const std::vector<std::pair<cv::Point2d, cv::Point2d>> &edge_pairs);
    
-   void CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image, const std::string &output_path);
+   void CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image);
    
-   void CalculateGTLeftEdge(const std::vector<cv::Point2d>& right_third_order_edges_locations,const std::vector<double>& right_third_order_edges_orientation,const cv::Mat& disparity_map_right_reference,const cv::Mat& left_image,const cv::Mat& right_image, const std::string &output_path);
+   void CalculateGTLeftEdge(const std::vector<cv::Point2d>& right_third_order_edges_locations,const std::vector<double>& right_third_order_edges_orientation,const cv::Mat& disparity_map_right_reference,const cv::Mat& left_image,const cv::Mat& right_image);
    
    cv::Point2d PerformEpipolarShift( cv::Point2d original_edge_location, double edge_orientation, std::vector<double> epipolar_line_coeffs, bool& b_pass_epipolar_tengency_check);
    
