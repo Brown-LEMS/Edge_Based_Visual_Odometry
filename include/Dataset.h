@@ -96,7 +96,7 @@ struct SourceEdge {
 
 struct EdgeMatchResult {
     RecallMetrics recall_metrics;
-    std::vector<std::pair<SourceEdge, std::vector<EdgeMatch>>> source_to_cluster_matches;
+    std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches; 
 };
 
 struct BidirectionalMetrics{
