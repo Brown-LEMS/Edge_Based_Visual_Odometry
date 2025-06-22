@@ -96,7 +96,7 @@ struct SourceEdge {
 
 struct EdgeMatchResult {
     RecallMetrics recall_metrics;
-    std::vector<std::pair<SourceEdge, std::vector<EdgeMatch>>> source_to_cluster_matches;
+    std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches; 
 };
 
 struct BidirectionalMetrics{
@@ -268,11 +268,11 @@ private:
    
    std::vector<std::pair<cv::Mat, cv::Mat>> LoadETH3DImages(const std::string &stereo_pairs_path, int num_images);
    
-   //std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
+   std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
    
    std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
    
-   //std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
+   std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
    
    void WriteDisparityToBinary(const std::string& filepath, const cv::Mat& disparity_map);
    
