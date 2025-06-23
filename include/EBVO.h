@@ -25,15 +25,12 @@ public:
     void ProcessEdges(const cv::Mat &image,
                       const std::string &filepath,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
-                      std::vector<cv::Point2d> &locations,
-                      std::vector<double> &orientations);
-    void CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image);
+                      std::vector<Edge> &edges);
+    void CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image);
     void ReadEdgesFromBinary(const std::string &filepath,
-                             std::vector<cv::Point2d> &locations,
-                             std::vector<double> &orientations);
+                             std::vector<Edge> &edges);
     void WriteEdgesToBinary(const std::string &filepath,
-                            const std::vector<cv::Point2d> &locations,
-                            const std::vector<double> &orientations);
+                            const std::vector<Edge> &edges);
 
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
 

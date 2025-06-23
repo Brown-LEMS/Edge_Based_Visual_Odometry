@@ -7,6 +7,7 @@ set (control_sources
         toed/cpu_toed.cpp
         Matches.cpp
         EBVO.cpp
+        Stereo_Iterator.cpp
 )
 
 add_library( lems_vo_slam ${control_sources} )

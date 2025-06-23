@@ -16,35 +16,71 @@
 #include "Frame.h"
 #include "utility.h"
 #include "./toed/cpu_toed.hpp"
+#include "Stereo_Iterator.h"
 
 // =======================================================================================================
 // class Dataset: Fetch data from dataset specified in the configuration file
 //
 // ChangeLogs
+//    Jue    25-06-17    Modified data structure for readability.
 //    Lopez  25-01-26    Modified for euroc dataset support.
 //    Chien  23-01-17    Initially created.
 //
 //> (c) LEMS, Brown University
-//> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu)
+//> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu), Jue Han (jhan192@brown.edu)
 // =======================================================================================================
+
+// struct Edge
+// {
+//     cv::Point2d location;
+//     double orientation;
+// };
+
+struct FileInfo
+{
+    std::string dataset_type;
+    std::string dataset_path;
+    std::string output_path;
+    std::string sequence_name;
+    std::string GT_file_name;
+
+    std::vector<double> GT_time_stamps;
+    std::vector<double> Img_time_stamps;
+};
+
+struct Camera
+{
+    std::vector<int> resolution;    // [width, height]
+    std::vector<double> intrinsics; // fx, fy, cx, cy
+    std::vector<double> distortion; // distortion coefficients
+    Eigen::Matrix3d R;              // rotation (to stereo)
+    Eigen::Vector3d T;              // translation (to stereo)
+    Eigen::Matrix3d F;              // fundamental matrix
+};
+
+
+struct CameraInfo
+{
+    Camera left;
+    Camera right;
+    Eigen::Matrix3d rot_frame2body_left; // From cam to body
+    Eigen::Vector3d transl_frame2body_left;
+    double focal_length;
+    double baseline;
+};
 
 struct EdgeCluster
 {
-    cv::Point2d center_coord;
-    double center_orientation;
-
-    std::vector<cv::Point2d> contributing_edges;
-    std::vector<double> contributing_orientations;
+    Edge center_edge;
+    std::vector<Edge> contributing_edges;
 };
 
 struct EdgeMatch
 {
-    cv::Point2d coord;
-    double orientation;
+    Edge edge;
     double final_score;
 
-    std::vector<cv::Point2d> contributing_edges;
-    std::vector<double> contributing_orientations;
+    std::vector<Edge> contributing_edges;
 };
 
 struct RecallMetrics
@@ -91,16 +127,11 @@ struct RecallMetrics
     double per_image_total_time;
 };
 
-struct SourceEdge
-{
-    cv::Point2d position;
-    double orientation;
-};
 
 struct EdgeMatchResult
 {
     RecallMetrics recall_metrics;
-    std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches;
+    std::vector<std::pair<Edge, EdgeMatch>> edge_to_cluster_matches;
 };
 
 struct BidirectionalMetrics
@@ -112,24 +143,13 @@ struct BidirectionalMetrics
     double per_image_bct_time;
 };
 
-struct ConfirmedMatchEdge
-{
-    cv::Point2d position;
-    double orientation;
-};
 
 struct StereoMatchResult
 {
     EdgeMatchResult forward_match;
     EdgeMatchResult reverse_match;
-    std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>> confirmed_matches;
+    std::vector<std::pair<Edge, Edge>> confirmed_matches;
     BidirectionalMetrics bidirectional_metrics;
-};
-
-struct OrientedPoint3D
-{
-    cv::Point3d position;
-    Eigen::Vector3d orientation;
 };
 
 extern cv::Mat merged_visualization_global;
@@ -139,21 +159,15 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
     typedef std::shared_ptr<Dataset> Ptr;
     Dataset(YAML::Node, bool);
+    std::unique_ptr<StereoIterator> stereo_iterator;
 
     static void onMouse(int event, int x, int y, int, void *);
-    void load_dataset(std::vector<std::pair<cv::Mat, cv::Mat>> &image_pairs, const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps, int num_pairs);
-    unsigned Total_Num_Of_Imgs;
-    int img_height, img_width;
+    void load_dataset(const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps, int num_pairs);
 
-    std::vector<cv::Point2d> left_third_order_edges_locations;
-    std::vector<double> left_third_order_edges_orientation;
-    std::vector<cv::Point2d> right_third_order_edges_locations;
-    std::vector<double> right_third_order_edges_orientation;
+    std::vector<Edge> left_edges;
+    std::vector<Edge> right_edges;
 
-    std::vector<Eigen::Matrix3d> unaligned_GT_Rot;
-    std::vector<Eigen::Vector3d> unaligned_GT_Transl;
-    std::vector<Eigen::Matrix3d> aligned_GT_Rot;
-    std::vector<Eigen::Vector3d> aligned_GT_Transl;
+    // should we make it edge pairs?
     std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> forward_gt_data;
     std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> reverse_gt_data;
 
@@ -162,56 +176,45 @@ public:
 
     std::vector<cv::Point2d> ground_truth_right_edges_after_lowe;
 
-    std::vector<std::vector<double>> get_fund_mat_21() { return fund_mat_21; };
-    std::vector<std::vector<double>> get_fund_mat_12() { return fund_mat_12; };
+    // getters
+    Eigen::Matrix3d get_fund_mat_21() { return camera_info.left.F; };
+    Eigen::Matrix3d get_fund_mat_12() { return camera_info.right.F; };
 
-    std::string get_dataset_type() { return dataset_type; }
-    std::string get_output_path() { return output_path; }
+    std::string get_dataset_type() { return file_info.dataset_type; }
+    std::string get_output_path() { return file_info.output_path; }
     int get_omp_threads() const { return omp_threads; }
-    // these two were private in the original code, but are made public for access in EBVO.cpp
-    std::vector<double> left_intr;
-    std::vector<double> right_intr;
 
-    std::vector<double> left_dist_coeffs;
-    std::vector<double> right_dist_coeffs;
+    unsigned get_num_imgs() { return Total_Num_Of_Imgs; };
+    int get_height() { return img_height; };
+    int get_width() { return img_width; };
+
+    std::vector<double> left_intr() { return camera_info.left.intrinsics; };
+    std::vector<double> right_intr() { return camera_info.right.intrinsics; };
+    std::vector<double> left_dist_coeffs() {return camera_info.left.distortion; };
+    std::vector<double> right_dist_coeffs() {return camera_info.right.distortion; };
+
+
+    // setters
+    void increment_num_imgs() { Total_Num_Of_Imgs++; };
+    void set_height(int height) { img_height = height; };
+    void set_width(int width) { img_width = width; };
 
 private:
     YAML::Node config_file;
     int omp_threads;
+    // file info
+    FileInfo file_info;
+    // camera info
+    CameraInfo camera_info;
+    // Images info
+    unsigned Total_Num_Of_Imgs;
+    int img_height, img_width;
 
-    std::string dataset_type;
-    std::string dataset_path;
-    std::string output_path;
-    std::string sequence_name;
 
-    std::string GT_file_name;
-
-    Eigen::Matrix3d rot_frame2body_left;
-    Eigen::Vector3d transl_frame2body_left;
-
-    std::vector<int> left_res;
-    int left_rate;
-    std::string left_model;
-
-    std::string left_dist_model;
-
-    std::vector<int> right_res;
-    int right_rate;
-    std::string right_model;
-
-    std::string right_dist_model;
-
-    std::vector<std::vector<double>> rot_mat_21;
-    std::vector<double> trans_vec_21;
-    std::vector<std::vector<double>> fund_mat_21;
-
-    std::vector<std::vector<double>> rot_mat_12;
-    std::vector<double> trans_vec_12;
-    std::vector<std::vector<double>> fund_mat_12;
-    double focal_length;
-    double baseline;
+    // didn't find this:
     double max_disparity;
 
+    // functions
     void PrintDatasetInfo();
 
     std::vector<std::pair<cv::Mat, cv::Mat>> LoadEuRoCImages(const std::string &csv_path, const std::string &left_path, const std::string &right_path, int num_images);
@@ -234,13 +237,7 @@ private:
 
     void CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image);
 
-    cv::Point2d PerformEpipolarShift(cv::Point2d original_edge_location, double edge_orientation, std::vector<double> epipolar_line_coeffs, bool &b_pass_epipolar_tengency_check);
-
     void Load_GT_Poses(std::string GT_Poses_File_Path);
-
-    std::vector<double> GT_time_stamps;
-
-    std::vector<double> Img_time_stamps;
 
     void Align_Images_and_GT_Poses();
 
@@ -249,5 +246,28 @@ private:
     cv::Mat Small_Patch_Radius_Map;
     Utility::Ptr utility_tool = nullptr;
 };
+// struct CameraInfo{
+//     Eigen::Matrix3d rot_frame2body_left;
+//     Eigen::Vector3d transl_frame2body_left;
+//     //left:
+//     std::vector<int> left_res;
+//     std::vector<double> left_intr;
+//     std::vector<double> left_dist_coeffs;
 
+//     //Left to right image, will become R,T,F
+//     std::vector<std::vector<double>> rot_mat_21;
+//     std::vector<double> trans_vec_21;
+//     std::vector<std::vector<double>> fund_mat_21;
+//     //right:
+//     std::vector<int> right_res;
+//     std::vector<double> right_intr;
+//     std::vector<double> right_dist_coeffs;
+//     //Right to left, will be come R, T, F too.
+//     std::vector<std::vector<double>> rot_mat_12;
+//     std::vector<double> trans_vec_12;
+//     std::vector<std::vector<double>> fund_mat_12;
+//     //some other info.
+//     double focal_length;
+//     double baseline;
+// };
 #endif

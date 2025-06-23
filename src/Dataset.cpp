@@ -44,6 +44,17 @@ cv::Mat merged_visualization_global;
 //> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu)
 // =======================================================================================================
 
+auto load_matrix = [](const YAML::Node &node) -> Eigen::Matrix3d
+{
+    Eigen::Matrix3d mat;
+    int i = 0;
+    for (const auto &row : node)
+    {
+        mat.row(i++) = Eigen::Map<const Eigen::Vector3d>(row.as<std::vector<double>>().data());
+    }
+    return mat;
+};
+
 Dataset::Dataset(YAML::Node config_map, bool use_GCC_filter) : config_file(config_map), compute_grad_depth(use_GCC_filter)
 {
 
@@ -53,175 +64,176 @@ Dataset::Dataset(YAML::Node config_map, bool use_GCC_filter) : config_file(confi
     omp_threads = omp_get_num_procs();
 #endif
 
-    dataset_path = config_file["dataset_dir"].as<std::string>();
-    output_path = config_file["output_dir"].as<std::string>();
-    sequence_name = config_file["sequence_name"].as<std::string>();
-    dataset_type = config_file["dataset_type"].as<std::string>();
-
-    if (dataset_type == "EuRoC")
+    file_info.dataset_type = config_file["dataset_type"].as<std::string>();
+    file_info.dataset_path = config_file["dataset_dir"].as<std::string>();
+    file_info.output_path = config_file["output_dir"].as<std::string>();
+    file_info.sequence_name = config_file["sequence_name"].as<std::string>();
+    if (file_info.dataset_type == "EuRoC")
     {
-        try
-        {
-            GT_file_name = config_file["state_GT_estimate_file_name"].as<std::string>();
-
-            YAML::Node left_cam = config_file["left_camera"];
-            YAML::Node right_cam = config_file["right_camera"];
-            YAML::Node stereo = config_file["stereo"];
-            YAML::Node frame_to_body = config_file["frame_to_body"];
-
-            left_res = left_cam["resolution"].as<std::vector<int>>();
-            left_intr = left_cam["intrinsics"].as<std::vector<double>>();
-            left_dist_coeffs = left_cam["distortion_coefficients"].as<std::vector<double>>();
-
-            right_res = right_cam["resolution"].as<std::vector<int>>();
-            right_intr = right_cam["intrinsics"].as<std::vector<double>>();
-            right_dist_coeffs = right_cam["distortion_coefficients"].as<std::vector<double>>();
-
-            if (stereo["R21"] && stereo["T21"] && stereo["F21"])
-            {
-                for (const auto &row : stereo["R21"])
-                {
-                    rot_mat_21.push_back(row.as<std::vector<double>>());
-                }
-
-                trans_vec_21 = stereo["T21"].as<std::vector<double>>();
-
-                for (const auto &row : stereo["F21"])
-                {
-                    fund_mat_21.push_back(row.as<std::vector<double>>());
-                }
-            }
-            else
-            {
-                std::cerr << "ERROR: Missing left-to-right stereo parameters (R21, T21, F21) in YAML file!" << std::endl;
-            }
-
-            if (stereo["R12"] && stereo["T12"] && stereo["F12"])
-            {
-                for (const auto &row : stereo["R12"])
-                {
-                    rot_mat_12.push_back(row.as<std::vector<double>>());
-                }
-                trans_vec_12 = stereo["T12"].as<std::vector<double>>();
-
-                for (const auto &row : stereo["F12"])
-                {
-                    fund_mat_12.push_back(row.as<std::vector<double>>());
-                }
-            }
-            else
-            {
-                std::cerr << "ERROR: Missing right-to-left stereo parameters (R12, T12, F12) in YAML file!" << std::endl;
-            }
-
-            if (frame_to_body["rotation"] && frame_to_body["translation"])
-            {
-                rot_frame2body_left = Eigen::Map<Eigen::Matrix3d>(frame_to_body["rotation"].as<std::vector<double>>().data()).transpose();
-                transl_frame2body_left = Eigen::Map<Eigen::Vector3d>(frame_to_body["translation"].as<std::vector<double>>().data());
-            }
-            else
-            {
-                LOG_ERROR("Missing relative rotation and translation from the left camera to the body coordinate (should be given by cam0/sensor.yaml)");
-            }
-        }
-        catch (const YAML::Exception &e)
-        {
-            std::cerr << "ERROR: Could not parse YAML file! " << e.what() << std::endl;
-        }
+        file_info.GT_file_name = config_file["state_GT_estimate_file_name"].as<std::string>();
     }
-    else if (dataset_type == "ETH3D")
-        try
+
+    try
+    {
+
+        YAML::Node left_cam = config_file["left_camera"];
+        YAML::Node right_cam = config_file["right_camera"];
+        YAML::Node stereo = config_file["stereo"];
+        YAML::Node frame_to_body = config_file["frame_to_body"];
+
+        auto load_matrix = [](const YAML::Node &node) -> Eigen::Matrix3d
         {
-            YAML::Node left_cam = config_file["left_camera"];
-            YAML::Node right_cam = config_file["right_camera"];
-            YAML::Node stereo = config_file["stereo"];
-
-            left_res = left_cam["resolution"].as<std::vector<int>>();
-            left_intr = left_cam["intrinsics"].as<std::vector<double>>();
-            left_dist_coeffs = left_cam["distortion_coefficients"].as<std::vector<double>>();
-
-            right_res = right_cam["resolution"].as<std::vector<int>>();
-            right_intr = right_cam["intrinsics"].as<std::vector<double>>();
-            right_dist_coeffs = right_cam["distortion_coefficients"].as<std::vector<double>>();
-
-            if (stereo["R21"] && stereo["T21"] && stereo["F21"])
+            Eigen::Matrix3d mat;
+            int i = 0;
+            for (const auto &row : node)
             {
-                for (const auto &row : stereo["R21"])
-                {
-                    rot_mat_21.push_back(row.as<std::vector<double>>());
-                }
-
-                trans_vec_21 = stereo["T21"].as<std::vector<double>>();
-
-                for (const auto &row : stereo["F21"])
-                {
-                    fund_mat_21.push_back(row.as<std::vector<double>>());
-                }
+                mat.row(i++) = Eigen::Map<const Eigen::Vector3d>(row.as<std::vector<double>>().data());
             }
-            else
-            {
-                std::cerr << "ERROR: Missing left-to-right stereo parameters (R21, T21, F21) in YAML file!" << std::endl;
-            }
+            return mat;
+        };
+        // Left camera
+        camera_info.left.resolution = left_cam["resolution"].as<std::vector<int>>();
+        camera_info.left.intrinsics = left_cam["intrinsics"].as<std::vector<double>>();
+        camera_info.left.distortion = left_cam["distortion_coefficients"].as<std::vector<double>>();
 
-            if (stereo["R12"] && stereo["T12"] && stereo["F12"])
-            {
-                for (const auto &row : stereo["R12"])
-                {
-                    rot_mat_12.push_back(row.as<std::vector<double>>());
-                }
-                trans_vec_12 = stereo["T12"].as<std::vector<double>>();
+        // Right camera
+        camera_info.right.resolution = right_cam["resolution"].as<std::vector<int>>();
+        camera_info.right.intrinsics = right_cam["intrinsics"].as<std::vector<double>>();
+        camera_info.right.distortion = right_cam["distortion_coefficients"].as<std::vector<double>>();
 
-                for (const auto &row : stereo["F12"])
-                {
-                    fund_mat_12.push_back(row.as<std::vector<double>>());
-                }
-            }
-            else
-            {
-                std::cerr << "ERROR: Missing right-to-left stereo parameters (R12, T12, F12) in YAML file!" << std::endl;
-            }
+        // Stereo right-from-left (R21, T21, F21)
+        if (stereo["R21"] && stereo["T21"] && stereo["F21"])
+        {
+            camera_info.left.R = load_matrix(stereo["R21"]);
+            camera_info.left.T = Eigen::Map<const Eigen::Vector3d>(stereo["T21"].as<std::vector<double>>().data());
+            camera_info.left.F = load_matrix(stereo["F21"]);
+        }
+        else
+        {
+            std::cerr << "ERROR: Missing left-to-right stereo parameters R21/T21/F21" << std::endl;
+        }
+
+        // Stereo left-from-right (R12, T12, F12)
+        if (stereo["R12"] && stereo["T12"] && stereo["F12"])
+        {
+            camera_info.right.R = load_matrix(stereo["R12"]);
+            camera_info.right.T = Eigen::Map<const Eigen::Vector3d>(stereo["T12"].as<std::vector<double>>().data());
+            camera_info.right.F = load_matrix(stereo["F12"]);
+        }
+        else
+        {
+            std::cerr << "ERROR: Missing right-to-left stereo parameters R12/T12/F12" << std::endl;
+        }
+
+        // ETH3D stereo focal length and baseline
+        if (file_info.dataset_type == "ETH3D")
+        {
             if (stereo["focal_length"] && stereo["baseline"])
             {
-                focal_length = stereo["focal_length"].as<double>();
-                baseline = stereo["baseline"].as<double>();
+                camera_info.focal_length = stereo["focal_length"].as<double>();
+                camera_info.baseline = stereo["baseline"].as<double>();
             }
             else
             {
                 std::cerr << "ERROR: Missing stereo parameters (focal_length, baseline) in YAML file!" << std::endl;
             }
         }
-        catch (const YAML::Exception &e)
+
+        // EuRoc
+        else if (file_info.dataset_type == "EuRoC")
         {
-            std::cerr << "ERROR: Could not parse YAML file! " << e.what() << std::endl;
+            if (frame_to_body["rotation"] && frame_to_body["translation"])
+            {
+                camera_info.rot_frame2body_left = Eigen::Map<Eigen::Matrix3d>(frame_to_body["rotation"].as<std::vector<double>>().data()).transpose();
+                camera_info.transl_frame2body_left = Eigen::Map<Eigen::Vector3d>(frame_to_body["translation"].as<std::vector<double>>().data());
+            }
+            else
+            {
+                LOG_ERROR("Missing relative rotation and translation from the left camera to the body coordinate (should be given by cam0/sensor.yaml)");
+            }
         }
+    }
+    catch (const YAML::Exception &e)
+    {
+        std::cerr << "ERROR: Could not parse YAML file! " << e.what() << std::endl;
+    }
 
     Total_Num_Of_Imgs = 0;
 }
 
-void Dataset::load_dataset(std::vector<std::pair<cv::Mat, cv::Mat>> &image_pairs,
-                           const std::string &dataset_type,
+void Dataset::load_dataset(const std::string &dataset_type,
                            std::vector<cv::Mat> &left_ref_disparity_maps,
                            int num_pairs)
 {
     if (dataset_type == "EuRoC")
     {
-        std::string left_path = dataset_path + "/" + sequence_name + "/mav0/cam0/data/";
-        std::string right_path = dataset_path + "/" + sequence_name + "/mav0/cam1/data/";
-        std::string image_csv_path = dataset_path + "/" + sequence_name + "/mav0/cam0/data.csv";
-        std::string ground_truth_path = dataset_path + "/" + sequence_name + "/mav0/state_groundtruth_estimate0/data.csv";
+        std::string base = file_info.dataset_path + "/" + file_info.sequence_name + "/mav0/";
 
-        image_pairs = LoadEuRoCImages(image_csv_path, left_path, right_path, num_pairs);
+        std::string cam0_path = base + "cam0/data/";
+        std::string cam1_path = base + "cam1/data/";
+        std::string csv_path = base + "cam0/data.csv";
+        std::string gt_path = base + "state_groundtruth_estimate0/data.csv";
 
-        Load_GT_Poses(ground_truth_path);
-        Align_Images_and_GT_Poses();
+        stereo_iterator = Iterators::createAlignedEuRoCIterator(
+            csv_path,
+            cam0_path,
+            cam1_path,
+            gt_path);
     }
     else if (dataset_type == "ETH3D")
     {
-        std::string stereo_pairs_path = dataset_path + "/" + sequence_name + "/stereo_pairs";
-        image_pairs = LoadETH3DImages(stereo_pairs_path, num_pairs);
+        std::string stereo_pairs_path = file_info.dataset_path + "/" + file_info.sequence_name + "/stereo_pairs";
+        stereo_iterator = Iterators::createETH3DIterator(stereo_pairs_path);
         left_ref_disparity_maps = LoadETH3DLeftReferenceMaps(stereo_pairs_path, num_pairs);
-        // right_ref_disparity_maps = LoadETH3DRightReferenceMaps(stereo_pairs_path, num_pairs);
     }
+}
+
+std::vector<cv::Mat> Dataset::LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps)
+{
+    std::vector<cv::Mat> disparity_maps;
+    std::vector<std::string> stereo_folders;
+
+    for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path))
+    {
+        if (entry.is_directory())
+        {
+            stereo_folders.push_back(entry.path().string());
+        }
+    }
+
+    std::sort(stereo_folders.begin(), stereo_folders.end());
+
+    for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++)
+    {
+        std::string folder_path = stereo_folders[i];
+        std::string disparity_csv_path = folder_path + "/disparity_map.csv";
+        std::string disparity_bin_path = folder_path + "/disparity_map.bin";
+
+        cv::Mat disparity_map;
+
+        if (std::filesystem::exists(disparity_bin_path))
+        {
+            // std::cout << "Loading disparity data from: " << disparity_bin_path << std::endl;
+            disparity_map = ReadDisparityFromBinary(disparity_bin_path);
+        }
+        else
+        {
+            // std::cout << "Parsing and storing disparity data from: " << disparity_csv_path << std::endl;
+            disparity_map = LoadDisparityFromCSV(disparity_csv_path);
+            if (!disparity_map.empty())
+            {
+                WriteDisparityToBinary(disparity_bin_path, disparity_map);
+                // std::cout << "Saved disparity data to: " << disparity_bin_path << std::endl;
+            }
+        }
+
+        if (!disparity_map.empty())
+        {
+            disparity_maps.push_back(disparity_map);
+        }
+    }
+
+    return disparity_maps;
 }
 
 void Dataset::VisualizeGTRightEdge(const cv::Mat &left_image, const cv::Mat &right_image, const std::vector<std::pair<cv::Point2d, cv::Point2d>> &left_right_edges)
@@ -315,139 +327,6 @@ void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_or
     }
 
     csv_file.flush();
-}
-
-std::vector<std::pair<cv::Mat, cv::Mat>> Dataset::LoadEuRoCImages(const std::string &csv_path, const std::string &left_path, const std::string &right_path,
-                                                                  int num_pairs)
-{
-    std::ifstream csv_file(csv_path);
-    if (!csv_file.is_open())
-    {
-        std::cerr << "ERROR: Could not open the CSV file located at " << csv_path << "!" << std::endl;
-        return {};
-    }
-
-    std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
-    std::string line;
-    bool first_line = true;
-
-    while (std::getline(csv_file, line) && image_pairs.size() < num_pairs)
-    {
-        if (first_line)
-        {
-            first_line = false;
-            continue;
-        }
-
-        std::istringstream line_stream(line);
-        std::string timestamp;
-        std::getline(line_stream, timestamp, ',');
-
-        Img_time_stamps.push_back(std::stod(timestamp));
-
-        std::string left_img_path = left_path + timestamp + ".png";
-        std::string right_img_path = right_path + timestamp + ".png";
-
-        cv::Mat curr_left_img = cv::imread(left_img_path, cv::IMREAD_GRAYSCALE);
-        cv::Mat curr_right_img = cv::imread(right_img_path, cv::IMREAD_GRAYSCALE);
-
-        if (curr_left_img.empty() || curr_right_img.empty())
-        {
-            std::cerr << "ERROR: Could not load the images: " << left_img_path << " or " << right_img_path << "!" << std::endl;
-            continue;
-        }
-
-        image_pairs.emplace_back(curr_left_img, curr_right_img);
-    }
-
-    csv_file.close();
-    return image_pairs;
-}
-
-std::vector<std::pair<cv::Mat, cv::Mat>> Dataset::LoadETH3DImages(const std::string &stereo_pairs_path, int num_pairs)
-{
-    std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
-
-    std::vector<std::string> stereo_folders;
-    for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path))
-    {
-        if (entry.is_directory())
-        {
-            stereo_folders.push_back(entry.path().string());
-        }
-    }
-
-    std::sort(stereo_folders.begin(), stereo_folders.end());
-
-    for (int i = 0; i < std::min(num_pairs, static_cast<int>(stereo_folders.size())); ++i)
-    {
-        std::string folder_path = stereo_folders[i];
-
-        std::string left_image_path = folder_path + "/im0.png";
-        std::string right_image_path = folder_path + "/im1.png";
-
-        cv::Mat left_image = cv::imread(left_image_path, cv::IMREAD_GRAYSCALE);
-        cv::Mat right_image = cv::imread(right_image_path, cv::IMREAD_GRAYSCALE);
-
-        if (!left_image.empty() && !right_image.empty())
-        {
-            image_pairs.emplace_back(left_image, right_image);
-        }
-        else
-        {
-            std::cerr << "ERROR: Could not load images from folder: " << folder_path << std::endl;
-        }
-    }
-
-    return image_pairs;
-}
-
-std::vector<cv::Mat> Dataset::LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps)
-{
-    std::vector<cv::Mat> disparity_maps;
-    std::vector<std::string> stereo_folders;
-
-    for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path))
-    {
-        if (entry.is_directory())
-        {
-            stereo_folders.push_back(entry.path().string());
-        }
-    }
-
-    std::sort(stereo_folders.begin(), stereo_folders.end());
-
-    for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++)
-    {
-        std::string folder_path = stereo_folders[i];
-        std::string disparity_csv_path = folder_path + "/disparity_map.csv";
-        std::string disparity_bin_path = folder_path + "/disparity_map.bin";
-
-        cv::Mat disparity_map;
-
-        if (std::filesystem::exists(disparity_bin_path))
-        {
-            // std::cout << "Loading disparity data from: " << disparity_bin_path << std::endl;
-            disparity_map = ReadDisparityFromBinary(disparity_bin_path);
-        }
-        else
-        {
-            // std::cout << "Parsing and storing disparity data from: " << disparity_csv_path << std::endl;
-            disparity_map = LoadDisparityFromCSV(disparity_csv_path);
-            if (!disparity_map.empty())
-            {
-                WriteDisparityToBinary(disparity_bin_path, disparity_map);
-                // std::cout << "Saved disparity data to: " << disparity_bin_path << std::endl;
-            }
-        }
-
-        if (!disparity_map.empty())
-        {
-            disparity_maps.push_back(disparity_map);
-        }
-    }
-
-    return disparity_maps;
 }
 
 // std::vector<cv::Mat> Dataset::LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps) {
@@ -586,182 +465,47 @@ cv::Mat Dataset::LoadDisparityFromCSV(const std::string &path)
     return disparity;
 }
 
-void Dataset::Load_GT_Poses(std::string GT_Poses_File_Path)
-{
-    // define the gtpose file
-    std::ifstream gt_pose_file(GT_Poses_File_Path);
-    if (!gt_pose_file.is_open())
-    {
-        LOG_FILE_ERROR(GT_Poses_File_Path);
-        exit(1);
-    }
-    // read line by line, and see if the first line is read
-    std::string line;
-    bool b_first_line = true;
-    if (dataset_type == "EuRoC")
-    {
-        Eigen::Matrix4d Transf_frame2body;
-        Eigen::Matrix4d inv_Transf_frame2body;
-        Transf_frame2body.setIdentity();
-        Transf_frame2body.block<3, 3>(0, 0) = rot_frame2body_left;
-        Transf_frame2body.block<3, 1>(0, 3) = transl_frame2body_left;
-        // can be made to decompose  to get inverse
-        inv_Transf_frame2body = Transf_frame2body.inverse();
-
-        Eigen::Matrix4d Transf_Poses;
-        Eigen::Matrix4d inv_Transf_Poses;
-        Transf_Poses.setIdentity();
-
-        Eigen::Matrix4d frame2world;
-
-        while (std::getline(gt_pose_file, line))
-        {
-            if (b_first_line)
-            {
-                b_first_line = false;
-                continue;
-            }
-
-            std::stringstream ss(line);
-            std::string gt_val;
-            std::vector<double> csv_row_val;
-
-            while (std::getline(ss, gt_val, ','))
-            {
-                try
-                {
-                    csv_row_val.push_back(std::stod(gt_val));
-                }
-                catch (const std::invalid_argument &e)
-                {
-                    std::cerr << "Invalid argument: " << e.what() << " for value (" << gt_val << ") from the file " << GT_Poses_File_Path << std::endl;
-                }
-                catch (const std::out_of_range &e)
-                {
-                    std::cerr << "Out of range exception: " << e.what() << " for value: " << gt_val << std::endl;
-                }
-            }
-
-            GT_time_stamps.push_back(csv_row_val[0]);
-            Eigen::Vector3d transl_val(csv_row_val[1], csv_row_val[2], csv_row_val[3]);
-            Eigen::Quaterniond quat_val(csv_row_val[4], csv_row_val[5], csv_row_val[6], csv_row_val[7]);
-            Eigen::Matrix3d rot_from_quat = quat_val.toRotationMatrix();
-
-            Transf_Poses.block<3, 3>(0, 0) = rot_from_quat;
-            Transf_Poses.block<3, 1>(0, 3) = transl_val;
-            inv_Transf_Poses = Transf_Poses.inverse();
-
-            frame2world = (inv_Transf_frame2body * inv_Transf_Poses).inverse();
-
-            unaligned_GT_Rot.push_back(frame2world.block<3, 3>(0, 0));
-            unaligned_GT_Transl.push_back(frame2world.block<3, 1>(0, 3));
-        }
-    }
-    else
-    {
-        LOG_ERROR("Dataset type not supported!");
-    }
-}
-
-void Dataset::Align_Images_and_GT_Poses()
-{
-    std::vector<double> time_stamp_diff_val;
-    std::vector<unsigned> time_stamp_diff_indx;
-    for (double img_time_stamp : Img_time_stamps)
-    {
-        time_stamp_diff_val.clear();
-        for (double gt_time_stamp : GT_time_stamps)
-        {
-            time_stamp_diff_val.push_back(std::abs(img_time_stamp - gt_time_stamp));
-        }
-        auto min_diff = std::min_element(std::begin(time_stamp_diff_val), std::end(time_stamp_diff_val));
-        int min_index;
-        if (min_diff != time_stamp_diff_val.end())
-        {
-            min_index = std::distance(std::begin(time_stamp_diff_val), min_diff);
-        }
-        else
-        {
-            LOG_ERROR("Empty vector for time stamp difference vector");
-        }
-
-        aligned_GT_Rot.push_back(unaligned_GT_Rot[min_index]);
-        aligned_GT_Transl.push_back(unaligned_GT_Transl[min_index]);
-    }
-}
-
 void Dataset::PrintDatasetInfo()
 {
-    std::cout << "Left Camera Resolution: " << left_res[0] << "x" << left_res[1] << std::endl;
-    std::cout << "\nRight Camera Resolution: " << right_res[0] << "x" << right_res[1] << std::endl;
+    std::cout << "Left Camera Resolution: " << camera_info.left.resolution[0] << "x" << camera_info.left.resolution[1] << std::endl;
+    std::cout << "\nRight Camera Resolution: " << camera_info.right.resolution[0] << "x" << camera_info.right.resolution[1] << std::endl;
 
     std::cout << "\nLeft Camera Intrinsics: ";
-    for (const auto &value : left_intr)
+    for (const auto &value : camera_info.left.intrinsics)
         std::cout << value << " ";
     std::cout << std::endl;
 
     std::cout << "\nRight Camera Intrinsics: ";
-    for (const auto &value : right_intr)
+    for (const auto &value : camera_info.right.intrinsics)
         std::cout << value << " ";
     std::cout << std::endl;
 
     std::cout << "\nStereo Extrinsic Parameters (Left to Right): \n";
 
     std::cout << "\nRotation Matrix: \n";
-    for (const auto &row : rot_mat_21)
-    {
-        for (const auto &value : row)
-        {
-            std::cout << value << " ";
-        }
-        std::cout << std::endl;
-    }
+    std::cout << camera_info.left.R << std::endl;
 
     std::cout << "\nTranslation Vector: \n";
-    for (const auto &value : trans_vec_21)
-        std::cout << value << " ";
+    std::cout << camera_info.left.T << std::endl;
     std::cout << std::endl;
 
     std::cout << "\nFundamental Matrix: \n";
-    for (const auto &row : fund_mat_21)
-    {
-        for (const auto &value : row)
-        {
-            std::cout << value << " ";
-        }
-        std::cout << std::endl;
-    }
+    std::cout << camera_info.left.F << std::endl;
 
     std::cout << "\nStereo Extrinsic Parameters (Right to Left): \n";
 
     std::cout << "\nRotation Matrix: \n";
-    for (const auto &row : rot_mat_12)
-    {
-        for (const auto &value : row)
-        {
-            std::cout << value << " ";
-        }
-        std::cout << std::endl;
-    }
+    std::cout << camera_info.right.R << std::endl;
 
     std::cout << "\nTranslation Vector: \n";
-    for (const auto &value : trans_vec_12)
-        std::cout << value << " ";
-    std::cout << std::endl;
+    std::cout << camera_info.right.T << std::endl;
 
     std::cout << "\nFundamental Matrix: \n";
-    for (const auto &row : fund_mat_12)
-    {
-        for (const auto &value : row)
-        {
-            std::cout << value << " ";
-        }
-        std::cout << std::endl;
-    }
+    std::cout << camera_info.right.F << std::endl;
 
     std::cout << "\nStereo Camera Parameters: \n";
-    std::cout << "Focal Length: " << focal_length << " pixels" << std::endl;
-    std::cout << "Baseline: " << baseline << " meters" << std::endl;
+    std::cout << "Focal Length: " << camera_info.focal_length << " pixels" << std::endl;
+    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl;
 
     std::cout << "\n"
               << std::endl;

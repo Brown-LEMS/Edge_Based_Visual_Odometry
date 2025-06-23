@@ -43,25 +43,37 @@ void EBVO::PerformEdgeBasedVO()
     std::vector<RecallMetrics> all_forward_recall_metrics;
     std::vector<BidirectionalMetrics> all_bct_metrics;
 
-    dataset.load_dataset(image_pairs, dataset.get_dataset_type(), left_ref_disparity_maps, num_pairs);
+    dataset.load_dataset(dataset.get_dataset_type(), left_ref_disparity_maps, num_pairs);
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
     LOG_INFO("Start looping over all image pairs");
 
-    std::cout << "There are " << image_pairs.size() << " image pairs" << std::endl;
+    StereoFrame current_frame, next_frame;
 
-    // Figure out a solution for this (will skip the last image pair)
-    for (size_t i = 0; i < image_pairs.size() - 1; ++i)
+    // Get the first frame from the dataset
+    if (!dataset.stereo_iterator->hasNext() ||
+        !dataset.stereo_iterator->getNext(current_frame))
     {
-        const cv::Mat &curr_left_img = image_pairs[i].first;
-        const cv::Mat &curr_right_img = image_pairs[i].second;
+        LOG_ERROR("Failed to get first frame from dataset");
+        return;
+    }
 
-        const cv::Mat &left_ref_map = left_ref_disparity_maps[i];
+    size_t frame_idx = 0;
+    while (dataset.stereo_iterator->hasNext() && num_pairs - frame_idx >= 0)
+    {
+        if (!dataset.stereo_iterator->getNext(next_frame))
+        {
+            break;
+        }
+
+        const cv::Mat &curr_left_img = current_frame.left_image;
+        const cv::Mat &curr_right_img = current_frame.right_image;
+        const cv::Mat &next_left_img = next_frame.left_image;
+        const cv::Mat &next_right_img = next_frame.right_image;
+
+        const cv::Mat &left_ref_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
         // const cv::Mat& right_ref_map = right_ref_disparity_maps[i];
-
-        const cv::Mat &next_left_img = image_pairs[i + 1].first;
-        const cv::Mat &next_right_img = image_pairs[i + 1].second;
 
         std::vector<cv::Mat> curr_left_pyramid, curr_right_pyramid;
         std::vector<cv::Mat> next_left_pyramid, next_right_pyramid;
@@ -82,77 +94,80 @@ void EBVO::PerformEdgeBasedVO()
         dataset.ncc_two_vs_err.clear();
         dataset.ground_truth_right_edges_after_lowe.clear();
 
-        std::cout << "Image Pair #" << i << "\n";
-        cv::Mat left_calib = (cv::Mat_<double>(3, 3) << dataset.left_intr[0], 0, dataset.left_intr[2], 0, dataset.left_intr[1], dataset.left_intr[3], 0, 0, 1);
-        cv::Mat right_calib = (cv::Mat_<double>(3, 3) << dataset.right_intr[0], 0, dataset.right_intr[2], 0, dataset.right_intr[1], dataset.right_intr[3], 0, 0, 1);
-        cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs);
-        cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs);
+        std::cout << "Image Pair #" << frame_idx << "\n";
+        std::vector<double> left_intr = dataset.left_intr();
+        std::vector<double> right_intr = dataset.right_intr();
+
+        // is it a storage issue of us not making the original one matrix?
+        cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
+        cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
+
+        cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs());
+        cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs());
 
         cv::Mat left_undistorted, right_undistorted;
         cv::undistort(curr_left_img, left_undistorted, left_calib, left_dist_coeff_mat);
         cv::undistort(curr_right_img, right_undistorted, right_calib, right_dist_coeff_mat);
 
-        if (dataset.Total_Num_Of_Imgs == 0)
+        if (dataset.get_num_imgs() == 0)
         {
-            dataset.img_height = left_undistorted.rows;
-            dataset.img_width = left_undistorted.cols;
+            dataset.set_height(left_undistorted.rows);
+            dataset.set_width(left_undistorted.cols);
 
-            TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(dataset.img_height, dataset.img_width));
+            TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(dataset.get_height(), dataset.get_width()));
         }
 
         std::string edge_dir = dataset.get_output_path() + "/edges";
         std::filesystem::create_directories(edge_dir);
 
-        std::string left_edge_path = edge_dir + "/left_edges_" + std::to_string(i);
-        std::string right_edge_path = edge_dir + "/right_edges_" + std::to_string(i);
+        std::string left_edge_path = edge_dir + "/left_edges_" + std::to_string(frame_idx);
+        std::string right_edge_path = edge_dir + "/right_edges_" + std::to_string(frame_idx);
 
-        ProcessEdges(left_undistorted, left_edge_path, TOED, dataset.left_third_order_edges_locations, dataset.left_third_order_edges_orientation);
-        std::cout << "Number of edges on the left image: " << dataset.left_third_order_edges_locations.size() << std::endl;
+        ProcessEdges(left_undistorted, left_edge_path, TOED, dataset.left_edges);
+        std::cout << "Number of edges on the left image: " << dataset.left_edges.size() << std::endl;
 
-        ProcessEdges(right_undistorted, right_edge_path, TOED, dataset.right_third_order_edges_locations, dataset.right_third_order_edges_orientation);
-        std::cout << "Number of edges on the right image: " << dataset.right_third_order_edges_locations.size() << std::endl;
+        ProcessEdges(right_undistorted, right_edge_path, TOED, dataset.right_edges);
+        std::cout << "Number of edges on the right image: " << dataset.right_edges.size() << std::endl;
 
-        dataset.Total_Num_Of_Imgs++;
+        dataset.increment_num_imgs();
 
         cv::Mat left_edge_map = cv::Mat::zeros(left_undistorted.size(), CV_8UC1);
         cv::Mat right_edge_map = cv::Mat::zeros(right_undistorted.size(), CV_8UC1);
 
-        for (const auto &edge : dataset.left_third_order_edges_locations)
+        for (const auto &edge : dataset.left_edges)
         {
-            if (edge.x >= 0 && edge.x < left_edge_map.cols && edge.y >= 0 && edge.y < left_edge_map.rows)
+            if (edge.location.x >= 0 && edge.location.x < left_edge_map.cols && edge.location.y >= 0 && edge.location.y < left_edge_map.rows)
             {
-                left_edge_map.at<uchar>(cv::Point(edge.x, edge.y)) = 255;
+                left_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
             }
         }
 
-        for (const auto &edge : dataset.right_third_order_edges_locations)
+        for (const auto &edge : dataset.right_edges)
         {
-            if (edge.x >= 0 && edge.x < right_edge_map.cols && edge.y >= 0 && edge.y < right_edge_map.rows)
+            if (edge.location.x >= 0 && edge.location.x < right_edge_map.cols && edge.location.y >= 0 && edge.location.y < right_edge_map.rows)
             {
-                right_edge_map.at<uchar>(cv::Point(edge.x, edge.y)) = 255;
+                right_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
             }
         }
-
-        CalculateGTRightEdge(dataset.left_third_order_edges_locations, dataset.left_third_order_edges_orientation, left_ref_map, left_edge_map, right_edge_map);
+        std::cout << "right_edge_map" << std::endl;
+        CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
         // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
-
+        std::cout << "CalculateGTRightEdge" << std::endl;
         StereoMatchResult match_result = DisplayMatches(
             left_undistorted,
             right_undistorted,
-            dataset.right_third_order_edges_locations,
-            dataset.right_third_order_edges_orientation,
             dataset);
-
+        std::cout << "DisplayMatches" << std::endl;
 #if 0
         std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
         std::vector<cv::Point3d> points_linear = LinearTriangulatePoints(match_result.confirmed_matches);
         std::vector<Eigen::Vector3d> orientations_3d = Calculate3DOrientations(match_result.confirmed_matches);
 
-        std::vector<OrientedPoint3D> oriented_points;
+        std::vector<Edge> oriented_points;
 
         for (size_t i = 0; i < points_opencv.size(); ++i) {
-            OrientedPoint3D op;
-            op.position = points_opencv[i];
+            Edge op;
+            op.location = points_opencv[i];
             op.orientation = orientations_3d[i];
             oriented_points.push_back(op);
         }
@@ -261,6 +276,8 @@ void EBVO::PerformEdgeBasedVO()
 
         per_image_avg_before_bct.push_back(match_result.bidirectional_metrics.matches_before_bct);
         per_image_avg_after_bct.push_back(match_result.bidirectional_metrics.matches_after_bct);
+
+        frame_idx++;
     }
 
     double total_epi_recall = 0.0;
@@ -621,24 +638,22 @@ void EBVO::PerformEdgeBasedVO()
 void EBVO::ProcessEdges(const cv::Mat &image,
                         const std::string &filepath,
                         std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
-                        std::vector<cv::Point2d> &locations,
-                        std::vector<double> &orientations)
+                        std::vector<Edge> &edges)
 {
     std::string path = filepath + ".bin";
 
     if (std::filesystem::exists(path))
     {
         // std::cout << "Loading edge data from: " << path << std::endl;
-        ReadEdgesFromBinary(path, locations, orientations);
+        ReadEdgesFromBinary(path, edges);
     }
     else
     {
         // std::cout << "Running third-order edge detector..." << std::endl;
         toed->get_Third_Order_Edges(image);
-        locations = toed->toed_locations;
-        orientations = toed->toed_orientations;
+        edges = toed->toed_edges;
 
-        WriteEdgesToBinary(path, locations, orientations);
+        WriteEdgesToBinary(path, edges);
         // std::cout << "Saved edge data to: " << path << std::endl;
     }
 }
@@ -695,7 +710,7 @@ std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2
     return {selected_points, selected_orientations, selected_ground_truth_points};
 }
 
-void EBVO::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
+void EBVO::CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
 {
     dataset.forward_gt_data.clear();
 
@@ -710,20 +725,17 @@ void EBVO::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order
         csv_file.open(filename, std::ios::out);
     }
 
-    for (size_t i = 0; i < left_third_order_edges_locations.size(); i++)
+    for (const Edge &e : edges)
     {
-        const cv::Point2d &left_edge = left_third_order_edges_locations[i];
-        double orientation = left_third_order_edges_orientation[i];
-
-        double disparity = Bilinear_Interpolation(disparity_map, left_edge);
+        double disparity = Bilinear_Interpolation(disparity_map, e.location);
 
         if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
         {
             continue;
         }
 
-        cv::Point2d right_edge(left_edge.x - disparity, left_edge.y);
-        dataset.forward_gt_data.emplace_back(left_edge, right_edge, orientation);
+        cv::Point2d right_edge(e.location.x - disparity, e.location.y);
+        dataset.forward_gt_data.emplace_back(e.location, right_edge, e.orientation);
 
         if (total_rows_written >= max_rows_per_file)
         {
@@ -742,8 +754,7 @@ void EBVO::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order
 }
 
 void EBVO::ReadEdgesFromBinary(const std::string &filepath,
-                               std::vector<cv::Point2d> &locations,
-                               std::vector<double> &orientations)
+                               std::vector<Edge> &edges)
 {
     std::ifstream ifs(filepath, std::ios::binary);
     if (!ifs.is_open())
@@ -755,16 +766,12 @@ void EBVO::ReadEdgesFromBinary(const std::string &filepath,
     size_t size = 0;
     ifs.read(reinterpret_cast<char *>(&size), sizeof(size));
 
-    locations.resize(size);
-    orientations.resize(size);
-
-    ifs.read(reinterpret_cast<char *>(locations.data()), sizeof(cv::Point2d) * size);
-    ifs.read(reinterpret_cast<char *>(orientations.data()), sizeof(double) * size);
+    edges.resize(size);
+    ifs.read(reinterpret_cast<char *>(edges.data()), sizeof(Edge) * size);
 }
 
 void EBVO::WriteEdgesToBinary(const std::string &filepath,
-                              const std::vector<cv::Point2d> &locations,
-                              const std::vector<double> &orientations)
+                              const std::vector<Edge> &edges)
 {
     std::ofstream ofs(filepath, std::ios::binary);
     if (!ofs.is_open())
@@ -773,8 +780,7 @@ void EBVO::WriteEdgesToBinary(const std::string &filepath,
         return;
     }
 
-    size_t size = locations.size();
+    size_t size = edges.size();
     ofs.write(reinterpret_cast<const char *>(&size), sizeof(size));
-    ofs.write(reinterpret_cast<const char *>(locations.data()), sizeof(cv::Point2d) * size);
-    ofs.write(reinterpret_cast<const char *>(orientations.data()), sizeof(double) * size);
+    ofs.write(reinterpret_cast<const char *>(edges.data()), sizeof(Edge) * size);
 }

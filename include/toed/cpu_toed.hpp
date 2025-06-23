@@ -17,12 +17,20 @@
 //
 // ChangeLogs
 //    Chien  25-02-08    Imported from the original third-order edge detector.
+//    Jue    25-06-17    Modified for an edge-based structure.
 //
 //> (c) LEMS, Brown University
 //> Chiang-Heng Chien (chiang-heng_chien@brown.edu)
 // =======================================================================================================
 
-class ThirdOrderEdgeDetectionCPU {
+struct Edge
+{
+  cv::Point2d location; //> x, y location of the edge point
+  double orientation;   //> orientation of the edge point
+};
+
+class ThirdOrderEdgeDetectionCPU
+{
 
   typedef std::shared_ptr<ThirdOrderEdgeDetectionCPU> Ptr;
   int img_height;
@@ -39,13 +47,12 @@ class ThirdOrderEdgeDetectionCPU {
   double *I_grad_mag;
   double *I_orient;
 
-  double *subpix_pos_x_map;         //> store x of subpixel location --
-  double *subpix_pos_y_map;         //> store y of subpixel location --
-  double *subpix_grad_mag_map;      //> store subpixel gradient magnitude --
+  double *subpix_pos_x_map;    //> store x of subpixel location --
+  double *subpix_pos_y_map;    //> store y of subpixel location --
+  double *subpix_grad_mag_map; //> store subpixel gradient magnitude --
 
 public:
-
-  double *subpix_edge_pts_final;    //> a list of final edge points with all information (Nx4 array, where N is the number of third-order edges)
+  double *subpix_edge_pts_final; //> a list of final edge points with all information (Nx4 array, where N is the number of third-order edges)
   int edge_pt_list_idx;
   int num_of_edge_data;
   int omp_threads;
@@ -57,18 +64,16 @@ public:
   ~ThirdOrderEdgeDetectionCPU();
 
   //> member functions
-  void get_Third_Order_Edges( cv::Mat img );
-  void preprocessing( cv::Mat image );
+  void get_Third_Order_Edges(cv::Mat img);
+  void preprocessing(cv::Mat image);
   void convolve_img();
   int non_maximum_suppresion();
 
   void read_array_from_file(std::string filename, double *rd_data, int first_dim, int second_dim);
   void write_array_to_file(std::string filename, double *wr_data, int first_dim, int second_dim);
 
-  std::vector<cv::Point2d> toed_locations;
-  std::vector<double> toed_orientations;
+  std::vector<Edge> toed_edges;
   int Total_Num_Of_TOED;
-  
 };
 
-#endif    // TOED_HPP
+#endif // TOED_HPP
