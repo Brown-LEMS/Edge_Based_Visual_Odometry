@@ -5,6 +5,9 @@ set (control_sources
         utility.cpp
         MotionTracker.cpp
         toed/cpu_toed.cpp
+        Matches.cpp
+        EBVO.cpp
+        Stereo_Iterator.cpp
 )
 
 add_library( lems_vo_slam ${control_sources} )

@@ -6,6 +6,7 @@
 #include "../include/definitions.h"
 #include "../include/Dataset.h"
 #include "../include/Pipeline.h"
+#include "../include/EBVO.h"
 
 #if USE_GLOGS
 #include <glog/logging.h>
@@ -15,7 +16,7 @@
 // main_VO: main function for LEMS VO pipeline
 //
 // ChangeLogs
-//    Lopez  25-01-26    Modified to perform Edge-Based Visual Odometry. 
+//    Lopez  25-01-26    Modified to perform Edge-Based Visual Odometry.
 //    Chien  24-01-16    Initially built on top of Hongyi's LEMS Visual Odometry framework.
 //
 //> (c) LEMS, Brown University
@@ -29,69 +30,84 @@
 DEFINE_string(config_file, "../config/tum.yaml", "config file path");
 #endif
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 
 	//> Get input arguments
 #if USE_GLOGS
 	google::ParseCommandLineFlags(&argc, &argv, true);
 #else
 	//> Get input argument
-	--argc; ++argv;
+	--argc;
+	++argv;
 	std::string arg;
 	int argIndx = 0, argTotal = 4;
 	std::string FLAGS_config_file;
 
-	if (argc) {
+	if (argc)
+	{
 		arg = std::string(*argv);
-		if (arg == "-h" || arg == "--help") {
+		if (arg == "-h" || arg == "--help")
+		{
 			LOG_PRINT_HELP_MESSAGE;
 			return 0;
 		}
-		else if (argc <= argTotal) {
-		while(argIndx <= argTotal-1) {
-			if (arg == "-c" || arg == "--config_file") {
+		else if (argc <= argTotal)
+		{
+			while (argIndx <= argTotal - 1)
+			{
+				if (arg == "-c" || arg == "--config_file")
+				{
+					argv++;
+					arg = std::string(*argv);
+					FLAGS_config_file = arg;
+					argIndx += 2;
+					break;
+				}
+				else
+				{
+					LOG_ERROR("Invalid input arguments! Follow the instruction:");
+					LOG_PRINT_HELP_MESSAGE;
+					return 0;
+				}
 				argv++;
-				arg = std::string(*argv);
-				FLAGS_config_file = arg;
-				argIndx+=2;
-				break;
 			}
-			else {
-				LOG_ERROR("Invalid input arguments! Follow the instruction:");
-				LOG_PRINT_HELP_MESSAGE;
-				return 0;
-			}
-			argv++;
 		}
-		}
-		else if (argc > argTotal) {
+		else if (argc > argTotal)
+		{
 			LOG_ERROR("Too many input arguments! Follow the instruction:");
 			LOG_PRINT_HELP_MESSAGE;
 			return 0;
 		}
 	}
-	else {
+	else
+	{
 		LOG_PRINT_HELP_MESSAGE;
 		return 0;
 	}
 #endif
 	YAML::Node config_map;
-	
-	try {
+
+	try
+	{
 		config_map = YAML::LoadFile(FLAGS_config_file);
 #if SHOW_YAML_FILE_DATA
 		std::cout << config_map << std::endl;
 #endif
 	}
-	catch (const std::exception& e) {
+	catch (const std::exception &e)
+	{
 		std::cerr << "Exception: " << e.what() << std::endl;
 		std::cerr << "File does not exist!" << std::endl;
 	}
 
 	bool use_GCC_filter = true;
 
-	Dataset::Ptr dataset_ = Dataset::Ptr(new Dataset(config_map, use_GCC_filter));
+	// Dataset::Ptr dataset_ = Dataset::Ptr(new Dataset(config_map, use_GCC_filter));
 
-	dataset_->PerformEdgeBasedVO();
+	// dataset_->PerformEdgeBasedVO();
+
+	EBVO ebvo(config_map, use_GCC_filter);
+	ebvo.PerformEdgeBasedVO();
 	return 0;
 }
