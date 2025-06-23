@@ -263,6 +263,9 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     auto [left_orthogonal_one, left_orthogonal_two] = CalculateOrthogonalShifts(left_edges, ORTHOGONAL_SHIFT_MAG, dataset);
 
+    // std::cout << left_orthogonal_one.size() << std::endl;
+
+    // CalculateOrthogonalShifts clear
     std::vector<Edge> filtered_left_edges;
     std::vector<cv::Point2d> filtered_ground_truth_right_edges;
 
@@ -281,11 +284,22 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         &ground_truth_right_edges,
         &filtered_ground_truth_right_edges);
 
+    // std::cout << "Filtered left edges size: " << filtered_left_edges.size() << std::endl;
+    // std::cout << "left_patch_set_one size: " << left_patch_set_one.size() << std::endl;
+    // std::cout << "left_patch_set_two size: " << left_patch_set_two.size() << std::endl;
+    // std::cout << "Filtered ground truth right edges size: " << filtered_ground_truth_right_edges.size() << std::endl;
+
     Eigen::Matrix3d fundamental_matrix_21 = dataset.get_fund_mat_21();
     Eigen::Matrix3d fundamental_matrix_12 = dataset.get_fund_mat_12();
 
+    // std::cout << fundamental_matrix_21 << std::endl;
+    // std::cout << fundamental_matrix_12 << std::endl;
+
     std::vector<Eigen::Vector3d> epipolar_lines_right = CalculateEpipolarLine(fundamental_matrix_21, filtered_left_edges);
 
+    // std::cout << epipolar_lines_right.size() << std::endl;
+
+    // good so far
     EdgeMatchResult forward_match = CalculateMatches(
         filtered_left_edges,
         dataset.right_edges,
@@ -296,6 +310,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         dataset,
         filtered_ground_truth_right_edges);
 
+    std::cout << forward_match.edge_to_cluster_matches.size() << std::endl;
     ///////////////////////////////REVERSE DIRECTION///////////////////////////////
     std::vector<Edge> reverse_primary_edges;
 
@@ -462,9 +477,11 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     double total_time;
 
     //> CH: this is a global structure of final_matches
+    // was  std::vector<std::pair<SourceEdge, EdgeMatch>> final_matches;
     std::vector<std::pair<Edge, EdgeMatch>> final_matches;
 
     //> CH: this is local structure of final matches
+    // was std::vector<std::vector<std::pair<SourceEdge, EdgeMatch>>> local_final_matches(omp_get_max_threads());
     std::vector<std::vector<std::pair<Edge, EdgeMatch>>> local_final_matches(omp_get_max_threads());
 
     //> CH: Local structures of all counts
@@ -582,9 +599,8 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 #if MEASURE_TIMINGS
             auto start_epi = std::chrono::high_resolution_clock::now();
 #endif
-
+            // this works fine
             std::vector<Edge> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 0.5);
-
             std::vector<Edge> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 3);
 
             // epi_input_counts.push_back(secondary_edge_coords.size());
@@ -604,8 +620,10 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
                 for (const auto &candidate : secondary_candidates_data)
                 {
+
                     if (cv::norm(candidate.location - ground_truth_edge) <= 0.5)
                     {
+                        // std::cout << "Match found: " << candidate.location << " vs " << ground_truth_edge << std::endl;
                         epi_precision_numerator++;
                         match_found = true;
                         // break;
@@ -615,6 +633,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 if (match_found)
                 {
                     epi_true_positive++;
+                    // std::cout << "Match found: " << primary_edge.location << " vs " << ground_truth_edge << std::endl;
                 }
                 else
                 {
@@ -623,6 +642,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                     {
                         if (cv::norm(test_candidate.location - ground_truth_edge) <= 0.5)
                         {
+                            // std::cout << "GT match found: " << test_candidate.location << " vs " << ground_truth_edge << std::endl;
                             gt_match_found = true;
                             break;
                         }
@@ -666,6 +686,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 if (within_horizontal && within_vertical)
                 {
                     filtered_secondary_edges.push_back(secondary_edge);
+                    // checked: std::cout << "Filtered secondary edge: " << secondary_edge.location << std::endl;
                 }
             }
 
@@ -681,6 +702,8 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
+                // checked: std::cout << "Filtered secondary edges size: " << filtered_secondary_edges.size() << std::endl;
+
                 int disp_precision_numerator = 0;
                 bool disp_match_found = false;
 
@@ -688,6 +711,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 {
                     if (cv::norm(filtered_candidate.location - ground_truth_edge) <= 0.5)
                     {
+                        // checked: std::cout << "Disparity match found: " << filtered_candidate.location << " vs " << ground_truth_edge << std::endl;
                         disp_precision_numerator++;
                         disp_match_found = true;
                         // break;
@@ -726,6 +750,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 Edge shifted_edge = PerformEpipolarShift(filtered_secondary_edges[j], epipolar_coefficients, secondary_passes_tangency);
                 if (secondary_passes_tangency)
                 {
+                    // std::cout << "Secondary edge passes tangency: " << shifted_edge.location << std::endl;
                     shifted_secondary_edge.push_back(shifted_edge);
                 }
             }
@@ -745,8 +770,10 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 int shift_precision_numerator = 0;
                 bool shift_match_found = false;
 
+                // checked:std::cout << "Shifted secondary edges size: " << shifted_secondary_edge.size() << std::endl;
                 for (const auto &shifted_candidate : shifted_secondary_edge)
                 {
+                    // checked : std::cout << "Shifted candidate edge: " << shifted_candidate.location << std::endl;
                     if (cv::norm(shifted_candidate.location - ground_truth_edge) <= 3.0)
                     {
                         shift_precision_numerator++;
@@ -779,7 +806,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
             std::vector<std::vector<Edge>> clusters = ClusterEpipolarShiftedEdges(shifted_secondary_edge); // notice: shifted_secondary_edge will be changed inside the function but wouldn't be used later on.
             std::vector<EdgeCluster> cluster_centers;
-
+            // checked, but very small.  std::cout << "Clusters size: " << clusters.size() << std::endl;
             for (const auto &cluster_edges : clusters)
             {
 
@@ -819,9 +846,10 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             {
                 int clust_precision_numerator = 0;
                 bool cluster_match_found = false;
-
+                // checked: std::cout << "Cluster centers size: " << cluster_centers.size() << std::endl;
                 for (const auto &cluster : cluster_centers)
                 {
+                    // checked std::cout << "Cluster center edge: " << cluster.center_edge.location << std::endl;
                     if (cv::norm(cluster.center_edge.location - ground_truth_edge) <= 3.0)
                     {
                         clust_precision_numerator++;
@@ -856,6 +884,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
             for (const auto &cluster : cluster_centers)
             {
+                // checked: std::cout << "Cluster center edge location: " << cluster.center_edge.location << std::endl;
                 cluster_coords.push_back(cluster.center_edge);
             }
 
@@ -879,7 +908,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 nullptr,
                 secondary_patch_set_one,
                 secondary_patch_set_two);
-
+            // checked: but always 1,3,2.. std::cout << "Filtered cluster centers size: " << filtered_cluster_centers.size() << std::endl;
             // patch_input_counts.push_back(cluster_centers.size());
             local_patch_input_counts[thread_id].push_back(cluster_centers.size());
 
@@ -924,6 +953,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 #endif
                     if (ncc_one >= NCC_THRESH_STRONG_BOTH_SIDES && ncc_two >= NCC_THRESH_STRONG_BOTH_SIDES)
                     {
+                        // checked std::cout << "Strong match found: " << filtered_cluster_centers[i].center_edge.location << std::endl;
                         EdgeMatch info;
                         info.edge = filtered_cluster_centers[i].center_edge;
                         info.final_score = final_score;
@@ -934,6 +964,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                         {
                             if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= 3.0)
                             {
+
                                 ncc_match_found = true;
                                 ncc_precision_numerator++;
                             }
@@ -941,6 +972,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                     }
                     else if (ncc_one >= NCC_THRESH_STRONG_ONE_SIDE || ncc_two >= NCC_THRESH_STRONG_ONE_SIDE)
                     {
+                        // checked std::cout << "One side strong match found: " << filtered_cluster_centers[i].center_edge.location << std::endl;
                         EdgeMatch info;
                         info.edge = filtered_cluster_centers[i].center_edge;
                         info.final_score = final_score;
@@ -958,6 +990,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                     }
                     else if (ncc_one >= NCC_THRESH_WEAK_BOTH_SIDES && ncc_two >= NCC_THRESH_WEAK_BOTH_SIDES && filtered_cluster_centers.size() == 1)
                     {
+                        // checked std::cout << "Weak match found: " << filtered_cluster_centers[i].center_edge.location << std::endl;
                         EdgeMatch info;
                         info.edge = filtered_cluster_centers[i].center_edge;
                         info.final_score = final_score;
@@ -1050,9 +1083,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                             lowe_false_negative++;
                         }
                     }
-
+                    Edge source_edge = primary_edge;
                     // final_matches.emplace_back(primary_edge, best_match);
-                    local_final_matches[thread_id].emplace_back(primary_edge, best_match);
+                    local_final_matches[thread_id].emplace_back(source_edge, best_match);
                     // lowe_output_counts.push_back(1);
                     local_lowe_output_counts[thread_id].push_back(1);
                 }
@@ -1080,9 +1113,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                         lowe_false_negative++;
                     }
                 }
-
-                                // final_matches.emplace_back(primary_edge, best_match);
-                local_final_matches[thread_id].emplace_back(primary_edge, best_match);
+                Edge source_edge = primary_edge;
+                // final_matches.emplace_back(primary_edge, best_match);
+                local_final_matches[thread_id].emplace_back(source_edge, best_match);
                 // lowe_output_counts.push_back(1);
                 local_lowe_output_counts[thread_id].push_back(1);
             }
@@ -1190,11 +1223,12 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     double per_image_total_time = (selected_primary_edges.size() > 0) ? (total_time / selected_primary_edges.size()) : 0.0;
 
     //> CH: stack all local_final_matches to a global final_matches
+
     for (const auto &local_matches : local_final_matches)
     {
         final_matches.insert(final_matches.end(), local_matches.begin(), local_matches.end());
     }
-
+    std::cout << "Final matches size: " << final_matches.size() << std::endl;
     for (const auto &local_counts : local_epi_input_counts)
         epi_input_counts.insert(epi_input_counts.end(), local_counts.begin(), local_counts.end());
     for (const auto &local_counts : local_epi_output_counts)

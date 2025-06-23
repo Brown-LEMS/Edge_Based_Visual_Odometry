@@ -149,15 +149,15 @@ void EBVO::PerformEdgeBasedVO()
                 right_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
             }
         }
-        std::cout << "right_edge_map" << std::endl;
+
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
         // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
-        std::cout << "CalculateGTRightEdge" << std::endl;
+
         StereoMatchResult match_result = DisplayMatches(
             left_undistorted,
             right_undistorted,
             dataset);
-        std::cout << "DisplayMatches" << std::endl;
+
 #if 0
         std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
         std::vector<cv::Point3d> points_linear = LinearTriangulatePoints(match_result.confirmed_matches);
