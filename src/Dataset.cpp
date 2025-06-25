@@ -30,6 +30,7 @@
 #include <boost/filesystem.hpp>
 #endif
 
+
 cv::Mat merged_visualization_global;
 
 // =======================================================================================================
@@ -195,7 +196,7 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 480;
+    int num_pairs = 598;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
     // std::vector<cv::Mat> right_ref_disparity_maps;
@@ -329,20 +330,8 @@ void Dataset::PerformEdgeBasedVO() {
             }
         }
 
-        //Useful for getting optimal disparity threshold for dataset
-        if (i % 10 == 0) {
-            std::cout << "[LOG] Saving disparity data for frame #" << i << "\n";
-            CalculateGTRightEdge(
-                left_third_order_edges_locations,
-                left_third_order_edges_orientation,
-                left_ref_map,
-                left_edge_map,
-                right_edge_map,
-                output_path);
-        }
-
-        // CalculateGTRightEdge(left_third_order_edges_locations, left_third_order_edges_orientation, left_ref_map, left_edge_map, right_edge_map, output_path);
-        // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map, output_path);
+        CalculateGTRightEdge(left_third_order_edges_locations, left_third_order_edges_orientation, left_ref_map, left_edge_map, right_edge_map);
+        // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
 
         StereoMatchResult match_result = DisplayMatches(
             left_undistorted,
@@ -830,11 +819,6 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
         left_edge_orientations.push_back(std::get<2>(data)); 
     }
 
-    std::cout << "\n[Forward GT Data]\n"
-          << "  Left edge coords: " << left_edge_coords.size() << "\n"
-          << "  Left orientations: " << left_edge_orientations.size() << "\n"
-          << "  GT right edges: " << ground_truth_right_edges.size() << "\n";
-
     auto [left_orthogonal_one, left_orthogonal_two] = CalculateOrthogonalShifts(left_edge_coords, left_edge_orientations, ORTHOGONAL_SHIFT_MAG);
 
     std::vector<cv::Point2d> filtered_left_edges;
@@ -863,12 +847,6 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
     Eigen::Matrix3d fundamental_matrix_12 = ConvertToEigenMatrix(fund_mat_12);
 
     std::vector<Eigen::Vector3d> epipolar_lines_right = CalculateEpipolarLine(fundamental_matrix_21, filtered_left_edges);
-
-    std::cout << "\n[Foward CalculateMatches]\n"
-          << "  Filtered left edges: " << filtered_left_edges.size() << "\n"
-          << "  Filtered left orientations: " << filtered_left_orientations.size() << "\n"
-          << "  Filtered GT right edges: " << filtered_ground_truth_right_edges.size() << "\n";
-
 
     EdgeMatchResult forward_match = CalculateMatches(
         filtered_left_edges,
@@ -1124,8 +1102,9 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
     cv::Point2d ground_truth_edge;
 
-    //int skip = (!selected_ground_truth_edges.empty()) ? 1000 : 1;
-    const int skip = 1;
+    //MAKE SURE TO UPDATE THIS ACCORDINGLY
+    int skip = (!selected_ground_truth_edges.empty()) ? 100 : 1;
+    //const int skip = 1;
 
     //> Start looping over left edges
     #pragma omp for schedule(static, omp_threads) reduction(+: epi_true_positive, epi_false_negative, epi_true_negative, disp_true_positive, disp_false_negative, shift_true_positive, shift_false_negative, cluster_true_positive, cluster_false_negative, cluster_true_negative, ncc_true_positive, ncc_false_negative, lowe_true_positive, lowe_false_negative, per_edge_epi_precision, per_edge_disp_precision, per_edge_shift_precision, per_edge_clust_precision, per_edge_ncc_precision, per_edge_lowe_precision, epi_edges_evaluated, disp_edges_evaluated, shift_edges_evaluated, clust_edges_evaluated, ncc_edges_evaluated, lowe_edges_evaluated)
@@ -1568,6 +1547,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
         EdgeMatch best_match;
         double best_score = -1;
 
+        // CASE 1: Enough matches to compute Lowe’s ratio
         if(passed_ncc_matches.size() >= 2){
             EdgeMatch second_best_match;
             double second_best_score = -1;
@@ -1585,55 +1565,66 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                     second_best_match = match;
                 }
             }
+
             double lowe_ratio = second_best_score / best_score;
+
+            std::cout << "[DEBUG] Thread " << thread_id
+              << ": Top scores = " << best_score << ", " << second_best_score
+              << " → Lowe ratio = " << lowe_ratio << std::endl;
 
             if (lowe_ratio < 1) {
                 if (!selected_ground_truth_edges.empty()) {
+                    double gt_dist = cv::norm(best_match.coord - ground_truth_edge);
+                    std::cout << "[DEBUG] Passed LRT. GT distance = " << gt_dist << std::endl;
+        
                     local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
-                    if (cv::norm(best_match.coord - ground_truth_edge) <= 3.0) {
+                    if (gt_dist <= 3.0) {
                         lowe_precision_numerator++;
                         lowe_true_positive++;
-                    }
-                    else {
+                    } else {
+                        std::cout << "[DEBUG] False negative: GT too far.\n";
                         lowe_false_negative++;
                     }
                 }
+        
                 SourceEdge source_edge {primary_edge, primary_orientation};
-                // final_matches.emplace_back(source_edge, best_match);
                 local_final_matches[thread_id].emplace_back(source_edge, best_match);
-                // lowe_output_counts.push_back(1);
                 local_lowe_output_counts[thread_id].push_back(1);
-            }
-            else {
+            } else {
+                std::cout << "[DEBUG] Rejected by LRT\n";
                 lowe_false_negative++;
-                // lowe_output_counts.push_back(0);
                 local_lowe_output_counts[thread_id].push_back(0);
             }
-        }   
-        else if (passed_ncc_matches.size() == 1){
+
+        // CASE 2: Only one match
+        }   else if (passed_ncc_matches.size() == 1){
             best_match = passed_ncc_matches[0];
 
             if (!selected_ground_truth_edges.empty()) {
+                double gt_dist = cv::norm(best_match.coord - ground_truth_edge);
+                std::cout << "[DEBUG] Only one match. GT distance = " << gt_dist << std::endl;
+        
                 local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
-                if (cv::norm(best_match.coord - ground_truth_edge) <= 3.0) {
+                if (gt_dist <= 3.0) {
                     lowe_precision_numerator++;
                     lowe_true_positive++;
                 } else {
+                    std::cout << "[DEBUG] One match but GT too far.\n";
                     lowe_false_negative++;
                 }
             }
-            
+        
             SourceEdge source_edge {primary_edge, primary_orientation};
-            // final_matches.emplace_back(source_edge, best_match);
             local_final_matches[thread_id].emplace_back(source_edge, best_match);
-            // lowe_output_counts.push_back(1);
             local_lowe_output_counts[thread_id].push_back(1);
-        }
-        else {
+
+        // CASE 3: No matches    
+        } else {
+            std::cout << "[DEBUG] No NCC matches passed.\n";
             lowe_false_negative++;
-            // lowe_output_counts.push_back(0); 
             local_lowe_output_counts[thread_id].push_back(0);
         }
+
         per_edge_lowe_precision += (static_cast<double>(lowe_precision_numerator) > 0) ? 1.0: 0.0;
         
         if (!passed_ncc_matches.empty()) {
@@ -2384,10 +2375,7 @@ double Bilinear_Interpolation(const cv::Mat &meshGrid, cv::Point2d P) {
     return ((Q12.y - P.y) / (Q12.y - Q11.y)) * f_x_y1 + ((P.y - Q11.y) / (Q12.y - Q11.y)) * f_x_y2;
 }
 
-void Dataset::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, 
-    const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, 
-    const cv::Mat &left_image, const cv::Mat &right_image, const std::string &output_path) {
-    
+void Dataset::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image) {
     forward_gt_data.clear();
 
     static size_t total_rows_written = 0;
@@ -2395,15 +2383,10 @@ void Dataset::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_or
     static std::ofstream csv_file;
     static const size_t max_rows_per_file = 1'000'000;
 
-    std::string disparity_dir = output_path + "/disparities/";
-    std::filesystem::create_directories(disparity_dir);
-
     if (!csv_file.is_open()) {
-        std::string filename = disparity_dir + "valid_disparities_part_" + std::to_string(file_index) + ".csv";
+        std::string filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
         csv_file.open(filename, std::ios::out);
     }
-
-    size_t skipped_disparities = 0;
 
     for (size_t i = 0; i < left_third_order_edges_locations.size(); i++) {
         const cv::Point2d &left_edge = left_third_order_edges_locations[i];
@@ -2412,7 +2395,6 @@ void Dataset::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_or
         double disparity = Bilinear_Interpolation(disparity_map, left_edge);
 
         if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0) {
-            skipped_disparities++;
             continue;
         }
 
@@ -2423,7 +2405,7 @@ void Dataset::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_or
             csv_file.close();
             ++file_index;
             total_rows_written = 0;
-            std::string next_filename = disparity_dir + "valid_disparities_part_" + std::to_string(file_index) + ".csv";
+            std::string next_filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
             csv_file.open(next_filename, std::ios::out);
         }
 
@@ -2432,13 +2414,9 @@ void Dataset::CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_or
     }
 
     csv_file.flush();
-
-    std::cout << "\n[CalculateGTRightEdge]\n"
-              << "  Valid disparities stored: " << forward_gt_data.size() << "\n"
-              << "  Disparities skipped: " << skipped_disparities << "\n";
 }
 
-void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d>& right_third_order_edges_locations,const std::vector<double>& right_third_order_edges_orientation,const cv::Mat& disparity_map_right_reference,const cv::Mat& left_image,const cv::Mat& right_image, const std::string &output_path) {
+void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d>& right_third_order_edges_locations,const std::vector<double>& right_third_order_edges_orientation,const cv::Mat& disparity_map_right_reference,const cv::Mat& left_image,const cv::Mat& right_image) {
     reverse_gt_data.clear();
 
     static size_t total_rows_written = 0;
@@ -2446,11 +2424,8 @@ void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d>& right_third_or
     static std::ofstream csv_file;
     static const size_t max_rows_per_file = 1'000'000;
 
-    std::string disparity_dir = output_path + "/disparities/";
-    std::filesystem::create_directories(disparity_dir);
-
     if (!csv_file.is_open()) {
-        std::string filename = disparity_dir + "valid_reverse_disparities_part_" + std::to_string(file_index) + ".csv";
+        std::string filename = "valid_reverse_disparities_part_" + std::to_string(file_index) + ".csv";
         csv_file.open(filename, std::ios::out);
     }
 
@@ -2472,7 +2447,7 @@ void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d>& right_third_or
             csv_file.close();
             ++file_index;
             total_rows_written = 0;
-            std::string next_filename = disparity_dir + "valid_reverse_disparities_part_" + std::to_string(file_index) + ".csv";
+            std::string next_filename = "valid_reverse_disparities_part_" + std::to_string(file_index) + ".csv";
             csv_file.open(next_filename, std::ios::out);
         }
 

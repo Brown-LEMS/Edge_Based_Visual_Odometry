@@ -11,6 +11,8 @@
 #endif
 
 //> Stereo edge matching settings
+#define EPIP_DISTANCE_THRESH (0.5) //> in pixels
+#define EPIP_DISTANCE_TEST_THRESH (3) //> in pixels
 #define EPIP_TENGENCY_ORIENT_THRESH     (12)    //> in degrees
 #define EPIP_TENGENCY_PROXIM_THRESH     (4)     //> in pixels
 #define MAX_DISPARITY                   (23.0063)
