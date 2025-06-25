@@ -1598,6 +1598,9 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
             } else {
                 // Ambiguous case — store for later revisitation
+                std::cout << "[Lowe] Ambiguous: storing " << passed_ncc_matches.size()
+                << " matches for source edge at " << source_edge.position << "\n";
+
                 for (const auto& match : passed_ncc_matches) {
                     forward_discarded_edges[source_edge].push_back(match);
                     reverse_discarded_edges[match.coord].push_back(source_edge);
@@ -1624,6 +1627,10 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
             // Check if this single match was previously ambiguous
             auto reverse_lookup = reverse_discarded_edges.find(best_match.coord);
             if (reverse_lookup != reverse_discarded_edges.end()) {
+                std::cout << "[Revisit] Match at " << best_match.coord
+                          << " was previously ambiguous, checking resolution...\n";
+            }            
+            if (reverse_lookup != reverse_discarded_edges.end()) {
                 std::vector<SourceEdge>& ambiguous_sources = reverse_lookup->second;
 
                 for (const auto& ambiguous_source : ambiguous_sources) {
@@ -1638,6 +1645,10 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                         ambiguous_matches.end());
 
                     if (ambiguous_matches.size() == 1) {
+                        std::cout << "[Resolved] Ambiguity resolved for source at "
+                        << ambiguous_source.position << " → "
+                        << ambiguous_matches[0].coord << "\n";
+
                         local_final_matches[thread_id].emplace_back(ambiguous_source, ambiguous_matches[0]);
 
                         auto& reverse_sources = reverse_discarded_edges[ambiguous_matches[0].coord];
@@ -1678,6 +1689,8 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 #endif
     }   //> MARK: end of looping over left edges   
 }
+std::cout << "[Summary] Total forward_discarded_edges: " << forward_discarded_edges.size() << "\n";
+std::cout << "[Summary] Total reverse_discarded_edges: " << reverse_discarded_edges.size() << "\n";
 
 #if MEASURE_TIMINGS
     auto total_end = std::chrono::high_resolution_clock::now();
