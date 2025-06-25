@@ -197,7 +197,7 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 472;
+    int num_pairs = 3;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
     std::vector<double> max_disparity_values;
@@ -1016,7 +1016,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
     // Maps to store discarded matches to be revisited and revaluated
     std::unordered_map<SourceEdge, std::vector<EdgeMatch>, SourceEdgeHash> forward_discarded_edges;
-    std::unordered_map<cv::Point2d, SourceEdge, Point2dHash> reverse_discarded_edges;
+    std::unordered_map<cv::Point2d, std::vector<SourceEdge>, Point2dHash> reverse_discarded_edges;
 
     //> CH: this is a global structure of final_matches
     std::vector<std::pair<SourceEdge, EdgeMatch>> final_matches;
@@ -1521,29 +1521,30 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
         int lowe_precision_numerator = 0;
 
-        if(passed_ncc_matches.size() >= 2){
+        if (passed_ncc_matches.size() >= 2) {
             EdgeMatch best_match;
             EdgeMatch second_best_match;
-            double best_score = -1;    
+            double best_score = -1;
             double second_best_score = -1;
 
-            for(const auto& match : passed_ncc_matches){
-                if(match.final_score > best_score){
+            for (const auto& match : passed_ncc_matches) {
+                if (match.final_score > best_score) {
                     second_best_score = best_score;
                     second_best_match = best_match;
 
                     best_score = match.final_score;
                     best_match = match;
-                }
-                else if (match.final_score > second_best_score){
+                } else if (match.final_score > second_best_score) {
                     second_best_score = match.final_score;
                     second_best_match = match;
                 }
             }
-            
-            double lowe_ratio = (best_score > NEAR_ZERO_CHECK) ? (second_best_score / best_score) : std::numeric_limits<double>::infinity();
 
-            SourceEdge source_edge {primary_edge, primary_orientation};
+            double lowe_ratio = (best_score > NEAR_ZERO_CHECK)
+                                    ? (second_best_score / best_score)
+                                    : std::numeric_limits<double>::infinity();
+
+            SourceEdge source_edge{primary_edge, primary_orientation};
 
             if (lowe_ratio < 1.0) {
                 // Definitive match
@@ -1560,26 +1561,35 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                 // Check if best match was previously ambiguous
                 auto reverse_lookup = reverse_discarded_edges.find(best_match.coord);
                 if (reverse_lookup != reverse_discarded_edges.end()) {
-                    const SourceEdge& original_source = reverse_lookup->second;
+                    std::vector<SourceEdge>& ambiguous_sources = reverse_lookup->second;
 
-                    // Remove this match from the ambiguous list
-                    auto& ambiguous_matches = forward_discarded_edges.at(original_source);
-                    ambiguous_matches.erase(
-                        std::remove_if(ambiguous_matches.begin(), ambiguous_matches.end(),
-                                    [&](const EdgeMatch& em) {
-                                        return cv::norm(em.coord - best_match.coord) < NEAR_ZERO_CHECK;
-                                    }),
-                        ambiguous_matches.end()
-                    );
+                    for (const auto& ambiguous_source : ambiguous_sources) {
+                        if (forward_discarded_edges.count(ambiguous_source) == 0) continue;
 
-                    // If only one ambiguous match remains, we can now accept reverse_lookup
-                    if (ambiguous_matches.size() == 1) {
-                        local_final_matches[thread_id].emplace_back(original_source, ambiguous_matches[0]);
+                        auto& ambiguous_matches = forward_discarded_edges.at(ambiguous_source);
+                        ambiguous_matches.erase(
+                            std::remove_if(ambiguous_matches.begin(), ambiguous_matches.end(),
+                                        [&](const EdgeMatch& em) {
+                                            return cv::norm(em.coord - best_match.coord) < NEAR_ZERO_CHECK;
+                                        }),
+                            ambiguous_matches.end());
 
-                        // Clean up both maps
-                        reverse_discarded_edges.erase(ambiguous_matches[0].coord);
-                        forward_discarded_edges.erase(original_source);
+                        if (ambiguous_matches.size() == 1) {
+                            local_final_matches[thread_id].emplace_back(ambiguous_source, ambiguous_matches[0]);
+
+                            auto& reverse_sources = reverse_discarded_edges[ambiguous_matches[0].coord];
+                            reverse_sources.erase(
+                                std::remove(reverse_sources.begin(), reverse_sources.end(), ambiguous_source),
+                                reverse_sources.end());
+                            if (reverse_sources.empty()) {
+                                reverse_discarded_edges.erase(ambiguous_matches[0].coord);
+                            }
+
+                            forward_discarded_edges.erase(ambiguous_source);
+                        }
                     }
+
+                    reverse_discarded_edges.erase(best_match.coord);
                 }
 
                 // Store the definitive match
@@ -1590,17 +1600,17 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                 // Ambiguous case — store for later revisitation
                 for (const auto& match : passed_ncc_matches) {
                     forward_discarded_edges[source_edge].push_back(match);
-                    reverse_discarded_edges[match.coord] = source_edge;
+                    reverse_discarded_edges[match.coord].push_back(source_edge);
                 }
 
                 lowe_false_negative++;
                 local_lowe_output_counts[thread_id].push_back(0);
             }
+
         } else if (passed_ncc_matches.size() == 1) {
             EdgeMatch best_match = passed_ncc_matches[0];
-            SourceEdge source_edge {primary_edge, primary_orientation};
-        
-            // Evaluate precision for GT
+            SourceEdge source_edge{primary_edge, primary_orientation};
+
             if (!selected_ground_truth_edges.empty()) {
                 local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
                 if (cv::norm(best_match.coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
@@ -1610,42 +1620,53 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                     lowe_false_negative++;
                 }
             }
-        
-            // Check if this single match was involved in a previous ambiguity
+
+            // Check if this single match was previously ambiguous
             auto reverse_lookup = reverse_discarded_edges.find(best_match.coord);
             if (reverse_lookup != reverse_discarded_edges.end()) {
-                const SourceEdge& ambiguous_source = reverse_lookup->second;
-        
-                auto& ambiguous_matches = forward_discarded_edges.at(ambiguous_source);
-                ambiguous_matches.erase(
-                    std::remove_if(ambiguous_matches.begin(), ambiguous_matches.end(),
-                                   [&](const EdgeMatch& em) {
-                                       return cv::norm(em.coord - best_match.coord) < NEAR_ZERO_CHECK;
-                                   }),
-                    ambiguous_matches.end()
-                );
-        
-                // If one match remains, it's now a valid match
-                if (ambiguous_matches.size() == 1) {
-                    local_final_matches[thread_id].emplace_back(ambiguous_source, ambiguous_matches[0]);
-        
-                    // Clean up both maps
-                    reverse_discarded_edges.erase(ambiguous_matches[0].coord);
-                    forward_discarded_edges.erase(ambiguous_source);
+                std::vector<SourceEdge>& ambiguous_sources = reverse_lookup->second;
+
+                for (const auto& ambiguous_source : ambiguous_sources) {
+                    if (forward_discarded_edges.count(ambiguous_source) == 0) continue;
+
+                    auto& ambiguous_matches = forward_discarded_edges.at(ambiguous_source);
+                    ambiguous_matches.erase(
+                        std::remove_if(ambiguous_matches.begin(), ambiguous_matches.end(),
+                                    [&](const EdgeMatch& em) {
+                                        return cv::norm(em.coord - best_match.coord) < NEAR_ZERO_CHECK;
+                                    }),
+                        ambiguous_matches.end());
+
+                    if (ambiguous_matches.size() == 1) {
+                        local_final_matches[thread_id].emplace_back(ambiguous_source, ambiguous_matches[0]);
+
+                        auto& reverse_sources = reverse_discarded_edges[ambiguous_matches[0].coord];
+                        reverse_sources.erase(
+                            std::remove(reverse_sources.begin(), reverse_sources.end(), ambiguous_source),
+                            reverse_sources.end());
+                        if (reverse_sources.empty()) {
+                            reverse_discarded_edges.erase(ambiguous_matches[0].coord);
+                        }
+
+                        forward_discarded_edges.erase(ambiguous_source);
+                    }
                 }
+
+                reverse_discarded_edges.erase(best_match.coord);
             }
-        
+
             // Store definitive one-match result
             local_final_matches[thread_id].emplace_back(source_edge, best_match);
             local_lowe_output_counts[thread_id].push_back(1);
+
         } else {
             // No valid matches
             lowe_false_negative++;
             local_lowe_output_counts[thread_id].push_back(0);
         }
 
-        per_edge_lowe_precision += (static_cast<double>(lowe_precision_numerator) > 0) ? 1.0: 0.0;
-        
+        per_edge_lowe_precision += (static_cast<double>(lowe_precision_numerator) > 0) ? 1.0 : 0.0;
+
         if (!passed_ncc_matches.empty()) {
             lowe_edges_evaluated++;
         }
