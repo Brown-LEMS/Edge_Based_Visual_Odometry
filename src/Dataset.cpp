@@ -1544,7 +1544,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                                     ? (second_best_score / best_score)
                                     : std::numeric_limits<double>::infinity();
 
-            SourceEdge source_edge{primary_edge, primary_orientation};
+            SourceEdge source_edge{primary_edge, primary_orientation, ground_truth_edge};
 
             if (lowe_ratio < 1.0) {
                 // Definitive match
@@ -1576,6 +1576,16 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
                         if (ambiguous_matches.size() == 1) {
                             local_final_matches[thread_id].emplace_back(ambiguous_source, ambiguous_matches[0]);
+
+                            if (!selected_ground_truth_edges.empty()) {
+                                local_GT_right_edges_after_lowe[thread_id].push_back(ambiguous_source.ground_truth_edge);
+                                if (cv::norm(ambiguous_matches[0].coord - ambiguous_source.ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
+                                    lowe_precision_numerator++;
+                                    lowe_true_positive++;
+                                } else {
+                                    lowe_false_negative++;
+                                }
+                            }
 
                             auto& reverse_sources = reverse_discarded_edges[ambiguous_matches[0].coord];
                             reverse_sources.erase(
@@ -1612,7 +1622,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
         } else if (passed_ncc_matches.size() == 1) {
             EdgeMatch best_match = passed_ncc_matches[0];
-            SourceEdge source_edge{primary_edge, primary_orientation};
+            SourceEdge source_edge{primary_edge, primary_orientation, ground_truth_edge};
 
             if (!selected_ground_truth_edges.empty()) {
                 local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
@@ -1650,6 +1660,16 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                         << ambiguous_matches[0].coord << "\n";
 
                         local_final_matches[thread_id].emplace_back(ambiguous_source, ambiguous_matches[0]);
+
+                        if (!selected_ground_truth_edges.empty()) {
+                            local_GT_right_edges_after_lowe[thread_id].push_back(ambiguous_source.ground_truth_edge);
+                            if (cv::norm(ambiguous_matches[0].coord - ambiguous_source.ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
+                                lowe_precision_numerator++;
+                                lowe_true_positive++;
+                            } else {
+                                lowe_false_negative++;
+                            }
+                        }
 
                         auto& reverse_sources = reverse_discarded_edges[ambiguous_matches[0].coord];
                         reverse_sources.erase(

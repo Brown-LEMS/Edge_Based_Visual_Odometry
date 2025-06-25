@@ -99,22 +99,25 @@ struct RecallMetrics {
   };
   
   struct SourceEdge {
-      cv::Point2d position;
-      double orientation;
-  
-      bool operator==(const SourceEdge& other) const {
-          return position == other.position && orientation == other.orientation;
-      }
-  };
+    cv::Point2d position;
+    double orientation;
+    cv::Point2d ground_truth_edge;
+
+    bool operator==(const SourceEdge& other) const {
+        return position == other.position &&
+               orientation == other.orientation &&
+               ground_truth_edge == other.ground_truth_edge;
+    }
+};
   
   struct SourceEdgeHash {
-      std::size_t operator()(const SourceEdge& edge) const {
-          Point2dHash point_hasher;
-          std::size_t h1 = point_hasher(edge.position);
-          std::size_t h2 = std::hash<double>{}(edge.orientation);
-          return h1 ^ (h2 << 1);
-      }
-  };
+    std::size_t operator()(const SourceEdge& edge) const {
+        std::size_t h1 = std::hash<double>()(edge.position.x) ^ std::hash<double>()(edge.position.y);
+        std::size_t h2 = std::hash<double>()(edge.orientation);
+        std::size_t h3 = std::hash<double>()(edge.ground_truth_edge.x) ^ std::hash<double>()(edge.ground_truth_edge.y);
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+};
   
   struct EdgeMatchResult {
       RecallMetrics recall_metrics;
