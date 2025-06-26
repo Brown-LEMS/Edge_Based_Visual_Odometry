@@ -197,7 +197,7 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 3;
+    int num_pairs = 10;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
     std::vector<double> max_disparity_values;
@@ -1427,34 +1427,43 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
        if (!primary_patch_one.empty() && !primary_patch_two.empty() &&
            !secondary_patch_set_one.empty() && !secondary_patch_set_two.empty()) {
 
-           for (size_t i = 0; i < filtered_cluster_centers.size(); ++i) {
-               double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[i]);
-               double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[i]);
-               double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[i]);
-               double ncc_four = ComputeNCC(primary_patch_two, secondary_patch_set_one[i]);
+           for (size_t j = 0; j < filtered_cluster_centers.size(); j++) {
+               double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[j]);
+               double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[j]);
+               double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[j]);
+               double ncc_four = ComputeNCC(primary_patch_two, secondary_patch_set_one[j]);
 
                double score_one = std::min(ncc_one, ncc_two);
                double score_two = std::min(ncc_three, ncc_four);
                double final_score = std::max(score_one, score_two);
 
+            //    std::cout << "Primary Edge Index: " << i << ", Cluster Center Index: " << j << std::endl;
+            //    std::cout << "  NCC One: " << ncc_one
+            //              << ", NCC Two: " << ncc_two
+            //              << ", NCC Three: " << ncc_three
+            //              << ", NCC Four: " << ncc_four
+            //              << ", Final Score: " << final_score << std::endl;
+
 #if DEBUG_COLLECT_NCC_AND_ERR
-               double err_to_gt = cv::norm(filtered_cluster_centers[i].center_coord - ground_truth_edge);
+               double err_to_gt = cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge);
                std::pair<double, double> pair_ncc_one_err(err_to_gt, ncc_one);
                std::pair<double, double> pair_ncc_two_err(err_to_gt, ncc_two);
                ncc_one_vs_err.push_back(pair_ncc_one_err);
                ncc_two_vs_err.push_back(pair_ncc_two_err);
 #endif
+                // std::string condition_matched = "None";
                if (ncc_one >= NCC_THRESH_STRONG_BOTH_SIDES && ncc_two >= NCC_THRESH_STRONG_BOTH_SIDES) {
                     EdgeMatch info;
-                    info.coord = filtered_cluster_centers[i].center_coord;
-                    info.orientation = filtered_cluster_centers[i].center_orientation;
+                    info.coord = filtered_cluster_centers[j].center_coord;
+                    info.orientation = filtered_cluster_centers[j].center_orientation;
                     info.final_score = final_score;
-                    info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                    info.contributing_orientations = filtered_cluster_centers[i].contributing_orientations;
+                    info.contributing_edges = filtered_cluster_centers[j].contributing_edges;
+                    info.contributing_orientations = filtered_cluster_centers[j].contributing_orientations;
                     passed_ncc_matches.push_back(info);
+                    // condition_matched = "Strong Both Sides";
 
                     if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[i].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
+                        if (cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
                             ncc_match_found = true;
                             ncc_precision_numerator++;
                         }
@@ -1462,15 +1471,16 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                }
                else if (ncc_one >= NCC_THRESH_STRONG_ONE_SIDE || ncc_two >= NCC_THRESH_STRONG_ONE_SIDE) {
                     EdgeMatch info;
-                    info.coord = filtered_cluster_centers[i].center_coord;
-                    info.orientation = filtered_cluster_centers[i].center_orientation;
+                    info.coord = filtered_cluster_centers[j].center_coord;
+                    info.orientation = filtered_cluster_centers[j].center_orientation;
                     info.final_score = final_score;
-                    info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                    info.contributing_orientations = filtered_cluster_centers[i].contributing_orientations;
+                    info.contributing_edges = filtered_cluster_centers[j].contributing_edges;
+                    info.contributing_orientations = filtered_cluster_centers[j].contributing_orientations;
                     passed_ncc_matches.push_back(info);
+                    // condition_matched = "Strong One Side";
 
                     if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[i].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
+                        if (cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
                             ncc_match_found = true;
                             ncc_precision_numerator++;
                         }
@@ -1478,20 +1488,23 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                }
                else if (ncc_one >= NCC_THRESH_WEAK_BOTH_SIDES && ncc_two >= NCC_THRESH_WEAK_BOTH_SIDES && filtered_cluster_centers.size() == 1) {
                     EdgeMatch info;
-                    info.coord = filtered_cluster_centers[i].center_coord;
-                    info.orientation = filtered_cluster_centers[i].center_orientation;
+                    info.coord = filtered_cluster_centers[j].center_coord;
+                    info.orientation = filtered_cluster_centers[j].center_orientation;
                     info.final_score = final_score;
-                    info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                    info.contributing_orientations = filtered_cluster_centers[i].contributing_orientations;
+                    info.contributing_edges = filtered_cluster_centers[j].contributing_edges;
+                    info.contributing_orientations = filtered_cluster_centers[j].contributing_orientations;
                     passed_ncc_matches.push_back(info);
+                    // condition_matched = "Weak Both Sides (Only 1 Cluster)";
 
                     if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[i].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
+                        if (cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
                             ncc_match_found = true;
                             ncc_precision_numerator++;
                         }
                     }
                }
+
+            //    std::cout << "  Condition Matched: " << condition_matched << std::endl;
            }
 
            if (ncc_match_found) {
