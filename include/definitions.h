@@ -21,8 +21,6 @@
 #define NCC_THRESH_WEAK_BOTH_SIDES      (0.25)
 #define NCC_THRESH_STRONG_ONE_SIDE      (0.65)
 #define MATCH_TOL                       (3)     //> in pixels
-#define GT_SPATIAL_TOLERANCE            (3.0)
-#define NEAR_ZERO_CHECK                 (1e-6)
 
 #define MEASURE_TIMINGS                 (false)
 #define DISPLAY_STERO_EDGE_MATCHES      (false)
@@ -83,3 +81,4 @@
                                                "options:\n" \
                                                "  -h, --help         show this help message and exit\n" \
                                                "  -c, --config_file  path to the the configuration file\n");
+                                               

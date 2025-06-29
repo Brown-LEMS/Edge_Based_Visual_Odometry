@@ -28,102 +28,76 @@
 //> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu)
 // =======================================================================================================
 
+struct EdgeCluster {
+    cv::Point2d center_coord;                  
+    double center_orientation;      
+
+    std::vector<cv::Point2d> contributing_edges;
+    std::vector<double> contributing_orientations;
+};
+
+struct EdgeMatch {
+    cv::Point2d coord;
+    double orientation;
+    double final_score;
+
+    std::vector<cv::Point2d> contributing_edges;
+    std::vector<double> contributing_orientations;
+};
+
 struct RecallMetrics {
-    double epi_distance_recall;
-    double max_disparity_recall;
-    double epi_shift_recall;
-    double epi_cluster_recall;
-    double ncc_recall;
-    double lowe_recall;
-  
-  
-    std::vector<int> epi_input_counts;
-    std::vector<int> epi_output_counts;
-    std::vector<int> disp_input_counts;
-    std::vector<int> disp_output_counts;
-    std::vector<int> shift_input_counts;
-    std::vector<int> shift_output_counts;
-    std::vector<int> clust_input_counts;
-    std::vector<int> clust_output_counts;
-    std::vector<int> patch_input_counts;
-    std::vector<int> patch_output_counts;
-    std::vector<int> ncc_input_counts;
-    std::vector<int> ncc_output_counts;
-    std::vector<int> lowe_input_counts;
-    std::vector<int> lowe_output_counts;
-  
-     double per_image_epi_precision;
-     double per_image_disp_precision;
-     double per_image_shift_precision;
-     double per_image_clust_precision;
-     double per_image_ncc_precision;
-     double per_image_lowe_precision;
-  
-     int lowe_true_positive;
-     int lowe_false_negative;
-  
-      double per_image_epi_time;
-      double per_image_disp_time;
-      double per_image_shift_time;
-      double per_image_clust_time;
-      double per_image_patch_time;
-      double per_image_ncc_time;
-      double per_image_lowe_time;
-      double per_image_total_time;
-  };
-  
-  struct Point2dHash {
-      std::size_t operator()(const cv::Point2d& pt) const {
-          std::hash<double> hasher;
-          std::size_t h1 = hasher(pt.x);
-          std::size_t h2 = hasher(pt.y);
-          return h1 ^ (h2 << 1); 
-      }
-  };
-  
-  struct EdgeCluster {
-      cv::Point2d center_coord;                  
-      double center_orientation;      
-  
-      std::vector<cv::Point2d> contributing_edges;
-      std::vector<double> contributing_orientations;
-  };
-  
-  struct EdgeMatch {
-      cv::Point2d coord;
-      double orientation;
-      double final_score;
-  
-      std::vector<cv::Point2d> contributing_edges;
-      std::vector<double> contributing_orientations;
-  };
-  
-  struct SourceEdge {
+  double epi_distance_recall;
+  double max_disparity_recall;
+  double epi_shift_recall;
+  double epi_cluster_recall;
+  double ncc_recall;
+  double lowe_recall;
+
+
+  std::vector<int> epi_input_counts;
+  std::vector<int> epi_output_counts;
+  std::vector<int> disp_input_counts;
+  std::vector<int> disp_output_counts;
+  std::vector<int> shift_input_counts;
+  std::vector<int> shift_output_counts;
+  std::vector<int> clust_input_counts;
+  std::vector<int> clust_output_counts;
+  std::vector<int> patch_input_counts;
+  std::vector<int> patch_output_counts;
+  std::vector<int> ncc_input_counts;
+  std::vector<int> ncc_output_counts;
+  std::vector<int> lowe_input_counts;
+  std::vector<int> lowe_output_counts;
+
+   double per_image_epi_precision;
+   double per_image_disp_precision;
+   double per_image_shift_precision;
+   double per_image_clust_precision;
+   double per_image_ncc_precision;
+   double per_image_lowe_precision;
+
+   int lowe_true_positive;
+   int lowe_false_negative;
+
+    double per_image_epi_time;
+    double per_image_disp_time;
+    double per_image_shift_time;
+    double per_image_clust_time;
+    double per_image_patch_time;
+    double per_image_ncc_time;
+    double per_image_lowe_time;
+    double per_image_total_time;
+};
+
+struct SourceEdge {
     cv::Point2d position;
     double orientation;
-    cv::Point2d ground_truth_edge;
+};
 
-    bool operator==(const SourceEdge& other) const {
-        return position == other.position &&
-               orientation == other.orientation &&
-               ground_truth_edge == other.ground_truth_edge;
-    }
+struct EdgeMatchResult {
+    RecallMetrics recall_metrics;
+    std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches; 
 };
-  
-  struct SourceEdgeHash {
-    std::size_t operator()(const SourceEdge& edge) const {
-        std::size_t h1 = std::hash<double>()(edge.position.x) ^ std::hash<double>()(edge.position.y);
-        std::size_t h2 = std::hash<double>()(edge.orientation);
-        std::size_t h3 = std::hash<double>()(edge.ground_truth_edge.x) ^ std::hash<double>()(edge.ground_truth_edge.y);
-        return h1 ^ (h2 << 1) ^ (h3 << 2);
-    }
-};
-  
-  struct EdgeMatchResult {
-      RecallMetrics recall_metrics;
-      std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches; 
-      //std::vector<std::pair<SourceEdge, std::vector<EdgeMatch>>> source_to_cluster_matches;
-  };
 
 struct BidirectionalMetrics{
     int matches_before_bct;
@@ -294,11 +268,11 @@ private:
    
    std::vector<std::pair<cv::Mat, cv::Mat>> LoadETH3DImages(const std::string &stereo_pairs_path, int num_images);
    
-   //std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
+   std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
    
    std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
    
-   //std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
+   std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
    
    void WriteDisparityToBinary(const std::string& filepath, const cv::Mat& disparity_map);
    
