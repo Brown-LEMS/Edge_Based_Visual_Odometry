@@ -1436,18 +1436,16 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
        auto start_ncc = std::chrono::high_resolution_clock::now();
 #endif
 
-    //    patch_output_counts.push_back(filtered_cluster_centers.size());
        local_patch_output_counts[thread_id].push_back(filtered_cluster_centers.size());
 
        int ncc_precision_numerator = 0;
-
        bool ncc_match_found = false;
        std::vector<EdgeMatch> passed_ncc_matches;
 
        if (!primary_patch_one.empty() && !primary_patch_two.empty() &&
            !secondary_patch_set_one.empty() && !secondary_patch_set_two.empty()) {
 
-           for (size_t i = 0; i < filtered_cluster_centers.size(); ++i) {
+           for (size_t i = 0; i < filtered_cluster_centers.size(); i++) {
                double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[i]);
                double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[i]);
                double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[i]);
@@ -1464,7 +1462,8 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                ncc_one_vs_err.push_back(pair_ncc_one_err);
                ncc_two_vs_err.push_back(pair_ncc_two_err);
 #endif
-               if (ncc_one >= NCC_THRESH_STRONG_BOTH_SIDES && ncc_two >= NCC_THRESH_STRONG_BOTH_SIDES) {
+
+               if (final_score >= NCC_THRESH_FINAL_SCORE) {
                     EdgeMatch info;
                     info.coord = filtered_cluster_centers[i].center_coord;
                     info.orientation = filtered_cluster_centers[i].center_orientation;
@@ -1474,39 +1473,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                     passed_ncc_matches.push_back(info);
 
                     if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[i].center_coord - ground_truth_edge) <= 3.0) {
-                            ncc_match_found = true;
-                            ncc_precision_numerator++;
-                        }
-                    }
-               }
-               else if (ncc_one >= NCC_THRESH_STRONG_ONE_SIDE || ncc_two >= NCC_THRESH_STRONG_ONE_SIDE) {
-                    EdgeMatch info;
-                    info.coord = filtered_cluster_centers[i].center_coord;
-                    info.orientation = filtered_cluster_centers[i].center_orientation;
-                    info.final_score = final_score;
-                    info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                    info.contributing_orientations = filtered_cluster_centers[i].contributing_orientations;
-                    passed_ncc_matches.push_back(info);
-
-                    if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[i].center_coord - ground_truth_edge) <= 3.0) {
-                            ncc_match_found = true;
-                            ncc_precision_numerator++;
-                        }
-                    }
-               }
-               else if (ncc_one >= NCC_THRESH_WEAK_BOTH_SIDES && ncc_two >= NCC_THRESH_WEAK_BOTH_SIDES) {
-                    EdgeMatch info;
-                    info.coord = filtered_cluster_centers[i].center_coord;
-                    info.orientation = filtered_cluster_centers[i].center_orientation;
-                    info.final_score = final_score;
-                    info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                    info.contributing_orientations = filtered_cluster_centers[i].contributing_orientations;
-                    passed_ncc_matches.push_back(info);
-
-                    if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[i].center_coord - ground_truth_edge) <= 3.0) {
+                        if (cv::norm(info.coord - ground_truth_edge) <= 3.0) {
                             ncc_match_found = true;
                             ncc_precision_numerator++;
                         }
@@ -1525,8 +1492,6 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
            per_edge_ncc_precision += static_cast<double>(ncc_precision_numerator) / passed_ncc_matches.size();
            ncc_edges_evaluated++;
        }
-    //    ncc_input_counts.push_back(filtered_cluster_centers.size());
-    //    ncc_output_counts.push_back(passed_ncc_matches.size());
 
        local_ncc_input_counts[thread_id].push_back(filtered_cluster_centers.size());
        local_ncc_output_counts[thread_id].push_back(passed_ncc_matches.size());
