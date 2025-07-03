@@ -1,7 +1,8 @@
 # EuRoC Vicon Room 01 Dataset
 
 # Dataset Details
-dataset_dir: "/Users/saulll./Desktop/Edge-Based Visual Odometry/datasets"
+dataset_dir: "/oscar/data/bkimia/Datasets/EuRoC/"
+output_dir: "outputs/"
 sequence_name: "V1_01_easy"
 dataset_type: "EuRoC"
 

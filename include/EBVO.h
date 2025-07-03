@@ -33,6 +33,11 @@ public:
                             const std::vector<Edge> &edges);
 
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
+    std::vector<Eigen::Vector2f> LucasKanadeOpticalFlow(
+        const cv::Mat &img1,
+        const cv::Mat &img2,
+        const std::vector<Edge> &edges,
+        int patch_size);
 
 private:
     //> CH: shared pointer to the class of third-order edge detector

@@ -20,5 +20,5 @@ make -j
 
 cd ..
 echo "Build completed successfully."
-echo "Run the application eth3d_delivery_area.yaml"
+echo "Run the application config/eth3d_delivery_area.yaml"
 ./bin/main_VO --config_file config/eth3d_delivery_area.yaml

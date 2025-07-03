@@ -45,6 +45,15 @@ void EBVO::PerformEdgeBasedVO()
 
     dataset.load_dataset(dataset.get_dataset_type(), left_ref_disparity_maps, num_pairs);
 
+    std::vector<double> left_intr = dataset.left_intr();
+    std::vector<double> right_intr = dataset.right_intr();
+
+    cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
+    cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
+
+    cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs());
+    cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs());
+
     auto start_time = std::chrono::high_resolution_clock::now();
 
     LOG_INFO("Start looping over all image pairs");
@@ -58,6 +67,10 @@ void EBVO::PerformEdgeBasedVO()
         LOG_ERROR("Failed to get first frame from dataset");
         return;
     }
+
+    // Temporal tracking variables for optical flow
+    std::vector<Edge> tracked_edges;
+    bool first_frame = true;
 
     size_t frame_idx = 0;
     while (dataset.stereo_iterator->hasNext() && num_pairs - frame_idx >= 0)
@@ -77,33 +90,24 @@ void EBVO::PerformEdgeBasedVO()
 
         std::vector<cv::Mat> curr_left_pyramid, curr_right_pyramid;
         std::vector<cv::Mat> next_left_pyramid, next_right_pyramid;
-        int pyramid_levels = 4;
 
         BuildImagePyramids(
             curr_left_img,
             curr_right_img,
             next_left_img,
             next_right_img,
-            pyramid_levels,
+            PYRAMID_LEVELS,
             curr_left_pyramid,
             curr_right_pyramid,
             next_left_pyramid,
             next_right_pyramid);
+        // now we have pyramids for the current and next images stored in pyramids.
 
         dataset.ncc_one_vs_err.clear();
         dataset.ncc_two_vs_err.clear();
         dataset.ground_truth_right_edges_after_lowe.clear();
 
         std::cout << "Image Pair #" << frame_idx << "\n";
-        std::vector<double> left_intr = dataset.left_intr();
-        std::vector<double> right_intr = dataset.right_intr();
-
-        // is it a storage issue of us not making the original one matrix?
-        cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
-        cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
-
-        cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs());
-        cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs());
 
         cv::Mat left_undistorted, right_undistorted;
         cv::undistort(curr_left_img, left_undistorted, left_calib, left_dist_coeff_mat);
@@ -131,6 +135,99 @@ void EBVO::PerformEdgeBasedVO()
 
         dataset.increment_num_imgs();
 
+        // ============ MULTI-RESOLUTION LUCAS-KANADE TRACKING ============
+        if (!first_frame)
+        {
+            // Get the previous frame's undistorted image for tracking
+            cv::Mat prev_left_undistorted, curr_left_undistorted_copy;
+            cv::undistort(current_frame.left_image, prev_left_undistorted, left_calib, left_dist_coeff_mat);
+            cv::undistort(next_frame.left_image, curr_left_undistorted_copy, left_calib, left_dist_coeff_mat);
+
+            std::vector<Edge> current_tracked_edges = tracked_edges;
+
+            // Multi-resolution tracking from coarse to fine
+            for (int level = PYRAMID_LEVELS - 1; level >= 0; level--)
+            {
+                double scale = std::pow(2.0, level);
+                std::vector<Edge> level_tracked_edges;
+
+                // Downscale edge locations to current pyramid level
+                for (const auto &edge : current_tracked_edges)
+                {
+                    Edge scaled_edge = edge;
+                    scaled_edge.location.x /= scale;
+                    scaled_edge.location.y /= scale;
+                    level_tracked_edges.push_back(scaled_edge);
+                }
+
+                // Build pyramids for tracking (only the levels we need)
+                cv::Mat prev_level = prev_left_undistorted.clone();
+                cv::Mat curr_level = curr_left_undistorted_copy.clone();
+
+                for (int l = 0; l < level; l++)
+                {
+                    cv::pyrDown(prev_level, prev_level);
+                    cv::pyrDown(curr_level, curr_level);
+                }
+
+                // Track points at this level using Lucas-Kanade
+                std::vector<Eigen::Vector2f> flow_vectors = LucasKanadeOpticalFlow(
+                    prev_level, curr_level, level_tracked_edges, 5 // patch_size = 5
+                );
+
+                std::vector<Edge> tracked_at_level;
+                for (size_t i = 0; i < level_tracked_edges.size() && i < flow_vectors.size(); i++)
+                {
+                    Edge tracked_edge = level_tracked_edges[i];
+                    tracked_edge.location.x += flow_vectors[i].x();
+                    tracked_edge.location.y += flow_vectors[i].y();
+
+                    // Check bounds at current level
+                    if (tracked_edge.location.x >= 0 &&
+                        tracked_edge.location.x < curr_level.cols &&
+                        tracked_edge.location.y >= 0 &&
+                        tracked_edge.location.y < curr_level.rows)
+                    {
+                        tracked_at_level.push_back(tracked_edge);
+                    }
+                }
+
+                // Upscale coordinates for next level (if not the finest level)
+                if (level > 0)
+                {
+                    for (auto &edge : tracked_at_level)
+                    {
+                        edge.location.x *= 2.0;
+                        edge.location.y *= 2.0;
+                    }
+                }
+
+                current_tracked_edges = tracked_at_level;
+            }
+
+            // Final validation: ensure all tracked points are within image bounds
+            std::vector<Edge> valid_tracked_edges;
+            for (const auto &edge : current_tracked_edges)
+            {
+                if (edge.location.x >= 0 && edge.location.x < left_undistorted.cols &&
+                    edge.location.y >= 0 && edge.location.y < left_undistorted.rows)
+                {
+                    valid_tracked_edges.push_back(edge);
+                }
+            }
+
+            tracked_edges = valid_tracked_edges;
+            std::cout << "Tracked " << tracked_edges.size() << " edges from previous frame" << std::endl;
+        }
+        else
+        {
+            // First frame: initialize tracked edges with current left edges
+            tracked_edges = dataset.left_edges;
+            first_frame = false;
+            std::cout << "First frame: initialized " << tracked_edges.size() << " edges for tracking" << std::endl;
+        }
+        // ================================================================
+
         cv::Mat left_edge_map = cv::Mat::zeros(left_undistorted.size(), CV_8UC1);
         cv::Mat right_edge_map = cv::Mat::zeros(right_undistorted.size(), CV_8UC1);
 
@@ -153,10 +250,58 @@ void EBVO::PerformEdgeBasedVO()
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
         // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
 
-        StereoMatchResult match_result = DisplayMatches(
-            left_undistorted,
-            right_undistorted,
-            dataset);
+        StereoMatchResult match_result;
+
+        // ============ INTEGRATE TRACKED EDGES INTO VO PIPELINE ============
+        if (!first_frame)
+        {
+            // Use tracked edges for temporal correspondences instead of newly detected ones
+            std::cout << "Using " << tracked_edges.size() << " tracked edges for VO processing..." << std::endl;
+
+            // Temporarily store the original detected edges
+            std::vector<Edge> original_left_edges = dataset.left_edges;
+
+            // Replace left edges with tracked edges for stereo matching
+            dataset.left_edges = tracked_edges;
+
+            // Update edge map with tracked edges
+            left_edge_map = cv::Mat::zeros(left_undistorted.size(), CV_8UC1);
+            for (const auto &edge : tracked_edges)
+            {
+                if (edge.location.x >= 0 && edge.location.x < left_edge_map.cols &&
+                    edge.location.y >= 0 && edge.location.y < left_edge_map.rows)
+                {
+                    left_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
+                }
+            }
+
+            // Perform stereo matching with tracked edges
+            match_result = DisplayMatches(
+                left_undistorted,
+                right_undistorted,
+                dataset);
+
+            // TODO: Add pose estimation here using temporal correspondences
+            // implement:
+            // 1. 3D point triangulation from stereo matches
+            // 2. Temporal tracking of 3D points
+            // 3. PnP pose estimation between frames
+            // 4. Motion estimation/bundle adjustment
+
+            std::cout << "Stereo matches with tracked edges: " << match_result.confirmed_matches.size() << std::endl;
+
+            // Restore original edges for consistency with rest of pipeline
+            dataset.left_edges = original_left_edges;
+        }
+        else
+        {
+            // First frame: use regular stereo matching
+            match_result = DisplayMatches(
+                left_undistorted,
+                right_undistorted,
+                dataset);
+        }
+        // ================================================================
 
 #if 0
         std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
@@ -276,6 +421,17 @@ void EBVO::PerformEdgeBasedVO()
 
         per_image_avg_before_bct.push_back(match_result.bidirectional_metrics.matches_before_bct);
         per_image_avg_after_bct.push_back(match_result.bidirectional_metrics.matches_after_bct);
+
+        // Advance frames for temporal tracking
+        current_frame = next_frame;
+
+        // Update tracked edges: combine tracked edges with newly detected edges
+        // For robust tracking, we can either:
+        // 1. Use only tracked edges (temporal consistency)
+        // 2. Use only new edges (fresh detection)
+        // 3. Combine both (hybrid approach)
+        // Here we use the newly detected edges for the next tracking iteration
+        tracked_edges = dataset.left_edges;
 
         frame_idx++;
     }
@@ -783,4 +939,129 @@ void EBVO::WriteEdgesToBinary(const std::string &filepath,
     size_t size = edges.size();
     ofs.write(reinterpret_cast<const char *>(&size), sizeof(size));
     ofs.write(reinterpret_cast<const char *>(edges.data()), sizeof(Edge) * size);
+}
+
+/*
+    Lucas-Kanade optical flow algorithm implementation.
+
+    Code Description:
+        Given two images with point locations on the first image, do
+        Lucas-Kanade optical flow algorithm which finds the displacements of
+        the points from image 1 to 2 based on photometric consistency.
+
+    Inputs:
+        img1:       Image 1 in grayscale (CV_32F or CV_64F).
+        img2:       Image 2 with the same format as Image 1.
+        Edges:     Vector of N edges.
+        patch_size: The size of a patch (or window) attached to each edge.
+
+    Outputs:
+        flow_vectors: Vector of flow vectors (du, dv) for each input edge.
+
+*/
+std::vector<Eigen::Vector2f> EBVO::LucasKanadeOpticalFlow(
+    const cv::Mat &img1,
+    const cv::Mat &img2,
+    const std::vector<Edge> &edges,
+    int patch_size)
+{
+    std::vector<Eigen::Vector2f> flow_vectors;
+
+    if (edges.empty())
+    {
+        return flow_vectors;
+    }
+
+    // Convert images to CV_32F if necessary
+    cv::Mat img1_float, img2_float;
+    if (img1.type() != CV_32F)
+    {
+        img1.convertTo(img1_float, CV_32F);
+    }
+    else
+    {
+        img1_float = img1;
+    }
+
+    if (img2.type() != CV_32F)
+    {
+        img2.convertTo(img2_float, CV_32F);
+    }
+    else
+    {
+        img2_float = img2;
+    }
+
+    // Pad the images
+    int w = patch_size / 2;
+    cv::Mat img1_padded, img2_padded;
+    cv::copyMakeBorder(img1_float, img1_padded, w + 1, w + 1, w + 1, w + 1, cv::BORDER_REPLICATE);
+    cv::copyMakeBorder(img2_float, img2_padded, w + 1, w + 1, w + 1, w + 1, cv::BORDER_REPLICATE);
+
+    // Compute image gradients using Sobel operators
+    cv::Mat grad_x, grad_y;
+    cv::Sobel(img2_padded, grad_x, CV_32F, 1, 0, 3, 1.0 / 8.0); // Normalized Sobel
+    cv::Sobel(img2_padded, grad_y, CV_32F, 0, 1, 3, 1.0 / 8.0);
+
+    // Compute temporal gradient
+    cv::Mat grad_t = img1_padded - img2_padded;
+
+    // Initialize flow vectors
+    flow_vectors.reserve(edges.size());
+
+    // Loop over all points
+    for (size_t ci = 0; ci < edges.size(); ++ci)
+    {
+        // Get point locations (adjust for padding)
+        float cx = edges[ci].location.x + w + 1;
+        float cy = edges[ci].location.y + w + 1;
+
+        // Check bounds
+        if (cx - w < 0 || cx + w >= img1_padded.cols ||
+            cy - w < 0 || cy + w >= img1_padded.rows)
+        {
+            flow_vectors.emplace_back(0.0f, 0.0f);
+            continue;
+        }
+
+        // Extract patch around the point
+        cv::Rect patch_rect(cx - w, cy - w, 2 * w + 1, 2 * w + 1);
+        cv::Mat Ix_patch = grad_x(patch_rect).clone(); // Make continuous
+        cv::Mat Iy_patch = grad_y(patch_rect).clone(); // Make continuous
+        cv::Mat It_patch = grad_t(patch_rect).clone(); // Make continuous
+
+        // Flatten patches to vectors
+        cv::Mat Ix_vec = Ix_patch.reshape(1, (2 * w + 1) * (2 * w + 1));
+        cv::Mat Iy_vec = Iy_patch.reshape(1, (2 * w + 1) * (2 * w + 1));
+        cv::Mat It_vec = It_patch.reshape(1, (2 * w + 1) * (2 * w + 1));
+
+        // Build matrix A = [Ix_patch, Iy_patch]
+        cv::Mat A(Ix_vec.rows, 2, CV_32F);
+        Ix_vec.copyTo(A.col(0));
+        Iy_vec.copyTo(A.col(1));
+
+        // Solve the Lucas-Kanade equation: A^T * A * [du; dv] = A^T * It
+        cv::Mat ATA = A.t() * A;
+        cv::Mat ATb = A.t() * It_vec;
+
+        // Check if ATA is invertible (determinant > threshold)
+        double det = cv::determinant(ATA);
+        if (std::abs(det) < 1e-7)
+        {
+            // Matrix is nearly singular, cannot solve reliably
+            flow_vectors.emplace_back(0.0f, 0.0f);
+            continue;
+        }
+
+        // Solve for flow vector
+        cv::Mat flow_solution;
+        cv::solve(ATA, ATb, flow_solution, cv::DECOMP_LU);
+
+        float du = flow_solution.at<float>(0, 0);
+        float dv = flow_solution.at<float>(1, 0);
+
+        flow_vectors.emplace_back(du, dv);
+    }
+
+    return flow_vectors;
 }
