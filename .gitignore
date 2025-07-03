@@ -4,4 +4,5 @@ build/
 .vscode/
 *.log
 outputs_original
+outputs
 valid_disparities_part_*.csv
