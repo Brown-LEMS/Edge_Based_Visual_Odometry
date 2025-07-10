@@ -956,7 +956,6 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
         }
         forward_left_index++;
     }
-    std::cout << "BCT true positives: " << bct_true_positive << std::endl;
 
     auto bct_end = std::chrono::high_resolution_clock::now();
     double total_time_bct = std::chrono::duration<double, std::milli>(bct_end - bct_start).count();
@@ -965,7 +964,6 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
 
     int matches_after_bct = static_cast<int>(confirmed_matches.size());
     std::cout << "Number of matches after BCT: " << matches_after_bct << std::endl;
-    std::cout << "Number of stacked GT right edges: " << ground_truth_right_edges_after_lowe.size() << std::endl;
 
     double per_image_bct_precision = (matches_before_bct > 0) ? bct_true_positive / (double)(matches_after_bct) : 0.0;
     std::cout << "BCT precision = " << per_image_bct_precision << std::endl;
@@ -974,6 +972,7 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
 
     double bct_recall = (bct_denonimator > 0) ? bct_true_positive / (double)(bct_denonimator) : 0.0;
     std::cout << "BCT recall = " << bct_recall << std::endl;
+    std::cout << "////////////////////////////////////////////" << std::endl
 
     BidirectionalMetrics bidirectional_metrics;
     bidirectional_metrics.matches_before_bct = matches_before_bct;
@@ -1420,91 +1419,46 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
        local_patch_output_counts[thread_id].push_back(filtered_cluster_centers.size());
 
        int ncc_precision_numerator = 0;
-
        bool ncc_match_found = false;
        std::vector<EdgeMatch> passed_ncc_matches;
 
        if (!primary_patch_one.empty() && !primary_patch_two.empty() &&
            !secondary_patch_set_one.empty() && !secondary_patch_set_two.empty()) {
 
-           for (size_t j = 0; j < filtered_cluster_centers.size(); j++) {
-               double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[j]);
-               double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[j]);
-               double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[j]);
-               double ncc_four = ComputeNCC(primary_patch_two, secondary_patch_set_one[j]);
+           for (size_t i = 0; i < filtered_cluster_centers.size(); i++) {
+               double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[i]);
+               double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[i]);
+               double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[i]);
+               double ncc_four = ComputeNCC(primary_patch_two, secondary_patch_set_one[i]);
 
                double score_one = std::min(ncc_one, ncc_two);
                double score_two = std::min(ncc_three, ncc_four);
                double final_score = std::max(score_one, score_two);
 
-            //    std::cout << "Primary Edge Index: " << i << ", Cluster Center Index: " << j << std::endl;
-            //    std::cout << "  NCC One: " << ncc_one
-            //              << ", NCC Two: " << ncc_two
-            //              << ", NCC Three: " << ncc_three
-            //              << ", NCC Four: " << ncc_four
-            //              << ", Final Score: " << final_score << std::endl;
-
 #if DEBUG_COLLECT_NCC_AND_ERR
-               double err_to_gt = cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge);
+               double err_to_gt = cv::norm(filtered_cluster_centers[i].center_coord - ground_truth_edge);
                std::pair<double, double> pair_ncc_one_err(err_to_gt, ncc_one);
                std::pair<double, double> pair_ncc_two_err(err_to_gt, ncc_two);
                ncc_one_vs_err.push_back(pair_ncc_one_err);
                ncc_two_vs_err.push_back(pair_ncc_two_err);
 #endif
-                // std::string condition_matched = "None";
-               if (ncc_one >= NCC_THRESH_STRONG_BOTH_SIDES && ncc_two >= NCC_THRESH_STRONG_BOTH_SIDES) {
+
+               if (final_score >= NCC_THRESH_FINAL_SCORE) {
                     EdgeMatch info;
-                    info.coord = filtered_cluster_centers[j].center_coord;
-                    info.orientation = filtered_cluster_centers[j].center_orientation;
+                    info.coord = filtered_cluster_centers[i].center_coord;
+                    info.orientation = filtered_cluster_centers[i].center_orientation;
                     info.final_score = final_score;
-                    info.contributing_edges = filtered_cluster_centers[j].contributing_edges;
-                    info.contributing_orientations = filtered_cluster_centers[j].contributing_orientations;
+                    info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
+                    info.contributing_orientations = filtered_cluster_centers[i].contributing_orientations;
                     passed_ncc_matches.push_back(info);
-                    // condition_matched = "Strong Both Sides";
 
                     if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
+                        if (cv::norm(info.coord - ground_truth_edge) <= 3.0) {
                             ncc_match_found = true;
                             ncc_precision_numerator++;
                         }
                     }
                }
-               else if (ncc_one >= NCC_THRESH_STRONG_ONE_SIDE || ncc_two >= NCC_THRESH_STRONG_ONE_SIDE) {
-                    EdgeMatch info;
-                    info.coord = filtered_cluster_centers[j].center_coord;
-                    info.orientation = filtered_cluster_centers[j].center_orientation;
-                    info.final_score = final_score;
-                    info.contributing_edges = filtered_cluster_centers[j].contributing_edges;
-                    info.contributing_orientations = filtered_cluster_centers[j].contributing_orientations;
-                    passed_ncc_matches.push_back(info);
-                    // condition_matched = "Strong One Side";
-
-                    if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
-                            ncc_match_found = true;
-                            ncc_precision_numerator++;
-                        }
-                    }
-               }
-               else if (ncc_one >= NCC_THRESH_WEAK_BOTH_SIDES && ncc_two >= NCC_THRESH_WEAK_BOTH_SIDES && filtered_cluster_centers.size() == 1) {
-                    EdgeMatch info;
-                    info.coord = filtered_cluster_centers[j].center_coord;
-                    info.orientation = filtered_cluster_centers[j].center_orientation;
-                    info.final_score = final_score;
-                    info.contributing_edges = filtered_cluster_centers[j].contributing_edges;
-                    info.contributing_orientations = filtered_cluster_centers[j].contributing_orientations;
-                    passed_ncc_matches.push_back(info);
-                    // condition_matched = "Weak Both Sides (Only 1 Cluster)";
-
-                    if (!selected_ground_truth_edges.empty()) {
-                        if (cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
-                            ncc_match_found = true;
-                            ncc_precision_numerator++;
-                        }
-                    }
-               }
-
-            //    std::cout << "  Condition Matched: " << condition_matched << std::endl;
            }
 
            if (ncc_match_found) {
