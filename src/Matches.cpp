@@ -3,21 +3,6 @@
 /*
     calculate the epipolar line for each edge point using the fundamental matrix.
 */
-// std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<cv::Point2d> &edges)
-// {
-//     std::vector<Eigen::Vector3d> epipolar_lines;
-
-//     for (const auto &point : edges)
-//     {
-//         Eigen::Vector3d homo_point(point.x, point.y, 1.0);
-
-//         Eigen::Vector3d epipolar_line = fund_mat * homo_point;
-
-//         epipolar_lines.push_back(epipolar_line);
-//     }
-
-//     return epipolar_lines;
-// }
 
 std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges)
 {
@@ -310,7 +295,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         dataset,
         filtered_ground_truth_right_edges);
 
-    std::cout << forward_match.edge_to_cluster_matches.size() << std::endl;
     ///////////////////////////////REVERSE DIRECTION///////////////////////////////
     std::vector<Edge> reverse_primary_edges;
 

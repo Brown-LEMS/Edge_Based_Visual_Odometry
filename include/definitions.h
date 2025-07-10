@@ -81,6 +81,4 @@
                                       "options:\n"                                             \
                                       "  -h, --help         show this help message and exit\n" \
                                       "  -c, --config_file  path to the the configuration file\n");
-
-//> Optical Flow parameters
-#define PYRAMID_LEVELS (4)
+#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow

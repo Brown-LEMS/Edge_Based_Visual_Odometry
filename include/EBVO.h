@@ -39,6 +39,21 @@ public:
         const std::vector<Edge> &edges,
         int patch_size);
 
+    cv::Point3d TriangulatePoint(
+        const cv::Point2d &left_pt,
+        const cv::Point2d &right_pt,
+        const cv::Mat &left_camera_matrix,
+        const cv::Mat &right_camera_matrix);
+
+    void VisualizeTracks_OpenCVStyle(
+        const std::vector<std::vector<cv::Point2d>> &all_tracks,
+        const std::vector<cv::Mat> &left_images,
+        int n_tracks = 5);
+
+    void VisualizeAllTracks(
+        const std::vector<std::vector<cv::Point2d>> &all_tracks,
+        const std::vector<cv::Mat> &left_images);
+
 private:
     //> CH: shared pointer to the class of third-order edge detector
     std::shared_ptr<ThirdOrderEdgeDetectionCPU> TOED = nullptr;
