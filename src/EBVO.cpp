@@ -69,15 +69,7 @@ void EBVO::PerformEdgeBasedVO()
         LOG_ERROR("Failed to get first frame from dataset");
         return;
     }
-    std::vector<double> left_intr = dataset.left_intr();
-    std::vector<double> right_intr = dataset.right_intr();
 
-    // is it a storage issue of us not making the original one matrix?
-    cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
-    cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
-
-    cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs());
-    cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs());
 
     // Temporal tracking variables for optical flow
     std::vector<Edge> tracked_edges;
