@@ -2,7 +2,7 @@
 
 # Dataset Details
 dataset_dir: "/Users/saulll./Desktop/Independent Study/datasets"
-output_dir: "/Users/saulll./Desktop/IndependentStudyResults/delivery_area_results/saturday_june_28th/single_ncc_threshold"
+output_dir: "/Users/saulll./desktop/IndependentStudyResults/delivery_area_results/friday_july_10th/test"
 sequence_name: "delivery_area"
 dataset_type: "ETH3D"
 
