@@ -50,7 +50,43 @@ std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, con
 
 std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges);
 
-// clear
 std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<Edge> &edge_points, double shift_magnitude, Dataset &dataset);
+
+bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epipolar_line);
+void FilterByEpipolarDistance(
+    int &epi_true_positive,
+    int &epi_false_negative,
+    int &epi_true_negative,
+    double &per_edge_epi_precision,
+    int &epi_edges_evaluated,
+    const std::vector<Edge> &secondary_edges,
+    const std::vector<Edge> &test_secondary_edges,
+    cv::Point2d &ground_truth_edge,
+    double threshold);
+void FilterByDisparity(
+    std::vector<Edge> &filtered_secondary_edges,
+    const std::vector<Edge> &edge_candidates,
+    bool gt,
+    const Edge &primary_edge);
+void DisparityRecallUpdate(
+    int &disp_true_positive,
+    int &disp_false_negative,
+    int &disp_edges_evaluated,
+    double &per_edge_disp_precision,
+    const std::vector<Edge> &filtered_edges,
+    cv::Point2d &ground_truth_edge,
+    double threshold);
+void EpipolarShiftFilter(
+    const std::vector<Edge> &filtered_edges,
+    std::vector<Edge> &shifted_edges,
+    const Eigen::Vector3d &epipolar_line);
+void EpipolarShiftRecallUpdate(
+    int &shift_true_positive,
+    int &shift_false_negative,
+    int &shift_edges_evaluated,
+    double &per_edge_shift_precision,
+    const std::vector<Edge> &shifted_edges,
+    cv::Point2d &ground_truth_edge,
+    double threshold);
 
 #endif // MATCHES_H

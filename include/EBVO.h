@@ -38,21 +38,30 @@ public:
         const cv::Mat &img2,
         const std::vector<Edge> &edges,
         int patch_size);
-
-    cv::Point3d TriangulatePoint(
-        const cv::Point2d &left_pt,
-        const cv::Point2d &right_pt,
-        const cv::Mat &left_camera_matrix,
-        const cv::Mat &right_camera_matrix);
-
     void VisualizeTracks_OpenCVStyle(
         const std::vector<std::vector<cv::Point2d>> &all_tracks,
         const std::vector<cv::Mat> &left_images,
         int n_tracks = 5);
 
-    void VisualizeAllTracks(
-        const std::vector<std::vector<cv::Point2d>> &all_tracks,
-        const std::vector<cv::Mat> &left_images);
+    std::pair<Eigen::Matrix3d, std::vector<int>> Ransac4EdgeEssential(
+        const std::vector<Edge> &edge1,
+        const std::vector<Edge> &edge2,
+        const Eigen::Matrix3d &K,
+        int num_iterations = 1000,
+        double threshold = 1.0);
+
+    std::pair<Eigen::Matrix3d, Eigen::Vector3d> RelativePoseFromEssential(
+        const Eigen::Matrix3d &E,
+        int inlierCount,
+        const std::vector<Edge> &edge1,
+        const std::vector<Edge> &edge2,
+        double threshold = 1.0);
+
+    Eigen::Vector3d Point3DFromEdge(
+        bool left,
+        const double &disparity,
+        const Eigen::Matrix3d &K_inverse,
+        Edge &edge);
 
 private:
     //> CH: shared pointer to the class of third-order edge detector
