@@ -71,16 +71,7 @@ struct RecallMetrics {
       double per_image_lowe_time;
       double per_image_total_time;
   };
-  
-  struct Point2dHash {
-      std::size_t operator()(const cv::Point2d& pt) const {
-          std::hash<double> hasher;
-          std::size_t h1 = hasher(pt.x);
-          std::size_t h2 = hasher(pt.y);
-          return h1 ^ (h2 << 1); 
-      }
-  };
-  
+    
   struct EdgeCluster {
       cv::Point2d center_coord;                  
       double center_orientation;      
@@ -96,7 +87,24 @@ struct RecallMetrics {
   
       std::vector<cv::Point2d> contributing_edges;
       std::vector<double> contributing_orientations;
+
+      bool operator==(const EdgeMatch& other) const {
+        return cv::norm(coord - other.coord) < 1e-6 &&
+               std::abs(orientation - other.orientation) < 1e-6 &&
+               std::abs(final_score - other.final_score) < 1e-6;
+    }    
   };
+
+  struct EdgeMatchHash {
+    std::size_t operator()(const EdgeMatch& match) const {
+        std::hash<double> hasher;
+        std::size_t h1 = hasher(match.coord.x);
+        std::size_t h2 = hasher(match.coord.y);
+        std::size_t h3 = hasher(match.orientation);
+        std::size_t h4 = hasher(match.final_score);
+        return (((h1 ^ (h2 << 1)) ^ (h3 << 2)) ^ (h4 << 3));
+    }
+};
   
   struct SourceEdge {
     cv::Point2d position;
@@ -121,9 +129,8 @@ struct RecallMetrics {
   
   struct EdgeMatchResult {
       RecallMetrics recall_metrics;
-      std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches; 
-      //std::vector<std::pair<SourceEdge, std::vector<EdgeMatch>>> source_to_cluster_matches;
-  };
+      std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches;
+    };
 
 struct BidirectionalMetrics{
     int matches_before_bct;

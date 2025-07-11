@@ -21,6 +21,7 @@
 #define MATCH_TOL                       (3)     //> in pixels
 #define GT_SPATIAL_TOLERANCE            (3.0)
 #define NEAR_ZERO_CHECK                 (1e-6)
+#define EDGE_QUALITY_THRESH             (-0.3)
 
 #define MEASURE_TIMINGS                 (false)
 #define DISPLAY_STERO_EDGE_MATCHES      (false)
