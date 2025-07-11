@@ -248,9 +248,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     auto [left_orthogonal_one, left_orthogonal_two] = CalculateOrthogonalShifts(left_edges, ORTHOGONAL_SHIFT_MAG, dataset);
 
-    // std::cout << left_orthogonal_one.size() << std::endl;
-
-    // CalculateOrthogonalShifts clear
     std::vector<Edge> filtered_left_edges;
     std::vector<cv::Point2d> filtered_ground_truth_right_edges;
 
@@ -269,22 +266,11 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         &ground_truth_right_edges,
         &filtered_ground_truth_right_edges);
 
-    // std::cout << "Filtered left edges size: " << filtered_left_edges.size() << std::endl;
-    // std::cout << "left_patch_set_one size: " << left_patch_set_one.size() << std::endl;
-    // std::cout << "left_patch_set_two size: " << left_patch_set_two.size() << std::endl;
-    // std::cout << "Filtered ground truth right edges size: " << filtered_ground_truth_right_edges.size() << std::endl;
-
     Eigen::Matrix3d fundamental_matrix_21 = dataset.get_fund_mat_21();
     Eigen::Matrix3d fundamental_matrix_12 = dataset.get_fund_mat_12();
 
-    // std::cout << fundamental_matrix_21 << std::endl;
-    // std::cout << fundamental_matrix_12 << std::endl;
-
     std::vector<Eigen::Vector3d> epipolar_lines_right = CalculateEpipolarLine(fundamental_matrix_21, filtered_left_edges);
 
-    // std::cout << epipolar_lines_right.size() << std::endl;
-
-    // good so far
     EdgeMatchResult forward_match = CalculateMatches(
         filtered_left_edges,
         dataset.right_edges,
@@ -555,39 +541,19 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             const auto &primary_patch_one = primary_patch_set_one[i];
             const auto &primary_patch_two = primary_patch_set_two[i];
 
-            double a = epipolar_line(0);
-            double b = epipolar_line(1);
-            double c = epipolar_line(2);
-
-            if (std::abs(b) < 1e-6)
-                continue;
-
-            double a1_line = -a / b;
-            double b1_line = -1;
-
-            double m_epipolar = -a1_line / b1_line;
-            double angle_diff_rad = abs(primary_edge.orientation - atan(m_epipolar));
-            double angle_diff_deg = angle_diff_rad * (180.0 / M_PI);
-            if (angle_diff_deg > 180)
+            if (!CheckEpipolarTangency(primary_edge, epipolar_line))
             {
-                angle_diff_deg -= 180;
-            }
-
-            bool primary_passes_tangency = (abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
-            if (!primary_passes_tangency)
-            {
-                continue;
+                continue; // Skip edges that do not pass the epipolar tangency test
             }
 
             ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD///////////////////////////////
 #if MEASURE_TIMINGS
             auto start_epi = std::chrono::high_resolution_clock::now();
 #endif
-            // this works fine
+
             std::vector<Edge> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 0.5);
             std::vector<Edge> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 3);
 
-            // epi_input_counts.push_back(secondary_edge_coords.size());
             local_epi_input_counts[thread_id].push_back(secondary_edges.size());
 
 #if MEASURE_TIMINGS
@@ -599,54 +565,11 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
-                int epi_precision_numerator = 0;
-                bool match_found = false;
-
-                for (const auto &candidate : secondary_candidates_data)
-                {
-
-                    if (cv::norm(candidate.location - ground_truth_edge) <= 0.5)
-                    {
-                        // std::cout << "Match found: " << candidate.location << " vs " << ground_truth_edge << std::endl;
-                        epi_precision_numerator++;
-                        match_found = true;
-                        // break;
-                    }
-                }
-
-                if (match_found)
-                {
-                    epi_true_positive++;
-                    // std::cout << "Match found: " << primary_edge.location << " vs " << ground_truth_edge << std::endl;
-                }
-                else
-                {
-                    bool gt_match_found = false;
-                    for (const auto &test_candidate : test_secondary_candidates_data)
-                    {
-                        if (cv::norm(test_candidate.location - ground_truth_edge) <= 0.5)
-                        {
-                            // std::cout << "GT match found: " << test_candidate.location << " vs " << ground_truth_edge << std::endl;
-                            gt_match_found = true;
-                            break;
-                        }
-                    }
-
-                    if (!gt_match_found)
-                    {
-                        epi_true_negative++;
-                        continue;
-                    }
-                    else
-                    {
-                        epi_false_negative++;
-                    }
-                }
-                if (!secondary_candidates_data.empty())
-                {
-                    per_edge_epi_precision += static_cast<double>(epi_precision_numerator) / secondary_candidates_data.size();
-                    epi_edges_evaluated++;
-                }
+                FilterByEpipolarDistance(
+                    epi_true_positive, epi_false_negative, epi_true_negative, per_edge_epi_precision, epi_edges_evaluated,
+                    secondary_candidates_data, test_secondary_candidates_data, ground_truth_edge,
+                    0.5 // threshold
+                );
             }
             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
@@ -658,23 +581,12 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
             std::vector<Edge> filtered_secondary_edges;
 
-            for (size_t j = 0; j < secondary_candidates_data.size(); j++)
-            {
-                const Edge &secondary_edge = secondary_candidates_data[j];
+            FilterByDisparity(
+                filtered_secondary_edges,
+                secondary_candidates_data,
+                !selected_ground_truth_edges.empty(),
+                primary_edge);
 
-                double disparity = (!selected_ground_truth_edges.empty()) ? (primary_edge.location.x - secondary_edge.location.x) : (secondary_edge.location.x - primary_edge.location.x);
-
-                bool within_horizontal = (disparity >= 0) && (disparity <= MAX_DISPARITY);
-                bool within_vertical = std::abs(secondary_edge.location.y - primary_edge.location.y) <= MAX_DISPARITY;
-
-                if (within_horizontal && within_vertical)
-                {
-                    filtered_secondary_edges.push_back(secondary_edge);
-                    // checked: std::cout << "Filtered secondary edge: " << secondary_edge.location << std::endl;
-                }
-            }
-
-            // disp_input_counts.push_back(secondary_candidates_data.size());
             local_disp_input_counts[thread_id].push_back(secondary_candidates_data.size());
 
 #if MEASURE_TIMINGS
@@ -686,60 +598,20 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
-                // checked: std::cout << "Filtered secondary edges size: " << filtered_secondary_edges.size() << std::endl;
-
-                int disp_precision_numerator = 0;
-                bool disp_match_found = false;
-
-                for (const auto &filtered_candidate : filtered_secondary_edges)
-                {
-                    if (cv::norm(filtered_candidate.location - ground_truth_edge) <= 0.5)
-                    {
-                        // checked: std::cout << "Disparity match found: " << filtered_candidate.location << " vs " << ground_truth_edge << std::endl;
-                        disp_precision_numerator++;
-                        disp_match_found = true;
-                        // break;
-                    }
-                }
-
-                if (disp_match_found)
-                {
-                    disp_true_positive++;
-                }
-                else
-                {
-                    disp_false_negative++;
-                }
-                if (!filtered_secondary_edges.empty())
-                {
-                    per_edge_disp_precision += static_cast<double>(disp_precision_numerator) / filtered_secondary_edges.size();
-                    disp_edges_evaluated++;
-                }
+                DisparityRecallUpdate(
+                    disp_true_positive, disp_false_negative, disp_edges_evaluated, per_edge_disp_precision,
+                    filtered_secondary_edges, ground_truth_edge, 0.5);
             }
             ///////////////////////////////EPIPOLAR SHIFT THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
             auto start_shift = std::chrono::high_resolution_clock::now();
 #endif
 
-            // disp_output_counts.push_back(filtered_secondary_edges.size());
             local_disp_output_counts[thread_id].push_back(filtered_secondary_edges.size());
 
             std::vector<Edge> shifted_secondary_edge;
-            std::vector<double> epipolar_coefficients = {a, b, c};
+            EpipolarShiftFilter(filtered_secondary_edges, shifted_secondary_edge, epipolar_line);
 
-            for (size_t j = 0; j < filtered_secondary_edges.size(); j++)
-            {
-                bool secondary_passes_tangency = false;
-
-                Edge shifted_edge = PerformEpipolarShift(filtered_secondary_edges[j], epipolar_coefficients, secondary_passes_tangency);
-                if (secondary_passes_tangency)
-                {
-                    // std::cout << "Secondary edge passes tangency: " << shifted_edge.location << std::endl;
-                    shifted_secondary_edge.push_back(shifted_edge);
-                }
-            }
-
-            // shift_input_counts.push_back(filtered_secondary_edges.size());
             local_shift_input_counts[thread_id].push_back(filtered_secondary_edges.size());
 
 #if MEASURE_TIMINGS
@@ -751,34 +623,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////EPIPOLAR SHIFT THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
-                int shift_precision_numerator = 0;
-                bool shift_match_found = false;
-
-                // checked:std::cout << "Shifted secondary edges size: " << shifted_secondary_edge.size() << std::endl;
-                for (const auto &shifted_candidate : shifted_secondary_edge)
-                {
-                    // checked : std::cout << "Shifted candidate edge: " << shifted_candidate.location << std::endl;
-                    if (cv::norm(shifted_candidate.location - ground_truth_edge) <= 3.0)
-                    {
-                        shift_precision_numerator++;
-                        shift_match_found = true;
-                        // break;
-                    }
-                }
-
-                if (shift_match_found)
-                {
-                    shift_true_positive++;
-                }
-                else
-                {
-                    shift_false_negative++;
-                }
-                if (!shifted_secondary_edge.empty())
-                {
-                    per_edge_shift_precision += static_cast<double>(shift_precision_numerator) / shifted_secondary_edge.size();
-                    shift_edges_evaluated++;
-                }
+                EpipolarShiftRecallUpdate(shift_true_positive, shift_false_negative, shift_edges_evaluated,
+                                          per_edge_shift_precision, shifted_secondary_edge, ground_truth_edge,
+                                          3.0); // threshold
             }
             ///////////////////////////////EPIPOLAR CLUSTER THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
@@ -1347,5 +1194,198 @@ void ExtractPatches(
                 filtered_gt_edges_out->push_back((*ground_truth_edges)[i]);
             }
         }
+    }
+}
+
+bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epipolar_line)
+{
+    double a = epipolar_line(0);
+    double b = epipolar_line(1);
+    double c = epipolar_line(2);
+
+    if (std::abs(b) < 1e-6)
+        return false;
+
+    double a1_line = -a / b;
+    double b1_line = -1;
+    double m_epipolar = -a1_line / b1_line;
+    double angle_diff_rad = abs(primary_edge.orientation - atan(m_epipolar));
+    double angle_diff_deg = angle_diff_rad * (180.0 / M_PI);
+    if (angle_diff_deg > 180)
+    {
+        angle_diff_deg -= 180;
+    }
+
+    bool primary_passes_tangency = (abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
+    return primary_passes_tangency;
+}
+
+void FilterByEpipolarDistance(
+    int &epi_true_positive,
+    int &epi_false_negative,
+    int &epi_true_negative,
+    double &per_edge_epi_precision,
+    int &epi_edges_evaluated,
+    const std::vector<Edge> &secondary_edges,
+    const std::vector<Edge> &test_secondary_edges,
+    cv::Point2d &ground_truth_edge,
+    double threshold)
+{
+    int epi_precision_numerator = 0;
+    bool match_found = false;
+    for (const auto &candidate : secondary_edges)
+    {
+        if (cv::norm(candidate.location - ground_truth_edge) <= threshold)
+        {
+            epi_precision_numerator++;
+            match_found = true;
+        }
+    }
+    if (match_found)
+    {
+        epi_true_positive++;
+    }
+    else
+    {
+        bool gt_match_found = false;
+        for (const auto &test_candidate : test_secondary_edges)
+        {
+            if (cv::norm(test_candidate.location - ground_truth_edge) <= threshold)
+            {
+                gt_match_found = true;
+                break;
+            }
+        }
+
+        if (!gt_match_found)
+        {
+            epi_true_negative++;
+        }
+        else
+        {
+            epi_false_negative++;
+        }
+    }
+    if (!secondary_edges.empty())
+    {
+        per_edge_epi_precision += static_cast<double>(epi_precision_numerator) / secondary_edges.size();
+        epi_edges_evaluated++;
+    }
+}
+
+void FilterByDisparity(
+    std::vector<Edge> &filtered_secondary_edges,
+    const std::vector<Edge> &edge_candidates,
+    bool gt,
+    const Edge &primary_edge)
+{
+    for (size_t j = 0; j < edge_candidates.size(); j++)
+    {
+        const Edge &candidate = edge_candidates[j];
+        double disparity = primary_edge.location.x - candidate.location.x;
+        if (!gt)
+        {
+            disparity = -disparity;
+        }
+        bool within_horizontal = (disparity >= 0) && (disparity <= MAX_DISPARITY);
+        bool within_vertical = std::abs(candidate.location.y - primary_edge.location.y) <= MAX_DISPARITY;
+
+        if (within_horizontal && within_vertical)
+        {
+            filtered_secondary_edges.push_back(candidate);
+        }
+    }
+}
+
+void DisparityRecallUpdate(
+    int &disp_true_positive,
+    int &disp_false_negative,
+    int &disp_edges_evaluated,
+    double &per_edge_disp_precision,
+    const std::vector<Edge> &filtered_edges,
+    cv::Point2d &ground_truth_edge,
+    double threshold)
+{
+    int disp_precision_numerator = 0;
+    bool disp_match_found = false;
+
+    for (const auto &filtered_candidate : filtered_edges)
+    {
+        if (cv::norm(filtered_candidate.location - ground_truth_edge) <= threshold)
+        {
+            disp_precision_numerator++;
+            disp_match_found = true;
+        }
+    }
+
+    if (disp_match_found)
+    {
+        disp_true_positive++;
+    }
+    else
+    {
+        disp_false_negative++;
+    }
+    if (!filtered_edges.empty())
+    {
+        per_edge_disp_precision += static_cast<double>(disp_precision_numerator) / filtered_edges.size();
+        disp_edges_evaluated++;
+    }
+}
+
+void EpipolarShiftFilter(
+    const std::vector<Edge> &filtered_edges,
+    std::vector<Edge> &shifted_edges,
+    const Eigen::Vector3d &epipolar_line)
+{
+    std::vector<double> epipolar_coefficients = {epipolar_line(0), epipolar_line(1), epipolar_line(2)};
+
+    for (size_t j = 0; j < filtered_edges.size(); j++)
+    {
+        bool secondary_passes_tangency = false;
+
+        Edge shifted_edge = PerformEpipolarShift(filtered_edges[j], epipolar_coefficients, secondary_passes_tangency);
+        if (secondary_passes_tangency)
+        {
+            shifted_edges.push_back(shifted_edge);
+        }
+    }
+}
+
+void EpipolarShiftRecallUpdate(
+    int &shift_true_positive,
+    int &shift_false_negative,
+    int &shift_edges_evaluated,
+    double &per_edge_shift_precision,
+    const std::vector<Edge> &shifted_edges,
+    cv::Point2d &ground_truth_edge,
+    double threshold)
+{
+    int shift_precision_numerator = 0;
+    bool shift_match_found = false;
+
+    // checked:std::cout << "Shifted secondary edges size: " << shifted_secondary_edge.size() << std::endl;
+    for (const auto &shifted_candidate : shifted_edges)
+    {
+        // checked : std::cout << "Shifted candidate edge: " << shifted_candidate.location << std::endl;
+        if (cv::norm(shifted_candidate.location - ground_truth_edge) <= threshold)
+        {
+            shift_precision_numerator++;
+            shift_match_found = true;
+        }
+    }
+
+    if (shift_match_found)
+    {
+        shift_true_positive++;
+    }
+    else
+    {
+        shift_false_negative++;
+    }
+    if (!shifted_edges.empty())
+    {
+        per_edge_shift_precision += static_cast<double>(shift_precision_numerator) / shifted_edges.size();
+        shift_edges_evaluated++;
     }
 }

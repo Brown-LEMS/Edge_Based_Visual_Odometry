@@ -58,7 +58,6 @@ struct Camera
     Eigen::Matrix3d F;              // fundamental matrix
 };
 
-
 struct CameraInfo
 {
     Camera left;
@@ -127,7 +126,6 @@ struct RecallMetrics
     double per_image_total_time;
 };
 
-
 struct EdgeMatchResult
 {
     RecallMetrics recall_metrics;
@@ -142,7 +140,6 @@ struct BidirectionalMetrics
     double per_image_bct_precision;
     double per_image_bct_time;
 };
-
 
 struct StereoMatchResult
 {
@@ -188,11 +185,15 @@ public:
     int get_height() { return img_height; };
     int get_width() { return img_width; };
 
+    double get_focal_length() { return camera_info.focal_length; };
+    double get_left_focal_length() { return camera_info.left.intrinsics[0]; };
+    double get_right_focal_length() { return camera_info.right.intrinsics[0]; };
+    double get_baseline() { return camera_info.baseline; };
+
     std::vector<double> left_intr() { return camera_info.left.intrinsics; };
     std::vector<double> right_intr() { return camera_info.right.intrinsics; };
-    std::vector<double> left_dist_coeffs() {return camera_info.left.distortion; };
-    std::vector<double> right_dist_coeffs() {return camera_info.right.distortion; };
-
+    std::vector<double> left_dist_coeffs() { return camera_info.left.distortion; };
+    std::vector<double> right_dist_coeffs() { return camera_info.right.distortion; };
 
     // setters
     void increment_num_imgs() { Total_Num_Of_Imgs++; };
@@ -209,7 +210,6 @@ private:
     // Images info
     unsigned Total_Num_Of_Imgs;
     int img_height, img_width;
-
 
     // didn't find this:
     double max_disparity;
