@@ -1029,8 +1029,8 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
     double total_time;
     
     // Maps to store discarded matches to be revisited
-    std::unordered_map<SourceEdge, std::vector<EdgeMatch>, SourceEdgeHash> forward_discarded_edges;
-    std::unordered_map<EdgeMatch, std::vector<SourceEdge>, EdgeMatchHash> reverse_discarded_edges;
+    std::map<SourceEdge, std::vector<EdgeMatch>> forward_discarded_edges;
+    std::map<EdgeMatch, std::vector<SourceEdge>> reverse_discarded_edges;    
 
     //> CH: this is a global structure of final_matches
     std::vector<std::pair<SourceEdge, EdgeMatch>> final_matches;
@@ -1539,7 +1539,6 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
             if (lowe_ratio <= 1.0) {
                 // Definitive match
-
                 if (!selected_ground_truth_edges.empty()) {
                     local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
                     if (cv::norm(best_match.coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
@@ -1550,12 +1549,20 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                     }
                 }
 
+                std::cout << "[DEBUG] best_match: coord=(" << best_match.coord.x << ", " << best_match.coord.y
+                << "), orientation=" << best_match.orientation 
+                << ", score=" << best_match.final_score << std::endl;    
+
                 // Check if best match was previously ambiguous
+                if (reverse_discarded_edges.find(best_match) != reverse_discarded_edges.end()) {
+                    std::cout << "[INFO] Reverse map contains best_match with coord: (" 
+                    << best_match.coord.x << ", " << best_match.coord.y 
+                    << "), score: " << best_match.final_score << std::endl;
+                }                
 
                 local_final_matches[thread_id].emplace_back(source_edge, best_match);
                 local_lowe_output_counts[thread_id].push_back(1);
             } else {
-
                 if (best_score >= EDGE_QUALITY_THRESH && second_best_score >= EDGE_QUALITY_THRESH) {
 
                     forward_discarded_edges[source_edge].push_back(best_match);
@@ -1586,8 +1593,10 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
             }
 
             // Check if this single match was previously ambiguous
+            if (reverse_discarded_edges.find(best_match) != reverse_discarded_edges.end()) {
+                // best_match is a key in the map
+            }            
 
-            // Store definitive one-match result
             local_final_matches[thread_id].emplace_back(source_edge, best_match);
             local_lowe_output_counts[thread_id].push_back(1);
 
@@ -1610,6 +1619,31 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 #endif
     }   //> MARK: end of looping over left edges   
 }
+
+std::cout << "[DEBUG] reverse_discarded_edges map contents:\n{";
+for (const auto& [key, sources] : reverse_discarded_edges) {
+    std::cout << "\n  (" << key.coord.x << ", " << key.coord.y 
+              << ", orientation=" << key.orientation 
+              << ", score=" << key.final_score << ") : [";
+    for (const auto& src : sources) {
+        std::cout << "(" << src.position.x << ", " << src.position.y 
+                  << ", ori=" << src.orientation << "), ";
+    }
+    std::cout << "]";
+}
+std::cout << "\n}\n";
+
+std::cout << "[DEBUG] forward_discarded_edges map contents:\n{";
+for (const auto& [src, matches] : forward_discarded_edges) {
+    std::cout << "\n  (" << src.position.x << ", " << src.position.y 
+              << ", ori=" << src.orientation << ") : [";
+    for (const auto& match : matches) {
+        std::cout << "(" << match.coord.x << ", " << match.coord.y 
+                  << ", score=" << match.final_score << "), ";
+    }
+    std::cout << "]";
+}
+std::cout << "\n}\n";
 
 #if MEASURE_TIMINGS
     auto total_end = std::chrono::high_resolution_clock::now();
