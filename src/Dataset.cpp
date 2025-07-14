@@ -71,6 +71,7 @@ Dataset::Dataset(YAML::Node config_map, bool use_GCC_filter) : config_file(confi
     if (file_info.dataset_type == "EuRoC")
     {
         file_info.GT_file_name = config_file["state_GT_estimate_file_name"].as<std::string>();
+        file_info.has_gt = true;
     }
 
     try
@@ -128,6 +129,7 @@ Dataset::Dataset(YAML::Node config_map, bool use_GCC_filter) : config_file(confi
         // ETH3D stereo focal length and baseline
         if (file_info.dataset_type == "ETH3D")
         {
+            file_info.has_gt = true;
             if (stereo["focal_length"] && stereo["baseline"])
             {
                 camera_info.focal_length = stereo["focal_length"].as<double>();
