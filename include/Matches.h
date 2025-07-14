@@ -53,6 +53,7 @@ std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_m
 std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<Edge> &edge_points, double shift_magnitude, Dataset &dataset);
 
 bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epipolar_line);
+
 bool FilterByEpipolarDistance(
     int &epi_true_positive,
     int &epi_false_negative,
@@ -63,37 +64,60 @@ bool FilterByEpipolarDistance(
     const std::vector<Edge> &test_secondary_edges,
     cv::Point2d &ground_truth_edge,
     double threshold);
+
 void FilterByDisparity(
     std::vector<Edge> &filtered_secondary_edges,
     const std::vector<Edge> &edge_candidates,
     bool gt,
     const Edge &primary_edge);
+
+template <typename Container>
 void RecallUpdate(int &true_positive,
                   int &false_negative,
                   int &edges_evaluated,
                   double &per_edge_precision,
-                  const std::vector<Edge> &outputed_edges,
+                  const Container &output_candidates,
                   cv::Point2d &ground_truth_edge,
                   double threshold);
-void DisparityRecallUpdate(
-    int &disp_true_positive,
-    int &disp_false_negative,
-    int &disp_edges_evaluated,
-    double &per_edge_disp_precision,
-    const std::vector<Edge> &filtered_edges,
-    cv::Point2d &ground_truth_edge,
-    double threshold);
+void FormClusterCenters(
+    std::vector<EdgeCluster> &cluster_centers,
+    std::vector<std::vector<Edge>> &clusters);
+
 void EpipolarShiftFilter(
     const std::vector<Edge> &filtered_edges,
     std::vector<Edge> &shifted_edges,
     const Eigen::Vector3d &epipolar_line);
-void EpipolarShiftRecallUpdate(
-    int &shift_true_positive,
-    int &shift_false_negative,
-    int &shift_edges_evaluated,
-    double &per_edge_shift_precision,
-    const std::vector<Edge> &shifted_edges,
-    cv::Point2d &ground_truth_edge,
-    double threshold);
 
+void FilterByNCC(
+    const cv::Mat &primary_patch_one,
+    const cv::Mat &primary_patch_two,
+    const std::vector<cv::Mat> &secondary_patch_set_one,
+    const std::vector<cv::Mat> &secondary_patch_set_two,
+    const cv::Point2d &ground_truth_edge,
+    std::vector<EdgeMatch> &passed_ncc_matches,
+    std::vector<EdgeCluster> &filtered_cluster_centers,
+    bool gt,
+    int &ncc_true_positive,
+    int &ncc_false_negative,
+    double &per_edge_ncc_precision,
+    int &ncc_edges_evaluated,
+    double threshold
+
+);
+
+void FilterByLowe(
+    std::vector<std::vector<std::pair<Edge, EdgeMatch>>> &local_final_matches,
+    std::vector<std::vector<int>> &local_lowe_input_counts,
+    std::vector<std::vector<int>> &local_lowe_output_counts,
+    std::vector<std::vector<cv::Point2d>> &local_GT_right_edges_after_lowe,
+    int thread_id,
+    const std::vector<EdgeMatch> &passed_ncc_matches,
+    bool gt,
+    const Edge &primary_edge,
+    cv::Point2d &ground_truth_edge,
+    int &lowe_true_positive,
+    int &lowe_false_negative,
+    double &per_edge_lowe_precision,
+    int &lowe_edges_evaluated,
+    double threshold);
 #endif // MATCHES_H

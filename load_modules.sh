@@ -13,8 +13,7 @@ module_loaded() {
 [[ $(module_loaded opencv) ]] || module load opencv
 
 # Build step
-rm -r -f outputs
-mkdir outputs
+rm -r -f build
 mkdir -p build && cd build
 cmake ..
 make -j
