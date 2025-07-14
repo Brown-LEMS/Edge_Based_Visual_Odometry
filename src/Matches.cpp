@@ -543,14 +543,13 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
             if (!CheckEpipolarTangency(primary_edge, epipolar_line))
             {
-                continue; // Skip edges that do not pass the epipolar tangency test
+                continue;
             }
 
             ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD///////////////////////////////
 #if MEASURE_TIMINGS
             auto start_epi = std::chrono::high_resolution_clock::now();
 #endif
-
             std::vector<Edge> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 0.5);
             std::vector<Edge> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 3);
 
@@ -565,11 +564,12 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
-                FilterByEpipolarDistance(
-                    epi_true_positive, epi_false_negative, epi_true_negative, per_edge_epi_precision, epi_edges_evaluated,
-                    secondary_candidates_data, test_secondary_candidates_data, ground_truth_edge,
-                    0.5 // threshold
-                );
+                if (FilterByEpipolarDistance(
+                        epi_true_positive, epi_false_negative, epi_true_negative, per_edge_epi_precision, epi_edges_evaluated,
+                        secondary_candidates_data, test_secondary_candidates_data, ground_truth_edge,
+                        0.5 // threshold
+                        ))
+                    continue;
             }
             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
@@ -587,6 +587,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 !selected_ground_truth_edges.empty(),
                 primary_edge);
 
+            // disp_input_counts.push_back(secondary_candidates_data.size());
             local_disp_input_counts[thread_id].push_back(secondary_candidates_data.size());
 
 #if MEASURE_TIMINGS
@@ -598,20 +599,22 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
-                DisparityRecallUpdate(
-                    disp_true_positive, disp_false_negative, disp_edges_evaluated, per_edge_disp_precision,
-                    filtered_secondary_edges, ground_truth_edge, 0.5);
+                RecallUpdate(disp_true_positive, disp_false_negative, disp_edges_evaluated,
+                             per_edge_disp_precision, filtered_secondary_edges, ground_truth_edge,
+                             0.5);
             }
             ///////////////////////////////EPIPOLAR SHIFT THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
             auto start_shift = std::chrono::high_resolution_clock::now();
 #endif
 
+            // disp_output_counts.push_back(filtered_secondary_edges.size());
             local_disp_output_counts[thread_id].push_back(filtered_secondary_edges.size());
 
             std::vector<Edge> shifted_secondary_edge;
             EpipolarShiftFilter(filtered_secondary_edges, shifted_secondary_edge, epipolar_line);
 
+            // shift_input_counts.push_back(filtered_secondary_edges.size());
             local_shift_input_counts[thread_id].push_back(filtered_secondary_edges.size());
 
 #if MEASURE_TIMINGS
@@ -623,9 +626,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////EPIPOLAR SHIFT THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
-                EpipolarShiftRecallUpdate(shift_true_positive, shift_false_negative, shift_edges_evaluated,
-                                          per_edge_shift_precision, shifted_secondary_edge, ground_truth_edge,
-                                          3.0); // threshold
+                RecallUpdate(shift_true_positive, shift_false_negative, shift_edges_evaluated,
+                             per_edge_shift_precision, shifted_secondary_edge, ground_truth_edge,
+                             3.0);
             }
             ///////////////////////////////EPIPOLAR CLUSTER THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
@@ -637,31 +640,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
             std::vector<std::vector<Edge>> clusters = ClusterEpipolarShiftedEdges(shifted_secondary_edge); // notice: shifted_secondary_edge will be changed inside the function but wouldn't be used later on.
             std::vector<EdgeCluster> cluster_centers;
-            // checked, but very small.  std::cout << "Clusters size: " << clusters.size() << std::endl;
-            for (const auto &cluster_edges : clusters)
-            {
-
-                if (cluster_edges.empty())
-                    continue;
-
-                cv::Point2d sum_point(0.0, 0.0);
-                double sum_orientation = 0.0;
-
-                for (size_t j = 0; j < cluster_edges.size(); ++j)
-                {
-                    sum_point += cluster_edges[j].location;
-                    sum_orientation += cluster_edges[j].orientation;
-                }
-
-                cv::Point2d avg_point = sum_point * (1.0 / cluster_edges.size());
-                double avg_orientation = sum_orientation * (1.0 / cluster_edges.size());
-
-                EdgeCluster cluster;
-                cluster.center_edge = Edge{avg_point, avg_orientation};
-                cluster.contributing_edges = cluster_edges;
-
-                cluster_centers.push_back(cluster);
-            }
+            FormClusterCenters(cluster_centers, clusters);
 
             // clust_input_counts.push_back(shifted_secondary_edge.size());
             local_clust_input_counts[thread_id].push_back(shifted_secondary_edge.size());
@@ -1220,7 +1199,7 @@ bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epip
     return primary_passes_tangency;
 }
 
-void FilterByEpipolarDistance(
+bool FilterByEpipolarDistance(
     int &epi_true_positive,
     int &epi_false_negative,
     int &epi_true_negative,
@@ -1260,6 +1239,7 @@ void FilterByEpipolarDistance(
         if (!gt_match_found)
         {
             epi_true_negative++;
+            return true;
         }
         else
         {
@@ -1271,6 +1251,7 @@ void FilterByEpipolarDistance(
         per_edge_epi_precision += static_cast<double>(epi_precision_numerator) / secondary_edges.size();
         epi_edges_evaluated++;
     }
+    return false;
 }
 
 void FilterByDisparity(
@@ -1297,39 +1278,36 @@ void FilterByDisparity(
     }
 }
 
-void DisparityRecallUpdate(
-    int &disp_true_positive,
-    int &disp_false_negative,
-    int &disp_edges_evaluated,
-    double &per_edge_disp_precision,
-    const std::vector<Edge> &filtered_edges,
-    cv::Point2d &ground_truth_edge,
-    double threshold)
+void RecallUpdate(int &true_positive,
+                  int &false_negative,
+                  int &edges_evaluated,
+                  double &per_edge_precision,
+                  const std::vector<Edge> &outputed_edges,
+                  cv::Point2d &ground_truth_edge,
+                  double threshold)
 {
-    int disp_precision_numerator = 0;
-    bool disp_match_found = false;
-
-    for (const auto &filtered_candidate : filtered_edges)
+    int precision_numerator = 0;
+    bool match_found = false;
+    for (const auto &candidate : outputed_edges)
     {
-        if (cv::norm(filtered_candidate.location - ground_truth_edge) <= threshold)
+        if (cv::norm(candidate.location - ground_truth_edge) <= threshold)
         {
-            disp_precision_numerator++;
-            disp_match_found = true;
+            precision_numerator++;
+            match_found = true;
         }
     }
-
-    if (disp_match_found)
+    if (match_found)
     {
-        disp_true_positive++;
+        true_positive++;
     }
     else
     {
-        disp_false_negative++;
+        false_negative++;
     }
-    if (!filtered_edges.empty())
+    if (!outputed_edges.empty())
     {
-        per_edge_disp_precision += static_cast<double>(disp_precision_numerator) / filtered_edges.size();
-        disp_edges_evaluated++;
+        per_edge_precision += static_cast<double>(precision_numerator) / outputed_edges.size();
+        edges_evaluated++;
     }
 }
 
@@ -1352,40 +1330,33 @@ void EpipolarShiftFilter(
     }
 }
 
-void EpipolarShiftRecallUpdate(
-    int &shift_true_positive,
-    int &shift_false_negative,
-    int &shift_edges_evaluated,
-    double &per_edge_shift_precision,
-    const std::vector<Edge> &shifted_edges,
-    cv::Point2d &ground_truth_edge,
-    double threshold)
+void FormClusterCenters(
+    std::vector<EdgeCluster> &cluster_centers,
+    std::vector<std::vector<Edge>> &clusters)
 {
-    int shift_precision_numerator = 0;
-    bool shift_match_found = false;
-
-    // checked:std::cout << "Shifted secondary edges size: " << shifted_secondary_edge.size() << std::endl;
-    for (const auto &shifted_candidate : shifted_edges)
+    cluster_centers.clear();
+    for (const auto &cluster_edges : clusters)
     {
-        // checked : std::cout << "Shifted candidate edge: " << shifted_candidate.location << std::endl;
-        if (cv::norm(shifted_candidate.location - ground_truth_edge) <= threshold)
+
+        if (cluster_edges.empty())
+            continue;
+
+        cv::Point2d sum_point(0.0, 0.0);
+        double sum_orientation = 0.0;
+
+        for (size_t j = 0; j < cluster_edges.size(); ++j)
         {
-            shift_precision_numerator++;
-            shift_match_found = true;
+            sum_point += cluster_edges[j].location;
+            sum_orientation += cluster_edges[j].orientation;
         }
-    }
 
-    if (shift_match_found)
-    {
-        shift_true_positive++;
-    }
-    else
-    {
-        shift_false_negative++;
-    }
-    if (!shifted_edges.empty())
-    {
-        per_edge_shift_precision += static_cast<double>(shift_precision_numerator) / shifted_edges.size();
-        shift_edges_evaluated++;
+        cv::Point2d avg_point = sum_point * (1.0 / cluster_edges.size());
+        double avg_orientation = sum_orientation * (1.0 / cluster_edges.size());
+
+        EdgeCluster cluster;
+        cluster.center_edge = Edge{avg_point, avg_orientation};
+        cluster.contributing_edges = cluster_edges;
+
+        cluster_centers.push_back(cluster);
     }
 }
