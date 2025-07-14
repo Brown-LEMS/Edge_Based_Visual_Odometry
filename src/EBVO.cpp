@@ -3,6 +3,7 @@
 #include "EBVO.h"
 #include "Dataset.h"
 #include "Matches.h"
+#include <opencv2/core/eigen.hpp>
 
 EBVO::EBVO(YAML::Node config_map, bool use_GCC_filter) : dataset(config_map, use_GCC_filter) {}
 
@@ -59,7 +60,17 @@ void EBVO::PerformEdgeBasedVO()
     LOG_INFO("Start looping over all image pairs");
 
     StereoFrame current_frame, next_frame;
+    std::vector<double> left_intr = dataset.left_intr();
+    std::vector<double> right_intr = dataset.right_intr();
 
+    cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
+    cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
+
+    cv::Mat left_calib_inv = left_calib.inv();
+    cv::Mat right_calib_inv = right_calib.inv();
+
+    cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs());
+    cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs());
     // Get the first frame from the dataset
     if (!dataset.stereo_iterator->hasNext() ||
         !dataset.stereo_iterator->getNext(current_frame))
@@ -80,9 +91,11 @@ void EBVO::PerformEdgeBasedVO()
         const cv::Mat &curr_right_img = current_frame.right_image;
         const cv::Mat &next_left_img = next_frame.left_image;
         const cv::Mat &next_right_img = next_frame.right_image;
-
+        // If the current frame has ground truth, we can use it
+        if (dataset.has_gt())
+        {
+        }
         const cv::Mat &left_ref_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
-        // const cv::Mat& right_ref_map = right_ref_disparity_maps[i];
 
         std::vector<cv::Mat> curr_left_pyramid, curr_right_pyramid;
         std::vector<cv::Mat> next_left_pyramid, next_right_pyramid;
@@ -104,15 +117,6 @@ void EBVO::PerformEdgeBasedVO()
         dataset.ground_truth_right_edges_after_lowe.clear();
 
         std::cout << "Image Pair #" << frame_idx << "\n";
-        std::vector<double> left_intr = dataset.left_intr();
-        std::vector<double> right_intr = dataset.right_intr();
-
-        // is it a storage issue of us not making the original one matrix?
-        cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
-        cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
-
-        cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs());
-        cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs());
 
         cv::Mat left_undistorted, right_undistorted;
         cv::undistort(curr_left_img, left_undistorted, left_calib, left_dist_coeff_mat);
@@ -161,11 +165,82 @@ void EBVO::PerformEdgeBasedVO()
 
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
         // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
+        if (dataset.has_gt())
+        {
+            int indices[9] = {657, 10000, 10350, 20300, 30200, 35006, 40000, 46741};
+            std::vector<Edge> gt_edges;
+            for (int i = 0; i < 9; ++i)
+            {
+                int index = indices[i];
+                std::cout << "Index: " << index << std::endl;
+                // Get the ground truth edge for the left image
+                Edge GTEdge = GetGTEdge(true, current_frame, next_frame,
+                                        left_ref_map, left_calib_inv, left_calib,
+                                        dataset.left_edges[index]);
+                gt_edges.push_back(GTEdge);
+            }
 
-        StereoMatchResult match_result = DisplayMatches(
-            left_undistorted,
-            right_undistorted,
-            dataset);
+            cv::Mat current_frame_vis;
+            cv::cvtColor(curr_left_img, current_frame_vis, cv::COLOR_GRAY2BGR);
+
+            // Different colors for different selected points
+            std::vector<cv::Scalar> colors = {
+                cv::Scalar(0, 0, 255),   // Red
+                cv::Scalar(0, 255, 0),   // Green
+                cv::Scalar(255, 0, 0),   // Blue
+                cv::Scalar(0, 255, 255), // Yellow
+                cv::Scalar(255, 0, 255), // Magenta
+                cv::Scalar(255, 255, 0), // Cyan
+                cv::Scalar(128, 0, 128), // Purple
+                cv::Scalar(255, 165, 0), // Orange
+                cv::Scalar(255, 20, 147) // Deep Pink
+            };
+
+            for (int i = 0; i < 9; ++i)
+            {
+                int index = indices[i];
+                if (index < dataset.left_edges.size())
+                {
+                    cv::Point2d pt = dataset.left_edges[index].location;
+                    cv::circle(current_frame_vis, pt, 8, colors[i], -1);
+                    cv::putText(current_frame_vis, std::to_string(i),
+                                cv::Point(pt.x + 10, pt.y - 10),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
+                }
+            }
+
+            // Draw GT edges on next frame
+            cv::Mat next_frame_vis;
+            cv::cvtColor(next_left_img, next_frame_vis, cv::COLOR_GRAY2BGR);
+
+            for (int i = 0; i < gt_edges.size(); ++i)
+            {
+                cv::Point2d gt_pt = gt_edges[i].location;
+                // Check if point is within image bounds
+                if (gt_pt.x >= 0 && gt_pt.x < next_frame_vis.cols &&
+                    gt_pt.y >= 0 && gt_pt.y < next_frame_vis.rows)
+                {
+                    cv::circle(next_frame_vis, gt_pt, 8, colors[i], -1);
+                    cv::putText(next_frame_vis, std::to_string(i),
+                                cv::Point(gt_pt.x + 10, gt_pt.y - 10),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
+                }
+            }
+
+            // Save visualization images
+            std::string output_dir = dataset.get_output_path();
+            cv::imwrite(output_dir + "/current_frame_selected_edges_" + std::to_string(frame_idx) + ".png",
+                        current_frame_vis);
+            cv::imwrite(output_dir + "/next_frame_gt_edges_" + std::to_string(frame_idx) + ".png",
+                        next_frame_vis);
+
+            std::cout << "Saved edge tracking visualization for frame " << frame_idx << std::endl;
+        }
+
+        // StereoMatchResult match_result = DisplayMatches(
+        //     left_undistorted,
+        //     right_undistorted,
+        //     dataset);
 
 #if 0
         std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
@@ -235,59 +310,235 @@ void EBVO::PerformEdgeBasedVO()
         std::string save_path = output_path + "/edge_matches_image" + std::to_string(i) + ".png";
         cv::imwrite(save_path, merged_visualization);
 #endif
-        const RecallMetrics &forward_metrics = match_result.forward_match.recall_metrics;
-        all_forward_recall_metrics.push_back(forward_metrics);
-
-        const BidirectionalMetrics &bidirectional_metrics = match_result.bidirectional_metrics;
-        all_bct_metrics.push_back(bidirectional_metrics);
-
-        double avg_before_epi = ComputeAverage(forward_metrics.epi_input_counts);
-        double avg_after_epi = ComputeAverage(forward_metrics.epi_output_counts);
-
-        double avg_before_disp = ComputeAverage(forward_metrics.disp_input_counts);
-        double avg_after_disp = ComputeAverage(forward_metrics.disp_output_counts);
-
-        double avg_before_shift = ComputeAverage(forward_metrics.shift_input_counts);
-        double avg_after_shift = ComputeAverage(forward_metrics.shift_output_counts);
-
-        double avg_before_clust = ComputeAverage(forward_metrics.clust_input_counts);
-        double avg_after_clust = ComputeAverage(forward_metrics.clust_output_counts);
-
-        double avg_before_patch = ComputeAverage(forward_metrics.patch_input_counts);
-        double avg_after_patch = ComputeAverage(forward_metrics.patch_output_counts);
-
-        double avg_before_ncc = ComputeAverage(forward_metrics.ncc_input_counts);
-        double avg_after_ncc = ComputeAverage(forward_metrics.ncc_output_counts);
-
-        double avg_before_lowe = ComputeAverage(forward_metrics.lowe_input_counts);
-        double avg_after_lowe = ComputeAverage(forward_metrics.lowe_output_counts);
-
-        per_image_avg_before_epi.push_back(avg_before_epi);
-        per_image_avg_after_epi.push_back(avg_after_epi);
-
-        per_image_avg_before_disp.push_back(avg_before_disp);
-        per_image_avg_after_disp.push_back(avg_after_disp);
-
-        per_image_avg_before_shift.push_back(avg_before_shift);
-        per_image_avg_after_shift.push_back(avg_after_shift);
-
-        per_image_avg_before_clust.push_back(avg_before_clust);
-        per_image_avg_after_clust.push_back(avg_after_clust);
-
-        per_image_avg_before_patch.push_back(avg_before_patch);
-        per_image_avg_after_patch.push_back(avg_after_patch);
-
-        per_image_avg_before_ncc.push_back(avg_before_ncc);
-        per_image_avg_after_ncc.push_back(avg_after_ncc);
-
-        per_image_avg_before_lowe.push_back(avg_before_lowe);
-        per_image_avg_after_lowe.push_back(avg_after_lowe);
-
-        per_image_avg_before_bct.push_back(match_result.bidirectional_metrics.matches_before_bct);
-        per_image_avg_after_bct.push_back(match_result.bidirectional_metrics.matches_after_bct);
-
         frame_idx++;
+        if (frame_idx >= 1)
+        {
+            break;
+        }
+        current_frame = next_frame;
     }
+}
+void EBVO::ProcessEdges(const cv::Mat &image,
+                        const std::string &filepath,
+                        std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
+                        std::vector<Edge> &edges)
+{
+    std::string path = filepath + ".bin";
+
+    if (std::filesystem::exists(path))
+    {
+        // std::cout << "Loading edge data from: " << path << std::endl;
+        ReadEdgesFromBinary(path, edges);
+    }
+    else
+    {
+        // std::cout << "Running third-order edge detector..." << std::endl;
+        toed->get_Third_Order_Edges(image);
+        edges = toed->toed_edges;
+
+        WriteEdgesToBinary(path, edges);
+        // std::cout << "Saved edge data to: " << path << std::endl;
+    }
+}
+
+/*
+    Pick a random edge
+*/
+std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> EBVO::PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height)
+{
+    std::vector<cv::Point2d> valid_edges;
+    std::vector<double> valid_orientations;
+    std::vector<cv::Point2d> valid_ground_truth_edges;
+    int half_patch = patch_size / 2;
+
+    if (edges.size() != orientations.size() || edges.size() != ground_truth_right_edges.size())
+    {
+        throw std::runtime_error("Edge locations, orientations, and ground truth edges size mismatch.");
+    }
+
+    for (size_t i = 0; i < edges.size(); ++i)
+    {
+        const auto &edge = edges[i];
+        if (edge.x >= half_patch && edge.x < img_width - half_patch &&
+            edge.y >= half_patch && edge.y < img_height - half_patch)
+        {
+            valid_edges.push_back(edge);
+            valid_orientations.push_back(orientations[i]);
+            valid_ground_truth_edges.push_back(ground_truth_right_edges[i]);
+        }
+    }
+
+    num_points = std::min(num_points, valid_edges.size());
+
+    std::vector<cv::Point2d> selected_points;
+    std::vector<double> selected_orientations;
+    std::vector<cv::Point2d> selected_ground_truth_points;
+    std::unordered_set<int> used_indices;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> dis(0, valid_edges.size() - 1);
+
+    while (selected_points.size() < num_points)
+    {
+        int index = dis(gen);
+        if (used_indices.find(index) == used_indices.end())
+        {
+            selected_points.push_back(valid_edges[index]);
+            selected_orientations.push_back(valid_orientations[index]);
+            selected_ground_truth_points.push_back(valid_ground_truth_edges[index]);
+            used_indices.insert(index);
+        }
+    }
+
+    return {selected_points, selected_orientations, selected_ground_truth_points};
+}
+
+void EBVO::CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
+{
+    dataset.forward_gt_data.clear();
+
+    static size_t total_rows_written = 0;
+    static int file_index = 1;
+    static std::ofstream csv_file;
+    static const size_t max_rows_per_file = 1'000'000;
+
+    if (!csv_file.is_open())
+    {
+        std::string filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
+        csv_file.open(filename, std::ios::out);
+    }
+
+    for (const Edge &e : edges)
+    {
+        double disparity = Bilinear_Interpolation(disparity_map, e.location);
+
+        if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
+        {
+            continue;
+        }
+
+        cv::Point2d right_edge(e.location.x - disparity, e.location.y);
+        dataset.forward_gt_data.emplace_back(e.location, right_edge, e.orientation);
+
+        if (total_rows_written >= max_rows_per_file)
+        {
+            csv_file.close();
+            ++file_index;
+            total_rows_written = 0;
+            std::string next_filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
+            csv_file.open(next_filename, std::ios::out);
+        }
+
+        csv_file << disparity << "\n";
+        ++total_rows_written;
+    }
+
+    csv_file.flush();
+}
+
+void EBVO::ReadEdgesFromBinary(const std::string &filepath,
+                               std::vector<Edge> &edges)
+{
+    std::ifstream ifs(filepath, std::ios::binary);
+    if (!ifs.is_open())
+    {
+        std::cerr << "ERROR: Could not open binary file for reading: " << filepath << std::endl;
+        return;
+    }
+
+    size_t size = 0;
+    ifs.read(reinterpret_cast<char *>(&size), sizeof(size));
+
+    edges.resize(size);
+    ifs.read(reinterpret_cast<char *>(edges.data()), sizeof(Edge) * size);
+}
+
+void EBVO::WriteEdgesToBinary(const std::string &filepath,
+                              const std::vector<Edge> &edges)
+{
+    std::ofstream ofs(filepath, std::ios::binary);
+    if (!ofs.is_open())
+    {
+        std::cerr << "ERROR: Could not open binary file for writing: " << filepath << std::endl;
+        return;
+    }
+
+    size_t size = edges.size();
+    ofs.write(reinterpret_cast<const char *>(&size), sizeof(size));
+    ofs.write(reinterpret_cast<const char *>(edges.data()), sizeof(Edge) * size);
+}
+
+void EBVO::WriteEdgeMatchResult(StereoMatchResult &match_result,
+                                std::vector<double> &max_disparity_values,
+                                std::vector<double> &per_image_avg_before_epi,
+                                std::vector<double> &per_image_avg_after_epi,
+                                std::vector<double> &per_image_avg_before_disp,
+                                std::vector<double> &per_image_avg_after_disp,
+                                std::vector<double> &per_image_avg_before_shift,
+                                std::vector<double> &per_image_avg_after_shift,
+                                std::vector<double> &per_image_avg_before_clust,
+                                std::vector<double> &per_image_avg_after_clust,
+                                std::vector<double> &per_image_avg_before_patch,
+                                std::vector<double> &per_image_avg_after_patch,
+                                std::vector<double> &per_image_avg_before_ncc,
+                                std::vector<double> &per_image_avg_after_ncc,
+                                std::vector<double> &per_image_avg_before_lowe,
+                                std::vector<double> &per_image_avg_after_lowe,
+                                std::vector<double> &per_image_avg_before_bct,
+                                std::vector<double> &per_image_avg_after_bct,
+                                std::vector<RecallMetrics> &all_forward_recall_metrics,
+                                std::vector<BidirectionalMetrics> &all_bct_metrics)
+{
+    const RecallMetrics &forward_metrics = match_result.forward_match.recall_metrics;
+    all_forward_recall_metrics.push_back(forward_metrics);
+
+    const BidirectionalMetrics &bidirectional_metrics = match_result.bidirectional_metrics;
+    all_bct_metrics.push_back(bidirectional_metrics);
+
+    double avg_before_epi = ComputeAverage(forward_metrics.epi_input_counts);
+    double avg_after_epi = ComputeAverage(forward_metrics.epi_output_counts);
+
+    double avg_before_disp = ComputeAverage(forward_metrics.disp_input_counts);
+    double avg_after_disp = ComputeAverage(forward_metrics.disp_output_counts);
+
+    double avg_before_shift = ComputeAverage(forward_metrics.shift_input_counts);
+    double avg_after_shift = ComputeAverage(forward_metrics.shift_output_counts);
+
+    double avg_before_clust = ComputeAverage(forward_metrics.clust_input_counts);
+    double avg_after_clust = ComputeAverage(forward_metrics.clust_output_counts);
+
+    double avg_before_patch = ComputeAverage(forward_metrics.patch_input_counts);
+    double avg_after_patch = ComputeAverage(forward_metrics.patch_output_counts);
+
+    double avg_before_ncc = ComputeAverage(forward_metrics.ncc_input_counts);
+    double avg_after_ncc = ComputeAverage(forward_metrics.ncc_output_counts);
+
+    double avg_before_lowe = ComputeAverage(forward_metrics.lowe_input_counts);
+    double avg_after_lowe = ComputeAverage(forward_metrics.lowe_output_counts);
+
+    per_image_avg_before_epi.push_back(avg_before_epi);
+    per_image_avg_after_epi.push_back(avg_after_epi);
+
+    per_image_avg_before_disp.push_back(avg_before_disp);
+    per_image_avg_after_disp.push_back(avg_after_disp);
+
+    per_image_avg_before_shift.push_back(avg_before_shift);
+    per_image_avg_after_shift.push_back(avg_after_shift);
+
+    per_image_avg_before_clust.push_back(avg_before_clust);
+    per_image_avg_after_clust.push_back(avg_after_clust);
+
+    per_image_avg_before_patch.push_back(avg_before_patch);
+    per_image_avg_after_patch.push_back(avg_after_patch);
+
+    per_image_avg_before_ncc.push_back(avg_before_ncc);
+    per_image_avg_after_ncc.push_back(avg_after_ncc);
+
+    per_image_avg_before_lowe.push_back(avg_before_lowe);
+    per_image_avg_after_lowe.push_back(avg_after_lowe);
+
+    per_image_avg_before_bct.push_back(match_result.bidirectional_metrics.matches_before_bct);
+    per_image_avg_after_bct.push_back(match_result.bidirectional_metrics.matches_after_bct);
 
     double total_epi_recall = 0.0;
     double total_disp_recall = 0.0;
@@ -644,152 +895,40 @@ void EBVO::PerformEdgeBasedVO()
                   << std::fixed << std::setprecision(4) << avg_bct_precision * 100 << "\n";
 }
 
-void EBVO::ProcessEdges(const cv::Mat &image,
-                        const std::string &filepath,
-                        std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
-                        std::vector<Edge> &edges)
+Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_frame,
+                     const cv::Mat &disparity_map, const cv::Mat &K_inverse, const cv::Mat &K,
+                     const Edge &edge)
 {
-    std::string path = filepath + ".bin";
-
-    if (std::filesystem::exists(path))
+    double disparity = Bilinear_Interpolation(disparity_map, edge.location);
+    if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
     {
-        // std::cout << "Loading edge data from: " << path << std::endl;
-        ReadEdgesFromBinary(path, edges);
-    }
-    else
-    {
-        // std::cout << "Running third-order edge detector..." << std::endl;
-        toed->get_Third_Order_Edges(image);
-        edges = toed->toed_edges;
-
-        WriteEdgesToBinary(path, edges);
-        // std::cout << "Saved edge data to: " << path << std::endl;
-    }
-}
-
-/*
-    Pick a random edge
-*/
-std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> EBVO::PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height)
-{
-    std::vector<cv::Point2d> valid_edges;
-    std::vector<double> valid_orientations;
-    std::vector<cv::Point2d> valid_ground_truth_edges;
-    int half_patch = patch_size / 2;
-
-    if (edges.size() != orientations.size() || edges.size() != ground_truth_right_edges.size())
-    {
-        throw std::runtime_error("Edge locations, orientations, and ground truth edges size mismatch.");
+        std::cout << "Invalid disparity value: " << disparity << " for edge at location: " << edge.location << std::endl;
+        return Edge(); // Return an empty edge if disparity is invalid
     }
 
-    for (size_t i = 0; i < edges.size(); ++i)
-    {
-        const auto &edge = edges[i];
-        if (edge.x >= half_patch && edge.x < img_width - half_patch &&
-            edge.y >= half_patch && edge.y < img_height - half_patch)
-        {
-            valid_edges.push_back(edge);
-            valid_orientations.push_back(orientations[i]);
-            valid_ground_truth_edges.push_back(ground_truth_right_edges[i]);
-        }
-    }
+    double rho_1 = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
+    // double rho = left ? dataset.get_left_focal_length() * dataset.get_baseline() / disparity : dataset.get_right_focal_length() * dataset.get_baseline() / disparity;
 
-    num_points = std::min(num_points, valid_edges.size());
+    // Convert cv::Mat to Eigen::Matrix3d
+    Eigen::Matrix3d K_inverse_eigen, K_eigen;
+    cv::cv2eigen(K_inverse, K_inverse_eigen);
+    cv::cv2eigen(K, K_eigen);
 
-    std::vector<cv::Point2d> selected_points;
-    std::vector<double> selected_orientations;
-    std::vector<cv::Point2d> selected_ground_truth_points;
-    std::unordered_set<int> used_indices;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<int> dis(0, valid_edges.size() - 1);
+    Eigen::Vector3d Gamma_1 = K_inverse_eigen * Eigen::Vector3d(edge.location.x, edge.location.y, 1.0);
+    Eigen::Vector3d point3D = rho_1 * Gamma_1;
 
-    while (selected_points.size() < num_points)
-    {
-        int index = dis(gen);
-        if (used_indices.find(index) == used_indices.end())
-        {
-            selected_points.push_back(valid_edges[index]);
-            selected_orientations.push_back(valid_orientations[index]);
-            selected_ground_truth_points.push_back(valid_ground_truth_edges[index]);
-            used_indices.insert(index);
-        }
-    }
+    Eigen::Matrix3d R1 = current_frame.gt_rotation;
+    Eigen::Matrix3d R2 = next_frame.gt_rotation;
+    Eigen::Vector3d t1 = current_frame.gt_translation;
+    Eigen::Vector3d t2 = next_frame.gt_translation;
 
-    return {selected_points, selected_orientations, selected_ground_truth_points};
-}
+    Eigen::Vector3d Gamma_2 = R2 * R1.transpose() * Gamma_1 + t2 - R2 * R1.transpose() * t1;
+    Eigen::Vector3d homogeneous_point = K_eigen * Gamma_2;
+    Eigen::Vector2d projected_point = homogeneous_point.head<2>() / homogeneous_point.z();
 
-void EBVO::CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
-{
-    dataset.forward_gt_data.clear();
+    Edge gt_edge;
+    gt_edge.location = cv::Point2d(projected_point.x(), projected_point.y());
+    gt_edge.orientation = edge.orientation; // orientation shouldn't change that much.
 
-    static size_t total_rows_written = 0;
-    static int file_index = 1;
-    static std::ofstream csv_file;
-    static const size_t max_rows_per_file = 1'000'000;
-
-    if (!csv_file.is_open())
-    {
-        std::string filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
-        csv_file.open(filename, std::ios::out);
-    }
-
-    for (const Edge &e : edges)
-    {
-        double disparity = Bilinear_Interpolation(disparity_map, e.location);
-
-        if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
-        {
-            continue;
-        }
-
-        cv::Point2d right_edge(e.location.x - disparity, e.location.y);
-        dataset.forward_gt_data.emplace_back(e.location, right_edge, e.orientation);
-
-        if (total_rows_written >= max_rows_per_file)
-        {
-            csv_file.close();
-            ++file_index;
-            total_rows_written = 0;
-            std::string next_filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
-            csv_file.open(next_filename, std::ios::out);
-        }
-
-        csv_file << disparity << "\n";
-        ++total_rows_written;
-    }
-
-    csv_file.flush();
-}
-
-void EBVO::ReadEdgesFromBinary(const std::string &filepath,
-                               std::vector<Edge> &edges)
-{
-    std::ifstream ifs(filepath, std::ios::binary);
-    if (!ifs.is_open())
-    {
-        std::cerr << "ERROR: Could not open binary file for reading: " << filepath << std::endl;
-        return;
-    }
-
-    size_t size = 0;
-    ifs.read(reinterpret_cast<char *>(&size), sizeof(size));
-
-    edges.resize(size);
-    ifs.read(reinterpret_cast<char *>(edges.data()), sizeof(Edge) * size);
-}
-
-void EBVO::WriteEdgesToBinary(const std::string &filepath,
-                              const std::vector<Edge> &edges)
-{
-    std::ofstream ofs(filepath, std::ios::binary);
-    if (!ofs.is_open())
-    {
-        std::cerr << "ERROR: Could not open binary file for writing: " << filepath << std::endl;
-        return;
-    }
-
-    size_t size = edges.size();
-    ofs.write(reinterpret_cast<const char *>(&size), sizeof(size));
-    ofs.write(reinterpret_cast<const char *>(edges.data()), sizeof(Edge) * size);
+    return gt_edge;
 }

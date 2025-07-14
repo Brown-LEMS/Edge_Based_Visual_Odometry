@@ -44,6 +44,8 @@ struct FileInfo
     std::string sequence_name;
     std::string GT_file_name;
 
+    bool has_gt = false; //> whether the dataset has ground truth or not
+
     std::vector<double> GT_time_stamps;
     std::vector<double> Img_time_stamps;
 };
@@ -174,6 +176,8 @@ public:
     std::vector<cv::Point2d> ground_truth_right_edges_after_lowe;
 
     // getters
+    bool has_gt() { return file_info.has_gt; };
+
     Eigen::Matrix3d get_fund_mat_21() { return camera_info.left.F; };
     Eigen::Matrix3d get_fund_mat_12() { return camera_info.right.F; };
 
@@ -188,6 +192,8 @@ public:
     double get_focal_length() { return camera_info.focal_length; };
     double get_left_focal_length() { return camera_info.left.intrinsics[0]; };
     double get_right_focal_length() { return camera_info.right.intrinsics[0]; };
+    double get_left_baseline() { return camera_info.left.T[0]; };
+    double get_right_baseline() { return camera_info.right.T[0]; };
     double get_baseline() { return camera_info.baseline; };
 
     std::vector<double> left_intr() { return camera_info.left.intrinsics; };
