@@ -53,7 +53,7 @@ std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_m
 std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<Edge> &edge_points, double shift_magnitude, Dataset &dataset);
 
 bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epipolar_line);
-void FilterByEpipolarDistance(
+bool FilterByEpipolarDistance(
     int &epi_true_positive,
     int &epi_false_negative,
     int &epi_true_negative,
@@ -68,6 +68,13 @@ void FilterByDisparity(
     const std::vector<Edge> &edge_candidates,
     bool gt,
     const Edge &primary_edge);
+void RecallUpdate(int &true_positive,
+                  int &false_negative,
+                  int &edges_evaluated,
+                  double &per_edge_precision,
+                  const std::vector<Edge> &outputed_edges,
+                  cv::Point2d &ground_truth_edge,
+                  double threshold);
 void DisparityRecallUpdate(
     int &disp_true_positive,
     int &disp_false_negative,
