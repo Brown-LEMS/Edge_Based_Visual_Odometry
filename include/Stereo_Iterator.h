@@ -85,6 +85,7 @@ public:
     bool hasNext() override;
     bool getNext(StereoFrame &frame) override;
     void reset() override;
+    bool readETH3DGroundTruth(const std::string &images_file, StereoFrame &frame);
 
 private:
     std::vector<std::string> folders;

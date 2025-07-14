@@ -44,6 +44,8 @@ struct FileInfo
     std::string sequence_name;
     std::string GT_file_name;
 
+    bool has_gt = false; //> whether the dataset has ground truth or not
+
     std::vector<double> GT_time_stamps;
     std::vector<double> Img_time_stamps;
 };
@@ -57,7 +59,6 @@ struct Camera
     Eigen::Vector3d T;              // translation (to stereo)
     Eigen::Matrix3d F;              // fundamental matrix
 };
-
 
 struct CameraInfo
 {
@@ -127,7 +128,6 @@ struct RecallMetrics
     double per_image_total_time;
 };
 
-
 struct EdgeMatchResult
 {
     RecallMetrics recall_metrics;
@@ -142,7 +142,6 @@ struct BidirectionalMetrics
     double per_image_bct_precision;
     double per_image_bct_time;
 };
-
 
 struct StereoMatchResult
 {
@@ -177,6 +176,8 @@ public:
     std::vector<cv::Point2d> ground_truth_right_edges_after_lowe;
 
     // getters
+    bool has_gt() { return file_info.has_gt; };
+
     Eigen::Matrix3d get_fund_mat_21() { return camera_info.left.F; };
     Eigen::Matrix3d get_fund_mat_12() { return camera_info.right.F; };
 
@@ -188,11 +189,17 @@ public:
     int get_height() { return img_height; };
     int get_width() { return img_width; };
 
+    double get_focal_length() { return camera_info.focal_length; };
+    double get_left_focal_length() { return camera_info.left.intrinsics[0]; };
+    double get_right_focal_length() { return camera_info.right.intrinsics[0]; };
+    double get_left_baseline() { return camera_info.left.T[0]; };
+    double get_right_baseline() { return camera_info.right.T[0]; };
+    double get_baseline() { return camera_info.baseline; };
+
     std::vector<double> left_intr() { return camera_info.left.intrinsics; };
     std::vector<double> right_intr() { return camera_info.right.intrinsics; };
-    std::vector<double> left_dist_coeffs() {return camera_info.left.distortion; };
-    std::vector<double> right_dist_coeffs() {return camera_info.right.distortion; };
-
+    std::vector<double> left_dist_coeffs() { return camera_info.left.distortion; };
+    std::vector<double> right_dist_coeffs() { return camera_info.right.distortion; };
 
     // setters
     void increment_num_imgs() { Total_Num_Of_Imgs++; };
@@ -209,7 +216,6 @@ private:
     // Images info
     unsigned Total_Num_Of_Imgs;
     int img_height, img_width;
-
 
     // didn't find this:
     double max_disparity;

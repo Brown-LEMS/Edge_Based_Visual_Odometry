@@ -109,7 +109,7 @@ bool ETH3DIterator::getNext(StereoFrame &frame)
         const std::string &folder = folders[current_index++];
         std::string left_path = folder + "/im0.png";
         std::string right_path = folder + "/im1.png";
-
+        std::string camera_motion = folder + "/images.txt";
         cv::Mat left = cv::imread(left_path, cv::IMREAD_GRAYSCALE);
         cv::Mat right = cv::imread(right_path, cv::IMREAD_GRAYSCALE);
 
@@ -118,6 +118,12 @@ bool ETH3DIterator::getNext(StereoFrame &frame)
             frame.left_image = left;
             frame.right_image = right;
             frame.timestamp = static_cast<double>(current_index - 1);
+
+            if (!readETH3DGroundTruth(camera_motion, frame))
+            {
+                std::cerr << "Warning: Could not read ground truth from: " << camera_motion << std::endl;
+            }
+
             return true;
         }
 
@@ -125,6 +131,64 @@ bool ETH3DIterator::getNext(StereoFrame &frame)
     }
 
     return false;
+}
+
+bool ETH3DIterator::readETH3DGroundTruth(const std::string &images_file, StereoFrame &frame)
+{
+    std::ifstream file(images_file);
+    if (!file.is_open())
+    {
+        return false;
+    }
+
+    std::string line;
+    bool found_im0 = false;
+
+    while (std::getline(file, line))
+    {
+        // Skip comments and empty lines
+        if (line.empty() || line[0] == '#')
+            continue;
+
+        std::istringstream iss(line);
+        std::vector<std::string> tokens;
+        std::string token;
+
+        while (iss >> token)
+        {
+            tokens.push_back(token);
+        }
+
+        // Check if this line has the expected format and is for im0.png
+        if (tokens.size() >= 10 && tokens[9] == "im0.png")
+        {
+            try
+            {
+                double qw = std::stod(tokens[1]);
+                double qx = std::stod(tokens[2]);
+                double qy = std::stod(tokens[3]);
+                double qz = std::stod(tokens[4]);
+
+                double tx = std::stod(tokens[5]);
+                double ty = std::stod(tokens[6]);
+                double tz = std::stod(tokens[7]);
+
+                Eigen::Quaterniond q(qw, qx, qy, qz);
+                frame.gt_rotation = q.toRotationMatrix();
+                frame.gt_translation = Eigen::Vector3d(tx, ty, tz);
+
+                found_im0 = true;
+                break;
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "Error parsing ground truth: " << e.what() << std::endl;
+                return false;
+            }
+        }
+    }
+
+    return found_im0;
 }
 
 // =============================================================
