@@ -635,14 +635,12 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             auto start_cluster = std::chrono::high_resolution_clock::now();
 #endif
 
-            // shift_output_counts.push_back(shifted_secondary_edge.size());
             local_shift_output_counts[thread_id].push_back(shifted_secondary_edge.size());
 
             std::vector<std::vector<Edge>> clusters = ClusterEpipolarShiftedEdges(shifted_secondary_edge); // notice: shifted_secondary_edge will be changed inside the function but wouldn't be used later on.
             std::vector<EdgeCluster> cluster_centers;
             FormClusterCenters(cluster_centers, clusters);
 
-            // clust_input_counts.push_back(shifted_secondary_edge.size());
             local_clust_input_counts[thread_id].push_back(shifted_secondary_edge.size());
 
 #if MEASURE_TIMINGS
@@ -654,33 +652,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////EPIPOLAR CLUSTER THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
-                int clust_precision_numerator = 0;
-                bool cluster_match_found = false;
-                // checked: std::cout << "Cluster centers size: " << cluster_centers.size() << std::endl;
-                for (const auto &cluster : cluster_centers)
-                {
-                    // checked std::cout << "Cluster center edge: " << cluster.center_edge.location << std::endl;
-                    if (cv::norm(cluster.center_edge.location - ground_truth_edge) <= 3.0)
-                    {
-                        clust_precision_numerator++;
-                        cluster_match_found = true;
-                        // break;
-                    }
-                }
-
-                if (cluster_match_found)
-                {
-                    cluster_true_positive++;
-                }
-                else
-                {
-                    cluster_false_negative++;
-                }
-                if (!cluster_centers.empty())
-                {
-                    per_edge_clust_precision += static_cast<double>(clust_precision_numerator) / cluster_centers.size();
-                    clust_edges_evaluated++;
-                }
+                RecallUpdate(cluster_true_positive, cluster_false_negative, clust_edges_evaluated,
+                             per_edge_clust_precision, cluster_centers, ground_truth_edge,
+                             3.0);
             }
             ///////////////////////////////EXTRACT PATCHES THRESHOLD////////////////////////////////////////////
 #if MEASURE_TIMINGS
@@ -718,8 +692,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 nullptr,
                 secondary_patch_set_one,
                 secondary_patch_set_two);
-            // checked: but always 1,3,2.. std::cout << "Filtered cluster centers size: " << filtered_cluster_centers.size() << std::endl;
-            // patch_input_counts.push_back(cluster_centers.size());
             local_patch_input_counts[thread_id].push_back(cluster_centers.size());
 
 #if MEASURE_TIMINGS
@@ -734,107 +706,22 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             //    patch_output_counts.push_back(filtered_cluster_centers.size());
             local_patch_output_counts[thread_id].push_back(filtered_cluster_centers.size());
 
-            int ncc_precision_numerator = 0;
-
-            bool ncc_match_found = false;
             std::vector<EdgeMatch> passed_ncc_matches;
 
-            if (!primary_patch_one.empty() && !primary_patch_two.empty() &&
-                !secondary_patch_set_one.empty() && !secondary_patch_set_two.empty())
-            {
-
-                for (size_t i = 0; i < filtered_cluster_centers.size(); ++i)
-                {
-                    double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[i]);
-                    double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[i]);
-                    double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[i]);
-                    double ncc_four = ComputeNCC(primary_patch_two, secondary_patch_set_one[i]);
-
-                    double score_one = std::min(ncc_one, ncc_two);
-                    double score_two = std::min(ncc_three, ncc_four);
-                    double final_score = std::max(score_one, score_two);
-
-#if DEBUG_COLLECT_NCC_AND_ERR
-                    double err_to_gt = cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge);
-                    std::pair<double, double> pair_ncc_one_err(err_to_gt, ncc_one);
-                    std::pair<double, double> pair_ncc_two_err(err_to_gt, ncc_two);
-                    ncc_one_vs_err.push_back(pair_ncc_one_err);
-                    ncc_two_vs_err.push_back(pair_ncc_two_err);
-#endif
-                    if (ncc_one >= NCC_THRESH_STRONG_BOTH_SIDES && ncc_two >= NCC_THRESH_STRONG_BOTH_SIDES)
-                    {
-                        // checked std::cout << "Strong match found: " << filtered_cluster_centers[i].center_edge.location << std::endl;
-                        EdgeMatch info;
-                        info.edge = filtered_cluster_centers[i].center_edge;
-                        info.final_score = final_score;
-                        info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                        passed_ncc_matches.push_back(info);
-
-                        if (!selected_ground_truth_edges.empty())
-                        {
-                            if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= 3.0)
-                            {
-
-                                ncc_match_found = true;
-                                ncc_precision_numerator++;
-                            }
-                        }
-                    }
-                    else if (ncc_one >= NCC_THRESH_STRONG_ONE_SIDE || ncc_two >= NCC_THRESH_STRONG_ONE_SIDE)
-                    {
-                        // checked std::cout << "One side strong match found: " << filtered_cluster_centers[i].center_edge.location << std::endl;
-                        EdgeMatch info;
-                        info.edge = filtered_cluster_centers[i].center_edge;
-                        info.final_score = final_score;
-                        info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                        passed_ncc_matches.push_back(info);
-
-                        if (!selected_ground_truth_edges.empty())
-                        {
-                            if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= 3.0)
-                            {
-                                ncc_match_found = true;
-                                ncc_precision_numerator++;
-                            }
-                        }
-                    }
-                    else if (ncc_one >= NCC_THRESH_WEAK_BOTH_SIDES && ncc_two >= NCC_THRESH_WEAK_BOTH_SIDES && filtered_cluster_centers.size() == 1)
-                    {
-                        // checked std::cout << "Weak match found: " << filtered_cluster_centers[i].center_edge.location << std::endl;
-                        EdgeMatch info;
-                        info.edge = filtered_cluster_centers[i].center_edge;
-                        info.final_score = final_score;
-                        info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                        passed_ncc_matches.push_back(info);
-
-                        if (!selected_ground_truth_edges.empty())
-                        {
-                            if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= 3.0)
-                            {
-                                ncc_match_found = true;
-                                ncc_precision_numerator++;
-                            }
-                        }
-                    }
-                }
-
-                if (ncc_match_found)
-                {
-                    ncc_true_positive++;
-                }
-                else
-                {
-                    ncc_false_negative++;
-                }
-            }
-
-            if (!passed_ncc_matches.empty())
-            {
-                per_edge_ncc_precision += static_cast<double>(ncc_precision_numerator) / passed_ncc_matches.size();
-                ncc_edges_evaluated++;
-            }
-            //    ncc_input_counts.push_back(filtered_cluster_centers.size());
-            //    ncc_output_counts.push_back(passed_ncc_matches.size());
+            FilterByNCC(
+                primary_patch_one,
+                primary_patch_two,
+                secondary_patch_set_one,
+                secondary_patch_set_two,
+                ground_truth_edge,
+                passed_ncc_matches,
+                filtered_cluster_centers,
+                !selected_ground_truth_edges.empty(),
+                ncc_true_positive,
+                ncc_false_negative,
+                per_edge_ncc_precision,
+                ncc_edges_evaluated,
+                3.0);
 
             local_ncc_input_counts[thread_id].push_back(filtered_cluster_centers.size());
             local_ncc_output_counts[thread_id].push_back(passed_ncc_matches.size());
@@ -847,105 +734,20 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////LOWES RATIO TEST//////////////////////////////////////////////
             auto start_lowe = std::chrono::high_resolution_clock::now();
 #endif
-            // lowe_input_counts.push_back(passed_ncc_matches.size());
-            local_lowe_input_counts[thread_id].push_back(passed_ncc_matches.size());
-
-            int lowe_precision_numerator = 0;
-
-            EdgeMatch best_match;
-            double best_score = -1;
-
-            if (passed_ncc_matches.size() >= 2)
-            {
-                EdgeMatch second_best_match;
-                double second_best_score = -1;
-
-                for (const auto &match : passed_ncc_matches)
-                {
-                    if (match.final_score > best_score)
-                    {
-                        second_best_score = best_score;
-                        second_best_match = best_match;
-
-                        best_score = match.final_score;
-                        best_match = match;
-                    }
-                    else if (match.final_score > second_best_score)
-                    {
-                        second_best_score = match.final_score;
-                        second_best_match = match;
-                    }
-                }
-                double lowe_ratio = second_best_score / best_score;
-
-                if (lowe_ratio < 1)
-                {
-                    if (!selected_ground_truth_edges.empty())
-                    {
-                        local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
-                        if (cv::norm(best_match.edge.location - ground_truth_edge) <= 3.0)
-                        {
-                            lowe_precision_numerator++;
-                            lowe_true_positive++;
-                        }
-                        else
-                        {
-                            lowe_false_negative++;
-                        }
-                    }
-                    Edge source_edge = primary_edge;
-                    // final_matches.emplace_back(primary_edge, best_match);
-                    local_final_matches[thread_id].emplace_back(source_edge, best_match);
-                    // lowe_output_counts.push_back(1);
-                    local_lowe_output_counts[thread_id].push_back(1);
-                }
-                else
-                {
-                    lowe_false_negative++;
-                    // lowe_output_counts.push_back(0);
-                    local_lowe_output_counts[thread_id].push_back(0);
-                }
-            }
-            else if (passed_ncc_matches.size() == 1)
-            {
-                best_match = passed_ncc_matches[0];
-
-                if (!selected_ground_truth_edges.empty())
-                {
-                    local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
-                    if (cv::norm(best_match.edge.location - ground_truth_edge) <= 3.0)
-                    {
-                        lowe_precision_numerator++;
-                        lowe_true_positive++;
-                    }
-                    else
-                    {
-                        lowe_false_negative++;
-                    }
-                }
-                Edge source_edge = primary_edge;
-                // final_matches.emplace_back(primary_edge, best_match);
-                local_final_matches[thread_id].emplace_back(source_edge, best_match);
-                // lowe_output_counts.push_back(1);
-                local_lowe_output_counts[thread_id].push_back(1);
-            }
-            else
-            {
-                lowe_false_negative++;
-                // lowe_output_counts.push_back(0);
-                local_lowe_output_counts[thread_id].push_back(0);
-            }
-            per_edge_lowe_precision += (static_cast<double>(lowe_precision_numerator) > 0) ? 1.0 : 0.0;
-
-            if (!passed_ncc_matches.empty())
-            {
-                lowe_edges_evaluated++;
-            }
-#if MEASURE_TIMINGS
-            time_lowe_edges_evaluated++;
-            auto end_lowe = std::chrono::high_resolution_clock::now();
-            time_lowe += std::chrono::duration<double, std::milli>(end_lowe - start_lowe).count();
-#endif
+            FilterByLowe(local_final_matches,
+                         local_lowe_input_counts,
+                         local_lowe_output_counts,
+                         local_GT_right_edges_after_lowe,
+                         thread_id,
+                         passed_ncc_matches,
+                         !selected_ground_truth_edges.empty(),
+                         primary_edge,
+                         ground_truth_edge,
+                         lowe_true_positive,
+                         lowe_false_negative,
+                         per_edge_lowe_precision,
+                         lowe_edges_evaluated,
+                         3.0);
         } //> MARK: end of looping over left edges
     }
 
@@ -1278,19 +1080,38 @@ void FilterByDisparity(
     }
 }
 
+template <typename Container>
 void RecallUpdate(int &true_positive,
                   int &false_negative,
                   int &edges_evaluated,
                   double &per_edge_precision,
-                  const std::vector<Edge> &outputed_edges,
+                  const Container &output_candidates,
                   cv::Point2d &ground_truth_edge,
                   double threshold)
 {
     int precision_numerator = 0;
     bool match_found = false;
-    for (const auto &candidate : outputed_edges)
+    for (const auto &candidate : output_candidates)
     {
-        if (cv::norm(candidate.location - ground_truth_edge) <= threshold)
+        cv::Point2d location;
+        if constexpr (std::is_same_v<typename Container::value_type, Edge>)
+        {
+            location = candidate.location;
+        }
+        else if constexpr (std::is_same_v<typename Container::value_type, EdgeCluster>)
+        {
+            location = candidate.center_edge.location;
+        }
+        else if constexpr (std::is_same_v<typename Container::value_type, cv::Point2d>)
+        {
+            location = candidate;
+        }
+        else
+        {
+            std::cerr << "Unsupported type in RecallUpdate" << std::endl;
+            return;
+        }
+        if (cv::norm(location - ground_truth_edge) <= threshold)
         {
             precision_numerator++;
             match_found = true;
@@ -1304,9 +1125,9 @@ void RecallUpdate(int &true_positive,
     {
         false_negative++;
     }
-    if (!outputed_edges.empty())
+    if (!output_candidates.empty())
     {
-        per_edge_precision += static_cast<double>(precision_numerator) / outputed_edges.size();
+        per_edge_precision += static_cast<double>(precision_numerator) / output_candidates.size();
         edges_evaluated++;
     }
 }
@@ -1333,6 +1154,7 @@ void EpipolarShiftFilter(
 void FormClusterCenters(
     std::vector<EdgeCluster> &cluster_centers,
     std::vector<std::vector<Edge>> &clusters)
+
 {
     cluster_centers.clear();
     for (const auto &cluster_edges : clusters)
@@ -1359,4 +1181,227 @@ void FormClusterCenters(
 
         cluster_centers.push_back(cluster);
     }
+}
+
+void FilterByNCC(
+    const cv::Mat &primary_patch_one,
+    const cv::Mat &primary_patch_two,
+    const std::vector<cv::Mat> &secondary_patch_set_one,
+    const std::vector<cv::Mat> &secondary_patch_set_two,
+    const cv::Point2d &ground_truth_edge,
+    std::vector<EdgeMatch> &passed_ncc_matches,
+    std::vector<EdgeCluster> &filtered_cluster_centers,
+    bool gt,
+    int &ncc_true_positive,
+    int &ncc_false_negative,
+    double &per_edge_ncc_precision,
+    int &ncc_edges_evaluated,
+    double threshold)
+{
+    int ncc_precision_numerator = 0;
+    bool ncc_match_found = false;
+    if (!primary_patch_one.empty() && !primary_patch_two.empty() &&
+        !secondary_patch_set_one.empty() && !secondary_patch_set_two.empty())
+    {
+
+        for (size_t i = 0; i < filtered_cluster_centers.size(); ++i)
+        {
+            double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[i]);
+            double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[i]);
+            double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[i]);
+            double ncc_four = ComputeNCC(primary_patch_two, secondary_patch_set_one[i]);
+
+            double score_one = std::min(ncc_one, ncc_two);
+            double score_two = std::min(ncc_three, ncc_four);
+            double final_score = std::max(score_one, score_two);
+
+#if DEBUG_COLLECT_NCC_AND_ERR
+            double err_to_gt = cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge);
+            std::pair<double, double> pair_ncc_one_err(err_to_gt, ncc_one);
+            std::pair<double, double> pair_ncc_two_err(err_to_gt, ncc_two);
+            ncc_one_vs_err.push_back(pair_ncc_one_err);
+            ncc_two_vs_err.push_back(pair_ncc_two_err);
+#endif
+            if (ncc_one >= NCC_THRESH_STRONG_BOTH_SIDES && ncc_two >= NCC_THRESH_STRONG_BOTH_SIDES)
+            {
+                EdgeMatch info;
+                info.edge = filtered_cluster_centers[i].center_edge;
+                info.final_score = final_score;
+                info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
+                passed_ncc_matches.push_back(info);
+
+                if (gt)
+                {
+                    if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= threshold)
+                    {
+
+                        ncc_match_found = true;
+                        ncc_precision_numerator++;
+                    }
+                }
+            }
+            else if (ncc_one >= NCC_THRESH_STRONG_ONE_SIDE || ncc_two >= NCC_THRESH_STRONG_ONE_SIDE)
+            {
+                EdgeMatch info;
+                info.edge = filtered_cluster_centers[i].center_edge;
+                info.final_score = final_score;
+                info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
+                passed_ncc_matches.push_back(info);
+
+                if (gt)
+                {
+                    if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= threshold)
+                    {
+                        ncc_match_found = true;
+                        ncc_precision_numerator++;
+                    }
+                }
+            }
+            else if (ncc_one >= NCC_THRESH_WEAK_BOTH_SIDES && ncc_two >= NCC_THRESH_WEAK_BOTH_SIDES && filtered_cluster_centers.size() == 1)
+            {
+                EdgeMatch info;
+                info.edge = filtered_cluster_centers[i].center_edge;
+                info.final_score = final_score;
+                info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
+                passed_ncc_matches.push_back(info);
+
+                if (gt)
+                {
+                    if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= threshold)
+                    {
+                        ncc_match_found = true;
+                        ncc_precision_numerator++;
+                    }
+                }
+            }
+        }
+        if (ncc_match_found)
+        {
+            ncc_true_positive++;
+        }
+        else
+        {
+            ncc_false_negative++;
+        }
+    }
+    if (!passed_ncc_matches.empty())
+    {
+        per_edge_ncc_precision += static_cast<double>(ncc_precision_numerator) / passed_ncc_matches.size();
+        ncc_edges_evaluated++;
+    }
+}
+
+void FilterByLowe(
+    std::vector<std::vector<std::pair<Edge, EdgeMatch>>> &local_final_matches,
+    std::vector<std::vector<int>> &local_lowe_input_counts,
+    std::vector<std::vector<int>> &local_lowe_output_counts,
+    std::vector<std::vector<cv::Point2d>> &local_GT_right_edges_after_lowe,
+    int thread_id,
+    const std::vector<EdgeMatch> &passed_ncc_matches,
+    bool gt,
+    const Edge &primary_edge,
+    cv::Point2d &ground_truth_edge,
+    int &lowe_true_positive,
+    int &lowe_false_negative,
+    double &per_edge_lowe_precision,
+    int &lowe_edges_evaluated,
+    double threshold)
+{
+    local_lowe_input_counts[thread_id].push_back(passed_ncc_matches.size());
+
+    int lowe_precision_numerator = 0;
+
+    EdgeMatch best_match;
+    double best_score = -1;
+
+    if (passed_ncc_matches.size() >= 2)
+    {
+        EdgeMatch second_best_match;
+        double second_best_score = -1;
+
+        for (const auto &match : passed_ncc_matches)
+        {
+            if (match.final_score > best_score)
+            {
+                second_best_score = best_score;
+                second_best_match = best_match;
+
+                best_score = match.final_score;
+                best_match = match;
+            }
+            else if (match.final_score > second_best_score)
+            {
+                second_best_score = match.final_score;
+                second_best_match = match;
+            }
+        }
+        double lowe_ratio = second_best_score / best_score;
+
+        if (lowe_ratio < 1)
+        {
+            if (gt)
+            {
+                local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
+                if (cv::norm(best_match.edge.location - ground_truth_edge) <= threshold)
+                {
+                    lowe_precision_numerator++;
+                    lowe_true_positive++;
+                }
+                else
+                {
+                    lowe_false_negative++;
+                }
+            }
+            Edge source_edge = primary_edge;
+
+            local_final_matches[thread_id].emplace_back(source_edge, best_match);
+            local_lowe_output_counts[thread_id].push_back(1);
+        }
+        else
+        {
+            lowe_false_negative++;
+            // lowe_output_counts.push_back(0);
+            local_lowe_output_counts[thread_id].push_back(0);
+        }
+    }
+    else if (passed_ncc_matches.size() == 1)
+    {
+        best_match = passed_ncc_matches[0];
+
+        if (gt)
+        {
+            local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
+            if (cv::norm(best_match.edge.location - ground_truth_edge) <= 3.0)
+            {
+                lowe_precision_numerator++;
+                lowe_true_positive++;
+            }
+            else
+            {
+                lowe_false_negative++;
+            }
+        }
+        Edge source_edge = primary_edge;
+        // final_matches.emplace_back(primary_edge, best_match);
+        local_final_matches[thread_id].emplace_back(source_edge, best_match);
+        // lowe_output_counts.push_back(1);
+        local_lowe_output_counts[thread_id].push_back(1);
+    }
+    else
+    {
+        lowe_false_negative++;
+        // lowe_output_counts.push_back(0);
+        local_lowe_output_counts[thread_id].push_back(0);
+    }
+    per_edge_lowe_precision += (static_cast<double>(lowe_precision_numerator) > 0) ? 1.0 : 0.0;
+
+    if (!passed_ncc_matches.empty())
+    {
+        lowe_edges_evaluated++;
+    }
+#if MEASURE_TIMINGS
+    time_lowe_edges_evaluated++;
+    auto end_lowe = std::chrono::high_resolution_clock::now();
+    time_lowe += std::chrono::duration<double, std::milli>(end_lowe - start_lowe).count();
+#endif
 }
