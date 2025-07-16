@@ -36,10 +36,14 @@ ThirdOrderEdgeDetectionCPU::ThirdOrderEdgeDetectionCPU(int H, int W)
     interp_img_width = img_width * 2;
 
     //> Define openmp threads, either use the available number of cores on tha machine or define the use of cores
+#if ACTIVATE_OPENMP_SUPPORT
 #if USE_DEFINED_NUM_OF_CORES
     omp_threads = USE_NUM_CORES_FOR_OMP;
 #else
     omp_threads = omp_get_num_procs();
+#endif
+#else
+    omp_threads = 1;
 #endif
     img = new double[img_height * img_width];
 

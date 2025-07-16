@@ -318,20 +318,20 @@ void EBVO::ProcessEdges(const cv::Mat &image,
 {
     std::string path = filepath + ".bin";
 
-    if (std::filesystem::exists(path))
-    {
-        // std::cout << "Loading edge data from: " << path << std::endl;
-        ReadEdgesFromBinary(path, edges);
-    }
-    else
-    {
-        // std::cout << "Running third-order edge detector..." << std::endl;
+    // if (std::filesystem::exists(path))
+    // {
+    //     // std::cout << "Loading edge data from: " << path << std::endl;
+    //     ReadEdgesFromBinary(path, edges);
+    // }
+    // else
+    // {
+        std::cout << "Running third-order edge detector..." << std::endl;
         toed->get_Third_Order_Edges(image);
         edges = toed->toed_edges;
 
-        WriteEdgesToBinary(path, edges);
+        // WriteEdgesToBinary(path, edges);
         // std::cout << "Saved edge data to: " << path << std::endl;
-    }
+    // }
 }
 
 /*
