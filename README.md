@@ -4,7 +4,7 @@ This repository is an internal research project at LEMS lab, Brown University. I
 
 ## Dependencies
 * Eigen 3.X or beyond
-* OpenCV 4.X with opencv_contrib (feature detection and matching depends on opencv_contrib)
+* OpenCV 4.X (with contrib is optional)
 * [yaml-cpp](https://github.com/jbeder/yaml-cpp) (used to parse data from the dataset config file)
 * glog (Optional)
 
@@ -18,7 +18,8 @@ make -j
 You shall find executive files under the ``bin`` folder. The code to be executed is ``./main_VO`` while ``./test_functions`` executes ``test_functions.cpp`` used to test certain functionalities.
 
 ### Running on Brown CCV Oscars server
-On the Oscars server, load the necessary modules: <br />
+A shell script ``load_modules.sh`` has been provided which enables a simple module loading process followed by build, compile, and execute. Running that shell script should be sufficient to run the entire code. <br />
+Alternatively, to manually load modules, the followings are necessary: <br />
 ```bash
 cmake/3.2XX
 eigen/3.4XX
@@ -46,5 +47,6 @@ Output files will be written under the ``output`` folder. This part is to be upd
 The third-order edge detection is borrowed from [Third-Order-Edge-Detector](https://github.com/C-H-Chien/Third-Order-Edge-Detector).
 
 ## Authors
+Jue Han (jue_han@brown.edu) <br />
 Saul Lopez Lucas (saul_lopez_lucas@brown.edu) <br />
 Chiang-Heng Chien (chiang-heng_chien@brown.edu)

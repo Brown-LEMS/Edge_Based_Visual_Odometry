@@ -60,17 +60,10 @@ void EBVO::PerformEdgeBasedVO()
     LOG_INFO("Start looping over all image pairs");
 
     StereoFrame current_frame, next_frame;
-    std::vector<double> left_intr = dataset.left_intr();
-    std::vector<double> right_intr = dataset.right_intr();
-
-    cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
-    cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
 
     cv::Mat left_calib_inv = left_calib.inv();
     cv::Mat right_calib_inv = right_calib.inv();
 
-    cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs());
-    cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs());
     // Get the first frame from the dataset
     if (!dataset.stereo_iterator->hasNext() ||
         !dataset.stereo_iterator->getNext(current_frame))
