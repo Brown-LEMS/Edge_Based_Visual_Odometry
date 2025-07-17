@@ -60,7 +60,7 @@ Edge PerformEpipolarShift(
     //> check if the corrected edge passes the epoplar tengency test (intersection angle < 4 degrees and displacement < 6 pixels)
     b_pass_epipolar_tengency_check = (epipolar_shift_displacement < EPIP_TENGENCY_PROXIM_THRESH && abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
 
-    return Edge{corrected_edge_loc, original_edge.orientation}; //> Return the corrected edge with the same orientation as the original edge
+    return Edge{corrected_edge_loc, original_edge.orientation, false}; //> Return the corrected edge with the same orientation as the original edge
 }
 
 /*
@@ -242,7 +242,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     for (const auto &data : dataset.forward_gt_data)
     {
-        left_edges.push_back(Edge{std::get<0>(data), std::get<2>(data)});
+        left_edges.push_back(Edge{std::get<0>(data), std::get<2>(data), false});
         ground_truth_right_edges.push_back(std::get<1>(data));
     }
 
@@ -1176,7 +1176,7 @@ void FormClusterCenters(
         double avg_orientation = sum_orientation * (1.0 / cluster_edges.size());
 
         EdgeCluster cluster;
-        cluster.center_edge = Edge{avg_point, avg_orientation};
+        cluster.center_edge = Edge{avg_point, avg_orientation, false};
         cluster.contributing_edges = cluster_edges;
 
         cluster_centers.push_back(cluster);

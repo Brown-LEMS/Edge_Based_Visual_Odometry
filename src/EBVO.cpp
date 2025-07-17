@@ -52,8 +52,8 @@ void EBVO::PerformEdgeBasedVO()
     cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
     cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
 
-    cv::Mat left_dist_coeff_mat(dataset.left_dist_coeffs());
-    cv::Mat right_dist_coeff_mat(dataset.right_dist_coeffs());
+    cv::Mat left_dist_coeff_mat = (cv::Mat_<double>(1, 4) << dataset.left_dist_coeffs()[0], dataset.left_dist_coeffs()[1], dataset.left_dist_coeffs()[2], dataset.left_dist_coeffs()[3]);
+    cv::Mat right_dist_coeff_mat = (cv::Mat_<double>(1, 4) << dataset.right_dist_coeffs()[0], dataset.right_dist_coeffs()[1], dataset.right_dist_coeffs()[2], dataset.right_dist_coeffs()[3]);
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -162,6 +162,7 @@ void EBVO::PerformEdgeBasedVO()
         {
             int indices[9] = {657, 10000, 10350, 20300, 30200, 35006, 40000, 46741};
             std::vector<Edge> gt_edges;
+            std::vector<std::pair<Edge, Edge>> left_edges_GT_pair;
             for (int i = 0; i < 9; ++i)
             {
                 int index = indices[i];
@@ -170,7 +171,20 @@ void EBVO::PerformEdgeBasedVO()
                 Edge GTEdge = GetGTEdge(true, current_frame, next_frame,
                                         left_ref_map, left_calib_inv, left_calib,
                                         dataset.left_edges[index]);
-                gt_edges.push_back(GTEdge);
+                if ( GTEdge.b_isEmpty )
+                    continue;
+                else 
+                {
+                    left_edges_GT_pair.push_back(std::make_pair(dataset.left_edges[index], GTEdge));
+                    gt_edges.push_back(GTEdge);
+                }
+            }
+
+            for (int i = 0; i < left_edges_GT_pair.size(); i++)
+            {
+                cv::Point2d left_edge_t0 = left_edges_GT_pair[i].first.location;
+                cv::Point2d left_edge_t1 = left_edges_GT_pair[i].second.location;
+                // std::cout << "[" << left_edge_t0.x << ", " << left_edge_t0.y << "] - [" << left_edge_t1.x << ", " << left_edge_t1.y << "]" << std::endl;
             }
 
             cv::Mat current_frame_vis;
@@ -899,29 +913,30 @@ Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_fr
         return Edge(); // Return an empty edge if disparity is invalid
     }
 
-    double rho_1 = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
-    // double rho = left ? dataset.get_left_focal_length() * dataset.get_baseline() / disparity : dataset.get_right_focal_length() * dataset.get_baseline() / disparity;
+    double rho = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
+    double rho_1 = (rho < 0.0) ? (-rho) : (rho);
 
     // Convert cv::Mat to Eigen::Matrix3d
     Eigen::Matrix3d K_inverse_eigen, K_eigen;
     cv::cv2eigen(K_inverse, K_inverse_eigen);
     cv::cv2eigen(K, K_eigen);
 
-    Eigen::Vector3d Gamma_1 = K_inverse_eigen * Eigen::Vector3d(edge.location.x, edge.location.y, 1.0);
-    Eigen::Vector3d point3D = rho_1 * Gamma_1;
+    Eigen::Vector3d gamma_1 = K_inverse_eigen * Eigen::Vector3d(edge.location.x, edge.location.y, 1.0);
+    Eigen::Vector3d Gamma_1 = rho_1 * gamma_1;
 
     Eigen::Matrix3d R1 = current_frame.gt_rotation;
     Eigen::Matrix3d R2 = next_frame.gt_rotation;
     Eigen::Vector3d t1 = current_frame.gt_translation;
     Eigen::Vector3d t2 = next_frame.gt_translation;
 
-    Eigen::Vector3d Gamma_2 = R2 * R1.transpose() * Gamma_1 + t2 - R2 * R1.transpose() * t1;
+    Eigen::Vector3d Gamma_2 = (R2 * R1.transpose()) * Gamma_1 + t2 - R2 * R1.transpose() * t1;
     Eigen::Vector3d homogeneous_point = K_eigen * Gamma_2;
     Eigen::Vector2d projected_point = homogeneous_point.head<2>() / homogeneous_point.z();
 
     Edge gt_edge;
     gt_edge.location = cv::Point2d(projected_point.x(), projected_point.y());
     gt_edge.orientation = edge.orientation; // orientation shouldn't change that much.
+    gt_edge.b_isEmpty = false;
 
     return gt_edge;
 }
