@@ -72,62 +72,57 @@ struct RecallMetrics {
       double per_image_total_time;
   };
     
-  struct EdgeCluster {
-      cv::Point2d center_coord;                  
-      double center_orientation;      
-  
-      std::vector<cv::Point2d> contributing_edges;
-      std::vector<double> contributing_orientations;
-  };
-  
-  struct EdgeMatch {
+struct Point2dHash {
+    std::size_t operator()(const cv::Point2d& pt) const {
+        std::hash<double> hasher;
+        std::size_t h1 = hasher(pt.x);
+        std::size_t h2 = hasher(pt.y);
+        return h1 ^ (h2 << 1); 
+    }
+};
+
+struct EdgeCluster {
+    cv::Point2d center_coord;                  
+    double center_orientation;      
+
+    std::vector<cv::Point2d> contributing_edges;
+    std::vector<double> contributing_orientations;
+};
+
+struct EdgeMatch {
     cv::Point2d coord;
     double orientation;
     double final_score;
 
     std::vector<cv::Point2d> contributing_edges;
     std::vector<double> contributing_orientations;
-
-    // Use for map key comparison
-    bool operator<(const EdgeMatch& other) const {
-        if (coord.x != other.coord.x) return coord.x < other.coord.x;
-        if (coord.y != other.coord.y) return coord.y < other.coord.y;
-        if (orientation != other.orientation) return orientation < other.orientation;
-        return final_score < other.final_score;
-    }
-
-    // Optional but useful for equality checking (not used in map)
-    bool operator==(const EdgeMatch& other) const {
-        return cv::norm(coord - other.coord) < 1e-12 &&
-               std::abs(orientation - other.orientation) < 1e-12 &&
-               std::abs(final_score - other.final_score) < 1e-12;
-    }
 };
 
 struct SourceEdge {
-    cv::Point2d position;
-    double orientation;
-    cv::Point2d ground_truth_edge;
+cv::Point2d position;
+double orientation;
+cv::Point2d ground_truth_edge;
 
-    bool operator<(const SourceEdge& other) const {
-        if (position.x != other.position.x) return position.x < other.position.x;
-        if (position.y != other.position.y) return position.y < other.position.y;
-        if (orientation != other.orientation) return orientation < other.orientation;
-        if (ground_truth_edge.x != other.ground_truth_edge.x) return ground_truth_edge.x < other.ground_truth_edge.x;
-        return ground_truth_edge.y < other.ground_truth_edge.y;
-    }
+bool operator==(const SourceEdge& other) const {
+    return position == other.position &&
+            orientation == other.orientation &&
+            ground_truth_edge == other.ground_truth_edge;
+}
+};
 
-    bool operator==(const SourceEdge& other) const {
-        return position == other.position &&
-               orientation == other.orientation &&
-               ground_truth_edge == other.ground_truth_edge;
-    }
+struct SourceEdgeHash {
+std::size_t operator()(const SourceEdge& edge) const {
+    std::size_t h1 = std::hash<double>()(edge.position.x) ^ std::hash<double>()(edge.position.y);
+    std::size_t h2 = std::hash<double>()(edge.orientation);
+    std::size_t h3 = std::hash<double>()(edge.ground_truth_edge.x) ^ std::hash<double>()(edge.ground_truth_edge.y);
+    return h1 ^ (h2 << 1) ^ (h3 << 2);
+}
 };
   
-  struct EdgeMatchResult {
-      RecallMetrics recall_metrics;
-      std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches;
-    };
+struct EdgeMatchResult {
+    RecallMetrics recall_metrics;
+    std::vector<std::pair<SourceEdge, EdgeMatch>> edge_to_cluster_matches;
+};
 
 struct BidirectionalMetrics{
     int matches_before_bct;

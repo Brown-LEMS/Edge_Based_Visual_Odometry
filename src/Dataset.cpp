@@ -16,7 +16,7 @@
 #include <chrono>
 #include <utility> 
 #include <cmath>
-
+#include <iomanip>
 #include "Dataset.h"
 #include "definitions.h"
 
@@ -1028,9 +1028,9 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
     double total_time;
     
-    // Maps to store discarded matches to be revisited
-    std::map<SourceEdge, std::vector<EdgeMatch>> forward_discarded_edges;
-    std::map<EdgeMatch, std::vector<SourceEdge>> reverse_discarded_edges;    
+    // Maps to store discarded matches to be revisited and revaluated
+    std::unordered_map<SourceEdge, std::vector<EdgeMatch>, SourceEdgeHash> forward_discarded_edges;
+    std::unordered_map<cv::Point2d, std::vector<SourceEdge>, Point2dHash> reverse_discarded_edges;
 
     //> CH: this is a global structure of final_matches
     std::vector<std::pair<SourceEdge, EdgeMatch>> final_matches;
@@ -1547,17 +1547,14 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                     } else {
                         lowe_false_negative++;
                     }
-                }
-
-                std::cout << "[DEBUG] best_match: coord=(" << best_match.coord.x << ", " << best_match.coord.y
-                << "), orientation=" << best_match.orientation 
-                << ", score=" << best_match.final_score << std::endl;    
+                } 
 
                 // Check if best match was previously ambiguous
-                if (reverse_discarded_edges.find(best_match) != reverse_discarded_edges.end()) {
+                if (reverse_discarded_edges.find(best_match.coord) != reverse_discarded_edges.end()) {
+                    std::cout << std::fixed << std::setprecision(48);
                     std::cout << "[INFO] Reverse map contains best_match with coord: (" 
-                    << best_match.coord.x << ", " << best_match.coord.y 
-                    << "), score: " << best_match.final_score << std::endl;
+                                << best_match.coord.x << ", " << best_match.coord.y 
+                                << "), score: " << best_match.final_score << std::endl;
                 }                
 
                 local_final_matches[thread_id].emplace_back(source_edge, best_match);
@@ -1568,8 +1565,8 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                     forward_discarded_edges[source_edge].push_back(best_match);
                     forward_discarded_edges[source_edge].push_back(second_best_match);
 
-                    reverse_discarded_edges[best_match].push_back(source_edge);
-                    reverse_discarded_edges[second_best_match].push_back(source_edge);
+                    reverse_discarded_edges[best_match.coord].push_back(source_edge);
+                    reverse_discarded_edges[second_best_match.coord].push_back(source_edge);
                 }
                 else {
 
@@ -1593,7 +1590,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
             }
 
             // Check if this single match was previously ambiguous
-            if (reverse_discarded_edges.find(best_match) != reverse_discarded_edges.end()) {
+            if (reverse_discarded_edges.find(best_match.coord) != reverse_discarded_edges.end()) {
                 // best_match is a key in the map
             }            
 
@@ -1619,31 +1616,6 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 #endif
     }   //> MARK: end of looping over left edges   
 }
-
-std::cout << "[DEBUG] reverse_discarded_edges map contents:\n{";
-for (const auto& [key, sources] : reverse_discarded_edges) {
-    std::cout << "\n  (" << key.coord.x << ", " << key.coord.y 
-              << ", orientation=" << key.orientation 
-              << ", score=" << key.final_score << ") : [";
-    for (const auto& src : sources) {
-        std::cout << "(" << src.position.x << ", " << src.position.y 
-                  << ", ori=" << src.orientation << "), ";
-    }
-    std::cout << "]";
-}
-std::cout << "\n}\n";
-
-std::cout << "[DEBUG] forward_discarded_edges map contents:\n{";
-for (const auto& [src, matches] : forward_discarded_edges) {
-    std::cout << "\n  (" << src.position.x << ", " << src.position.y 
-              << ", ori=" << src.orientation << ") : [";
-    for (const auto& match : matches) {
-        std::cout << "(" << match.coord.x << ", " << match.coord.y 
-                  << ", score=" << match.final_score << "), ";
-    }
-    std::cout << "]";
-}
-std::cout << "\n}\n";
 
 #if MEASURE_TIMINGS
     auto total_end = std::chrono::high_resolution_clock::now();
