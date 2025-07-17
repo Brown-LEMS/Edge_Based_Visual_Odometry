@@ -522,9 +522,9 @@ int ThirdOrderEdgeDetectionCPU::non_maximum_suppresion()
     cv::Point2d edge_location;
     Edge edge;
     edge_pt_list_idx = 0;
-    for (int i = 0; i < interp_img_height; i++)
+    for (int i = 10; i < interp_img_height-10; i++)
     {
-        for (int j = 0; j < interp_img_width; j++)
+        for (int j = 10; j < interp_img_width-10; j++)
         {
             if (subpix_pos_x_map(i, j) != 0)
             {

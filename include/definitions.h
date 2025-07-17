@@ -4,7 +4,7 @@
 #define USE_CPP17 (true)
 
 //> OpenMP settings
-#define ACTIVATE_OPENMP_SUPPORT (false)
+#define ACTIVATE_OPENMP_SUPPORT (true)
 #define USE_DEFINED_NUM_OF_CORES (false)
 #if USE_DEFINED_NUM_OF_CORES
 #define USE_NUM_CORES_FOR_OMP (8)
