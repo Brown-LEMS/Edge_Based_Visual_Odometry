@@ -17,10 +17,9 @@
 #define EDGE_CLUSTER_THRESH             (0.3)   //> in pixels
 #define ORTHOGONAL_SHIFT_MAG            (5)     //> in pixels
 #define PATCH_SIZE                      (7)     //> in pixels
-#define NCC_THRESH_STRONG_BOTH_SIDES    (0.5)
-#define NCC_THRESH_WEAK_BOTH_SIDES      (0.25)
-#define NCC_THRESH_STRONG_ONE_SIDE      (0.65)
+#define NCC_THRESH_FINAL_SCORE          (-0.3)
 #define MATCH_TOL                       (3)     //> in pixels
+#define GT_SPATIAL_TOLERANCE            (3.0)
 
 #define MEASURE_TIMINGS                 (false)
 #define DISPLAY_STERO_EDGE_MATCHES      (false)
