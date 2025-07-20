@@ -18,6 +18,7 @@
 #include <cmath>
 #include "Dataset.h"
 #include "definitions.h"
+#include <iomanip>
 
 #if USE_GLOGS
 #include <glog/logging.h>
@@ -196,7 +197,7 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 16;
+    int num_pairs = 3;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
     std::vector<double> max_disparity_values;
@@ -249,8 +250,6 @@ void Dataset::PerformEdgeBasedVO() {
 
     LOG_INFO("Start looping over all image pairs");
 
-    std::cout << "There are " << image_pairs.size() << " image pairs" << std::endl;
-
     //TODO: Determine how to process final image pair
     for (size_t i = 0; i < image_pairs.size()-1; ++i) {
         const cv::Mat& curr_left_img = image_pairs[i].first;
@@ -281,7 +280,11 @@ void Dataset::PerformEdgeBasedVO() {
         ncc_two_vs_err.clear();
         ground_truth_right_edges_after_lowe.clear();
 
-        std::cout << "Image Pair #" << i << "\n";
+        std::cout << "\n================== Image Pair #" << i << " ==================\n";
+        std::cout << "Folder Path"      << ": " << stereo_image_data[i].folder_path << "\n";
+        std::cout << "Left Image Path"  << ": " << stereo_image_data[i].left_image_path << "\n";
+        std::cout << "Right Image Path" << ": " << stereo_image_data[i].right_image_path << "\n\n";
+
         cv::Mat left_calib = (cv::Mat_<double>(3, 3) << left_intr[0], 0, left_intr[2], 0, left_intr[1], left_intr[3], 0, 0, 1);
         cv::Mat right_calib = (cv::Mat_<double>(3, 3) << right_intr[0], 0, right_intr[2], 0, right_intr[1], right_intr[3], 0, 0, 1);
         cv::Mat left_dist_coeff_mat(left_dist_coeffs);
@@ -304,10 +307,10 @@ void Dataset::PerformEdgeBasedVO() {
         std::string right_edge_path = edge_dir + "/right_edges_" + std::to_string(i);
 
         ProcessEdges(left_undistorted, left_edge_path, TOED, left_third_order_edges_locations, left_third_order_edges_orientation);
-        std::cout << "Number of edges on the left image: " << left_third_order_edges_locations.size() << std::endl;
-
         ProcessEdges(right_undistorted, right_edge_path, TOED, right_third_order_edges_locations, right_third_order_edges_orientation);
-        std::cout << "Number of edges on the right image: " << right_third_order_edges_locations.size() << std::endl;
+        
+        std::cout << "Left  Image Edges"      << ": " << left_third_order_edges_locations.size() << "\n";
+        std::cout << "Right Image Edges"      << ": " << right_third_order_edges_locations.size() << "\n\n";
 
         Total_Num_Of_Imgs++;
 
@@ -919,7 +922,6 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
     std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>> confirmed_matches;
 
     int matches_before_bct = static_cast<int>(forward_match.edge_to_cluster_matches.size());
-    std::cout << "Number of matches before BCT: " << matches_before_bct << std::endl;
     auto bct_start = std::chrono::high_resolution_clock::now();
 
     ///////////////////////////////BCT///////////////////////////////
@@ -961,7 +963,6 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
         }
         forward_left_index++;
     }
-    std::cout << "BCT true positives: " << bct_true_positive << std::endl;
 
     auto bct_end = std::chrono::high_resolution_clock::now();
     double total_time_bct = std::chrono::duration<double, std::milli>(bct_end - bct_start).count();
@@ -969,16 +970,20 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
     double per_image_bct_time = (matches_before_bct > 0) ? total_time_bct / matches_before_bct : 0.0;
 
     int matches_after_bct = static_cast<int>(confirmed_matches.size());
-    std::cout << "Number of matches after BCT: " << matches_after_bct << std::endl;
-    std::cout << "Number of stacked GT right edges: " << ground_truth_right_edges_after_lowe.size() << std::endl;
 
     double per_image_bct_precision = (matches_before_bct > 0) ? bct_true_positive / (double)(matches_after_bct) : 0.0;
-    std::cout << "BCT precision = " << per_image_bct_precision << std::endl;
 
     int bct_denonimator = forward_match.recall_metrics.lowe_true_positive + forward_match.recall_metrics.lowe_false_negative;
 
     double bct_recall = (bct_denonimator > 0) ? bct_true_positive / (double)(bct_denonimator) : 0.0;
-    std::cout << "BCT recall = " << bct_recall << std::endl;
+
+    std::cout << "Matches Before BCT"     << ": " << matches_before_bct << "\n";
+    std::cout << "Matches After BCT"      << ": " << matches_after_bct << "\n";
+    std::cout << "BCT True Positives"     << ": " << bct_true_positive << "\n";
+    std::cout << "Stacked GT Right Edges" << ": " << ground_truth_right_edges_after_lowe.size() << "\n";
+
+    std::cout << "BCT Precision"           << ": " << per_image_bct_precision << "\n";
+    std::cout << "BCT Recall"              << ": " << bct_recall << "\n";
 
     BidirectionalMetrics bidirectional_metrics;
     bidirectional_metrics.matches_before_bct = matches_before_bct;
@@ -1116,7 +1121,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
     cv::Point2d ground_truth_edge;
 
     // int skip = (!selected_ground_truth_edges.empty()) ? 100 : 1;
-    const int skip = 1;
+    const int skip = 1000;
 
     //> Start looping over left edges
     #pragma omp for schedule(static, omp_threads) reduction(+: epi_true_positive, epi_false_negative, epi_true_negative, disp_true_positive, disp_false_negative, shift_true_positive, shift_false_negative, cluster_true_positive, cluster_false_negative, cluster_true_negative, ncc_true_positive, ncc_false_negative, lowe_true_positive, lowe_false_negative, per_edge_epi_precision, per_edge_disp_precision, per_edge_shift_precision, per_edge_clust_precision, per_edge_ncc_precision, per_edge_lowe_precision, epi_edges_evaluated, disp_edges_evaluated, shift_edges_evaluated, clust_edges_evaluated, ncc_edges_evaluated, lowe_edges_evaluated)
@@ -1483,21 +1488,11 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                 
                         #pragma omp critical(csv_write)
                         {
-                            target_stream << "," << info.coord.x << "," << info.coord.y << ","
+                            target_stream << std::fixed << std::setprecision(8)
+                                            << "," << info.coord.x << "," << info.coord.y << ","
                                             << ncc_one << "," << ncc_two << "," << ncc_three << "," << ncc_four << ","
                                             << score_one << "," << score_two << "," << final_score << "\n";
-                        }                                                       
-                        
-                        #pragma omp critical(console_log)
-                        {
-                            std::cout << ((cv::norm(info.coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE)
-                                ? "[VERIDICAL] " : "[NON-VERIDICAL] ")
-                                << "Image Pair: " << image_pair_index
-                                << ", x: " << info.coord.x << ", y: " << info.coord.y
-                                << ", NCCs: [" << ncc_one << ", " << ncc_two << ", " << ncc_three << ", " << ncc_four << "]"
-                                << ", Scores: [" << score_one << ", " << score_two << "], Final: " << final_score
-                                << std::endl;
-                        }
+                        }                                                  
                     }
                 
                     if (!selected_ground_truth_edges.empty()) {
@@ -2474,6 +2469,12 @@ std::vector<std::pair<cv::Mat, cv::Mat>> Dataset::LoadETH3DImages(const std::str
         cv::Mat right_image = cv::imread(right_image_path, cv::IMREAD_GRAYSCALE);
 
         if (!left_image.empty() && !right_image.empty()) {
+            StereoImageData entry;
+            entry.folder_path = folder_path;
+            entry.left_image_path = left_image_path;
+            entry.right_image_path = right_image_path;
+            stereo_image_data.push_back(entry);
+
             image_pairs.emplace_back(left_image, right_image);
         } else {
             std::cerr << "ERROR: Could not load images from folder: " << folder_path << std::endl;

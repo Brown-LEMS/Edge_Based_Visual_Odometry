@@ -28,6 +28,12 @@
 //> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu)
 // =======================================================================================================
 
+struct StereoImageData {
+    std::string folder_path;
+    std::string left_image_path;
+    std::string right_image_path;
+};
+
 struct EdgeCluster {
     cv::Point2d center_coord;                  
     double center_orientation;      
@@ -124,7 +130,8 @@ struct OrientedPoint3D {
     Eigen::Vector3d orientation;  
 };
 
-extern cv::Mat merged_visualization_global;
+extern cv::Mat merged_visualization_global;\
+
 class Dataset {
 public:
    EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
@@ -187,6 +194,9 @@ private:
    std::vector<std::vector<double>> rot_mat_12;
    std::vector<double> trans_vec_12;
    std::vector<std::vector<double>> fund_mat_12;
+
+   std::vector<StereoImageData> stereo_image_data;
+
    double focal_length;
    double baseline;
    double max_disparity;
