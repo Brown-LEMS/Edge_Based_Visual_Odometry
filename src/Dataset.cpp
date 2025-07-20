@@ -16,7 +16,6 @@
 #include <chrono>
 #include <utility> 
 #include <cmath>
-
 #include "Dataset.h"
 #include "definitions.h"
 
@@ -197,7 +196,7 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 3;
+    int num_pairs = 16;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
     std::vector<double> max_disparity_values;
@@ -298,7 +297,7 @@ void Dataset::PerformEdgeBasedVO() {
             TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU( img_height, img_width ));
         }
 
-        std::string edge_dir = output_path + "/edges";
+        std::string edge_dir = output_path + "/edge_bins";
         std::filesystem::create_directories(edge_dir);
 
         std::string left_edge_path = edge_dir + "/left_edges_" + std::to_string(i);
@@ -335,7 +334,8 @@ void Dataset::PerformEdgeBasedVO() {
             left_undistorted,
             right_undistorted,
             right_third_order_edges_locations,
-            right_third_order_edges_orientation
+            right_third_order_edges_orientation,
+            i
         );
 
 #if 0
@@ -805,7 +805,7 @@ void Dataset::PerformEdgeBasedVO() {
         << std::fixed << std::setprecision(4) << avg_bct_precision * 100 << "\n";
 }
 
-StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::Mat& right_image, std::vector<cv::Point2d> right_edge_coords, std::vector<double> right_edge_orientations) {
+StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::Mat& right_image, std::vector<cv::Point2d> right_edge_coords, std::vector<double> right_edge_orientations, int image_pair_index) {
 
     ///////////////////////////////FORWARD DIRECTION///////////////////////////////
     std::vector<cv::Point2d> left_edge_coords;
@@ -856,7 +856,9 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
         left_patch_set_two,
         epipolar_lines_right,
         right_image,
-        filtered_ground_truth_right_edges
+        filtered_ground_truth_right_edges,
+        image_pair_index,
+        true
     );
 
     ///////////////////////////////REVERSE DIRECTION///////////////////////////////
@@ -908,7 +910,10 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
         right_patch_set_one,
         right_patch_set_two,
         epipolar_lines_left,
-        left_image
+        left_image,
+        std::vector<cv::Point2d>(),
+        image_pair_index,
+        false
     );
 
     std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>> confirmed_matches;
@@ -988,7 +993,7 @@ StereoMatchResult Dataset::DisplayMatches(const cv::Mat& left_image, const cv::M
 //> MARK: Main Edge Pairing
 EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& selected_primary_edges, const std::vector<double>& selected_primary_orientations, const std::vector<cv::Point2d>& secondary_edge_coords, 
     const std::vector<double>& secondary_edge_orientations, const std::vector<cv::Mat>& primary_patch_set_one, const std::vector<cv::Mat>& primary_patch_set_two, const std::vector<Eigen::Vector3d>& epipolar_lines_secondary, 
-    const cv::Mat& secondary_image, const std::vector<cv::Point2d>& selected_ground_truth_edges) {
+    const cv::Mat& secondary_image, const std::vector<cv::Point2d>& selected_ground_truth_edges, int image_pair_index, bool forward_direction) {
     auto total_start = std::chrono::high_resolution_clock::now();
 
     std::vector<int> epi_input_counts;
@@ -1082,10 +1087,32 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
     int ncc_edges_evaluated = 0;
     int lowe_edges_evaluated = 0;
 
+    std::ofstream veridical_csv;
+    std::ofstream nonveridical_csv;
+    
+    if (forward_direction) {
+        std::filesystem::path ncc_dir = output_path;
+        ncc_dir /= "ncc_stats";
+    
+        std::filesystem::create_directories(ncc_dir);
+
+        std::filesystem::path veridical_path = ncc_dir / ("image_pair_" + std::to_string(image_pair_index) + "_veridical_edges.csv");
+        std::filesystem::path nonveridical_path = ncc_dir / ("image_pair_" + std::to_string(image_pair_index) + "_nonveridical_edges.csv");
+    
+        veridical_csv.open(veridical_path.string());
+        nonveridical_csv.open(nonveridical_path.string());
+    
+        if (!veridical_csv || !nonveridical_csv) {
+            std::cerr << "WARNING: Failed to open CSV files for writing.\n" << std::endl;
+        }
+    
+        veridical_csv << ",x,y,ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
+        nonveridical_csv << ",x,y,ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
+    }        
+
 #pragma omp parallel
 {
     int thread_id = omp_get_thread_num();    
-
     cv::Point2d ground_truth_edge;
 
     // int skip = (!selected_ground_truth_edges.empty()) ? 100 : 1;
@@ -1439,7 +1466,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                ncc_two_vs_err.push_back(pair_ncc_two_err);
 #endif
 
-               if (final_score >= NCC_THRESH_FINAL_SCORE) {
+               if (final_score > NCC_THRESH_FINAL_SCORE) {
                     EdgeMatch info;
                     info.coord = filtered_cluster_centers[j].center_coord;
                     info.orientation = filtered_cluster_centers[j].center_orientation;
@@ -1448,6 +1475,31 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                     info.contributing_orientations = filtered_cluster_centers[j].contributing_orientations;
                     passed_ncc_matches.push_back(info);
 
+                    if (forward_direction) {
+                        std::ostream& target_stream = 
+                            (!selected_ground_truth_edges.empty() &&
+                             cv::norm(info.coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE)
+                            ? veridical_csv : nonveridical_csv;
+                
+                        #pragma omp critical(csv_write)
+                        {
+                            target_stream << "," << info.coord.x << "," << info.coord.y << ","
+                                            << ncc_one << "," << ncc_two << "," << ncc_three << "," << ncc_four << ","
+                                            << score_one << "," << score_two << "," << final_score << "\n";
+                        }                                                       
+                        
+                        #pragma omp critical(console_log)
+                        {
+                            std::cout << ((cv::norm(info.coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE)
+                                ? "[VERIDICAL] " : "[NON-VERIDICAL] ")
+                                << "Image Pair: " << image_pair_index
+                                << ", x: " << info.coord.x << ", y: " << info.coord.y
+                                << ", NCCs: [" << ncc_one << ", " << ncc_two << ", " << ncc_three << ", " << ncc_four << "]"
+                                << ", Scores: [" << score_one << ", " << score_two << "], Final: " << final_score
+                                << std::endl;
+                        }
+                    }
+                
                     if (!selected_ground_truth_edges.empty()) {
                         if (cv::norm(info.coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
                             ncc_match_found = true;
@@ -1558,6 +1610,10 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
         time_lowe += std::chrono::duration<double, std::milli>(end_lowe - start_lowe).count();
 #endif
     }   //> MARK: end of looping over left edges   
+}
+if (forward_direction) {
+    veridical_csv.close();
+    nonveridical_csv.close();
 }
 
 #if MEASURE_TIMINGS
