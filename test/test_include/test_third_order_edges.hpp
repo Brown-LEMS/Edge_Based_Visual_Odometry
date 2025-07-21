@@ -10,6 +10,12 @@
 #include "../include/utility.h"
 #include "../include/definitions.h"
 
+std::vector<Edge> get_third_order_edges_(const cv::Mat img, ThirdOrderEdgeDetectionCPU &toed) 
+{
+    toed.get_Third_Order_Edges(img);
+    return toed.toed_edges;
+}
+
 void f_TEST_TOED() 
 {
     std::string source_dataset_folder = "/gpfs/data/bkimia/Datasets/ETH3D/";
@@ -21,12 +27,12 @@ void f_TEST_TOED()
     const int img_height = img.rows;
     const int img_width  = img.cols;
 
-    std::shared_ptr<ThirdOrderEdgeDetectionCPU> TOED = nullptr;
-    TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(img_height, img_width));
+    // std::shared_ptr<ThirdOrderEdgeDetectionCPU> TOED = nullptr;
+    // TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(img_height, img_width));
+    ThirdOrderEdgeDetectionCPU toed_engine(img_height, img_width);
     
     LOG_INFO("Running third-order edge detector...");
-    TOED->get_Third_Order_Edges(img);
-    std::vector<Edge> edges = TOED->toed_edges;
-    std::cout << "Number of total edges = " << edges.size() << std::endl;
+    std::vector<Edge> toed_edges = get_third_order_edges_(img, toed_engine);
+    std::cout << "Number of total edges = " << toed_edges.size() << std::endl;
 
 }

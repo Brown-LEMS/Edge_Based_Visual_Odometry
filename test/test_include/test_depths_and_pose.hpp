@@ -352,32 +352,32 @@ cv::Point2d Epipolar_Shift(
 }
 
 //> MARK: MAIN TESTS FOR DEPTHS AND POSE ESTIMATIONS
-void f_TEST_NCC() {
-    cv::Mat patch1 = (cv::Mat_<double>(7, 7) << 192, 195, 189, 183, 187, 184, 190,
-                      187, 185, 185, 186, 188, 188, 189,
-                      184, 183, 186, 187, 191, 190, 193,
-                      185, 184, 188, 188, 192, 190, 192,
-                      190, 188, 187, 190, 190, 192, 192,
-                      193, 191, 189, 192, 190, 192, 193,
-                      194, 193, 192, 194, 192, 193, 194);
-    cv::Mat patch2 = (cv::Mat_<double>(7, 7) << 193, 190, 189, 189, 191, 191, 192,
-                      188, 188, 185, 182, 184, 185, 191,
-                      181, 181, 186, 185, 185, 186, 189,
-                      180, 187, 190, 185, 186, 191, 196,
-                      186, 187, 185, 186, 187, 187, 189,
-                      191, 188, 188, 190, 189, 191, 195,
-                      190, 187, 190, 192, 191, 192, 196);
+// void f_TEST_NCC() {
+//     cv::Mat patch1 = (cv::Mat_<double>(7, 7) << 192, 195, 189, 183, 187, 184, 190,
+//                       187, 185, 185, 186, 188, 188, 189,
+//                       184, 183, 186, 187, 191, 190, 193,
+//                       185, 184, 188, 188, 192, 190, 192,
+//                       190, 188, 187, 190, 190, 192, 192,
+//                       193, 191, 189, 192, 190, 192, 193,
+//                       194, 193, 192, 194, 192, 193, 194);
+//     cv::Mat patch2 = (cv::Mat_<double>(7, 7) << 193, 190, 189, 189, 191, 191, 192,
+//                       188, 188, 185, 182, 184, 185, 191,
+//                       181, 181, 186, 185, 185, 186, 189,
+//                       180, 187, 190, 185, 186, 191, 196,
+//                       186, 187, 185, 186, 187, 187, 189,
+//                       191, 188, 188, 190, 189, 191, 195,
+//                       190, 187, 190, 192, 191, 192, 196);
 
-    //> (i) element-wise multiplication
-    cv::Mat patch_ele_mul = patch1.mul(patch2);
-    std::cout << "element-wise multiplication of two patches: " << patch_ele_mul << std::endl;
-    //> (ii) Calculate the dot product
-    double patch_dot_prod = patch1.dot(patch2);
-    std::cout << "dot product of two patches: " << patch_dot_prod << std::endl;
+//     //> (i) element-wise multiplication
+//     cv::Mat patch_ele_mul = patch1.mul(patch2);
+//     std::cout << "element-wise multiplication of two patches: " << patch_ele_mul << std::endl;
+//     //> (ii) Calculate the dot product
+//     double patch_dot_prod = patch1.dot(patch2);
+//     std::cout << "dot product of two patches: " << patch_dot_prod << std::endl;
 
-    double ncc = ComputeNCC(patch1, patch2);
-    std::cout << "NCC of two patches: " << ncc << std::endl;
-}
+//     double ncc = ComputeNCC(patch1, patch2);
+//     std::cout << "NCC of two patches: " << ncc << std::endl;
+// }
 
 void f_TEST_DEPTH_GRADIENT() {
 
