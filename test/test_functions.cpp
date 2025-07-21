@@ -12,10 +12,11 @@
 
 #include "test_include/test_depths_and_pose.hpp"
 #include "test_include/test_third_order_edges.hpp"
+#include "test_include/test_NCC.hpp"
 
 //> Activate the tests here
-#define TEST_TOED_EDGES             (true)
-#define TEST_NCC                    (false)
+#define TEST_TOED_EDGES             (false)
+#define TEST_NCC                    (true)
 #define TEST_GRADIENT_DEPTHS        (false)
 #define TEST_RELATIVE_POSE          (false)
 #define TEST_GCC_CONSTRAINT         (false)
