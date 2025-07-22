@@ -210,28 +210,6 @@ private:
     const std::vector<double>& secondary_edge_orientations, const std::vector<cv::Mat>& primary_patch_set_one, const std::vector<cv::Mat>& primary_patch_set_two, const std::vector<Eigen::Vector3d>& epipolar_lines_secondary, 
     const cv::Mat& secondary_image, const std::vector<cv::Point2d>& selected_ground_truth_edges = std::vector<cv::Point2d>(), int image_pair_index = -1, bool forward_direction = true);
 
-    std::vector<cv::Point3d> Calculate3DPoints(
-        const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
-    );
-
-    std::vector<Eigen::Vector3d> Calculate3DOrientations(
-    const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches); 
-
-    void BuildImagePyramids(
-    const cv::Mat& curr_left_image,
-    const cv::Mat& curr_right_image,
-    const cv::Mat& next_left_image,
-    const cv::Mat& next_right_image,
-    int num_levels,
-    std::vector<cv::Mat>& curr_left_pyramid,
-    std::vector<cv::Mat>& curr_right_pyramid,
-    std::vector<cv::Mat>& next_left_pyramid,
-    std::vector<cv::Mat>& next_right_pyramid);
-
-    std::vector<cv::Point3d> LinearTriangulatePoints(
-    const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
-    );
-
    double ComputeNCC(const cv::Mat& patch_one, const cv::Mat& patch_two);
 
    std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<cv::Point2d>& edge_points, const std::vector<double>& orientations, double shift_magnitude);
@@ -277,13 +255,9 @@ private:
    std::vector<std::pair<cv::Mat, cv::Mat>> LoadEuRoCImages(const std::string& csv_path, const std::string& left_path, const std::string& right_path, int num_images);
    
    std::vector<std::pair<cv::Mat, cv::Mat>> LoadETH3DImages(const std::string &stereo_pairs_path, int num_images);
-   
-   //std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
-   
+      
    std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
-   
-   //std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
-   
+      
    void WriteDisparityToBinary(const std::string& filepath, const cv::Mat& disparity_map);
    
    cv::Mat ReadDisparityFromBinary(const std::string& filepath);
@@ -325,7 +299,6 @@ private:
    cv::Mat Small_Patch_Radius_Map;
    Utility::Ptr utility_tool = nullptr;
 
-   //> CH: shared pointer to the class of third-order edge detector
    std::shared_ptr< ThirdOrderEdgeDetectionCPU > TOED = nullptr;
 
    std::vector< cv::Point2d > ground_truth_right_edges_after_lowe;

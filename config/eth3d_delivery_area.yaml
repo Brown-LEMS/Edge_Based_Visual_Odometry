@@ -2,7 +2,7 @@
 
 # Dataset Details
 dataset_dir: "/Users/saulll./Desktop/Independent Study/datasets"
-output_dir: "/Users/saulll./Desktop/IndependentStudyResults/delivery_area_results/monday_july_21st/debug_attempt_one"
+output_dir: "/Users/saulll./Desktop/IndependentStudyResults/delivery_area_results/tuesday_july_22nd/debug_attempt_one"
 sequence_name: "delivery_area"
 dataset_type: "ETH3D"
 

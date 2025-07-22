@@ -197,8 +197,8 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 2;
-    std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
+    int num_pairs = 3;
+    std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs; 
     std::vector<cv::Mat> left_ref_disparity_maps;
     std::vector<double> max_disparity_values;
 
@@ -260,22 +260,6 @@ void Dataset::PerformEdgeBasedVO() {
         const cv::Mat& next_left_img = image_pairs[i + 1].first;
         const cv::Mat& next_right_img = image_pairs[i + 1].second;
 
-        std::vector<cv::Mat> curr_left_pyramid, curr_right_pyramid;
-        std::vector<cv::Mat> next_left_pyramid, next_right_pyramid;
-        int pyramid_levels = 4;
-
-        BuildImagePyramids(
-            curr_left_img,
-            curr_right_img,
-            next_left_img,
-            next_right_img,
-            pyramid_levels,
-            curr_left_pyramid,
-            curr_right_pyramid,
-            next_left_pyramid,
-            next_right_pyramid
-        );
-
         ncc_one_vs_err.clear();
         ncc_two_vs_err.clear();
         ground_truth_right_edges_after_lowe.clear();
@@ -331,7 +315,6 @@ void Dataset::PerformEdgeBasedVO() {
         }
 
         CalculateGTRightEdge(left_third_order_edges_locations, left_third_order_edges_orientation, left_ref_map, left_edge_map, right_edge_map);
-        // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
 
         StereoMatchResult match_result = DisplayMatches(
             left_undistorted,
@@ -340,45 +323,6 @@ void Dataset::PerformEdgeBasedVO() {
             right_third_order_edges_orientation,
             i
         );
-
-#if 0
-        std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
-        std::vector<cv::Point3d> points_linear = LinearTriangulatePoints(match_result.confirmed_matches);
-        std::vector<Eigen::Vector3d> orientations_3d = Calculate3DOrientations(match_result.confirmed_matches);
-
-        std::vector<OrientedPoint3D> oriented_points;
-
-        for (size_t i = 0; i < points_opencv.size(); ++i) {
-            OrientedPoint3D op;
-            op.position = points_opencv[i];
-            op.orientation = orientations_3d[i];
-            oriented_points.push_back(op);
-        }
-
-
-        if (points_opencv.size() != points_linear.size()) {
-            std::cerr << "Mismatch in number of 3D points: OpenCV=" << points_opencv.size()
-                    << ", Linear=" << points_linear.size() << "\n";
-        } else {
-            std::cout << "Comparing " << points_opencv.size() << " 3D points...\n";
-
-            double total_error = 0.0;
-            for (size_t i = 0; i < points_opencv.size(); ++i) {
-                const auto& pt1 = points_opencv[i];
-                const auto& pt2 = points_linear[i];
-
-                double error = cv::norm(pt1 - pt2);
-                total_error += error;
-
-                std::cout << "Point " << i << ": OpenCV = [" << pt1 << "], "
-                        << "Linear = [" << pt2 << "], "
-                        << "Error = " << error << "\n";
-            }
-
-            std::cout << "Average triangulation error: "
-                    << (total_error / points_opencv.size()) << " units.\n";
-        }
-#endif
 
 #if DISPLAY_STERO_EDGE_MATCHES
         cv::Mat left_visualization, right_visualization;
@@ -1166,6 +1110,23 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
             continue;
         }
 
+        // int half_patch = std::ceil(PATCH_SIZE / 2.0);
+
+        // double theta = primary_orientation;
+        // cv::Point2d orth_shift_1(primary_edge.x + ORTHOGONAL_SHIFT_MAG * std::sin(theta),
+        //                         primary_edge.y - ORTHOGONAL_SHIFT_MAG * std::cos(theta));
+        // cv::Point2d orth_shift_2(primary_edge.x - ORTHOGONAL_SHIFT_MAG * std::sin(theta),
+        //                         primary_edge.y + ORTHOGONAL_SHIFT_MAG * std::cos(theta));
+
+        // bool in_bounds_1 = (orth_shift_1.x - half_patch >= 0 && orth_shift_1.x + half_patch < secondary_image.cols &&
+        //                     orth_shift_1.y - half_patch >= 0 && orth_shift_1.y + half_patch < secondary_image.rows);
+        // bool in_bounds_2 = (orth_shift_2.x - half_patch >= 0 && orth_shift_2.x + half_patch < secondary_image.cols &&
+        //                     orth_shift_2.y - half_patch >= 0 && orth_shift_2.y + half_patch < secondary_image.rows);
+
+        // if (!in_bounds_1 || !in_bounds_2) {
+        //     continue; 
+        // }
+
         ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD///////////////////////////////
 #if MEASURE_TIMINGS
         auto start_epi = std::chrono::high_resolution_clock::now();
@@ -1195,7 +1156,6 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                 if (cv::norm(candidate - ground_truth_edge) <= 0.5) {
                     epi_precision_numerator++;
                     match_found = true;
-                    // break;
                 }
             }
 
@@ -1264,7 +1224,6 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                 if (cv::norm(filtered_candidate - ground_truth_edge) <= 0.5){
                     disp_precision_numerator++;
                     disp_match_found = true;
-                    // break;
                 }
             }
 
@@ -1317,7 +1276,6 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                 if (cv::norm(shifted_candidate - ground_truth_edge) <= GT_SPATIAL_TOLERANCE){
                     shift_precision_numerator++;
                     shift_match_found = true;
-                    // break;
                 }
             }
 
@@ -1388,7 +1346,6 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                 if (cv::norm(cluster.center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
                     clust_precision_numerator++;
                     cluster_match_found = true;
-                    // break;
                 }
             }
 
@@ -1488,23 +1445,23 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
                         }
                     }
 
-                    // if (forward_direction) {
-                    //     std::ostream& target_stream = 
-                    //         (!selected_ground_truth_edges.empty() &&
-                    //          cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE)
-                    //         ? veridical_csv : nonveridical_csv;
+                    if (forward_direction) {
+                        std::ostream& target_stream = 
+                            (!selected_ground_truth_edges.empty() &&
+                             cv::norm(filtered_cluster_centers[j].center_coord - ground_truth_edge) <= GT_SPATIAL_TOLERANCE)
+                            ? veridical_csv : nonveridical_csv;
                         
-                    //     #pragma omp critical(csv_write)
-                    //     {
-                    //         target_stream << std::fixed << std::setprecision(8)
-                    //                         << "," << primary_edge.x << "," << primary_edge.y << "," << primary_orientation << ","
-                    //                         << info.coord.x << "," << info.coord.y << "," << info.orientation << ","
-                    //                         << ground_truth_edge.x << "," << ground_truth_edge.y << ","
-                    //                         << a << "," << b << "," << c << ","
-                    //                         << ncc_one << "," << ncc_two << "," << ncc_three << "," << ncc_four << ","
-                    //                         << score_one << "," << score_two << "," << final_score << "\n";
-                    //     }                                            
-                    // }
+                        #pragma omp critical(csv_write)
+                        {
+                            target_stream << std::fixed << std::setprecision(8)
+                                            << "," << primary_edge.x << "," << primary_edge.y << "," << primary_orientation << ","
+                                            << info.coord.x << "," << info.coord.y << "," << info.orientation << ","
+                                            << ground_truth_edge.x << "," << ground_truth_edge.y << ","
+                                            << a << "," << b << "," << c << ","
+                                            << ncc_one << "," << ncc_two << "," << ncc_three << "," << ncc_four << ","
+                                            << score_one << "," << score_two << "," << final_score << "\n";
+                        }                                            
+                    }
                }
            }
 
@@ -1732,212 +1689,6 @@ if (forward_direction) {
         final_matches
     };
 }  
-
-std::vector<cv::Point3d> Dataset::Calculate3DPoints(
-    const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
-) {
-    std::vector<cv::Point3d> points_3d;
-
-    if (confirmed_matches.empty()) {
-        std::cerr << "WARNING: No confirmed matches to triangulate.\n";
-        return points_3d;
-    }
-
-    cv::Mat K_left = (cv::Mat_<double>(3, 3) <<
-        left_intr[0], 0,            left_intr[2],
-        0,           left_intr[1], left_intr[3],
-        0,           0,            1);
-
-    cv::Mat K_right = (cv::Mat_<double>(3, 3) <<
-        right_intr[0], 0,             right_intr[2],
-        0,            right_intr[1], right_intr[3],
-        0,            0,             1);
-
-    cv::Mat R_left = cv::Mat::eye(3, 3, CV_64F);
-    cv::Mat T_left = cv::Mat::zeros(3, 1, CV_64F);
-
-    cv::Mat R_right(3, 3, CV_64F);
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            R_right.at<double>(i, j) = rot_mat_21[i][j];
-
-    cv::Mat T_right = (cv::Mat_<double>(3, 1) <<
-        trans_vec_21[0],
-        trans_vec_21[1],
-        trans_vec_21[2]);
-
-    cv::Mat extrinsic_left, extrinsic_right;
-    cv::hconcat(R_left, T_left, extrinsic_left);
-    cv::hconcat(R_right, T_right, extrinsic_right);
-
-    cv::Mat P_left = K_left * extrinsic_left;
-    cv::Mat P_right = K_right * extrinsic_right;
-
-    std::vector<cv::Point2f> points_left, points_right;
-    for (const auto& [left, right] : confirmed_matches) {
-        points_left.emplace_back(static_cast<cv::Point2f>(left.position));
-        points_right.emplace_back(static_cast<cv::Point2f>(right.position));
-    }
-
-    cv::Mat points_4d_homogeneous;
-    cv::triangulatePoints(P_left, P_right, points_left, points_right, points_4d_homogeneous);
-
-    int skipped = 0;
-    for (int i = 0; i < points_4d_homogeneous.cols; ++i) {
-        float w = points_4d_homogeneous.at<float>(3, i);
-        if (std::abs(w) > 1e-5) {
-            points_3d.emplace_back(
-                points_4d_homogeneous.at<float>(0, i) / w,
-                points_4d_homogeneous.at<float>(1, i) / w,
-                points_4d_homogeneous.at<float>(2, i) / w
-            );
-        } else {
-            ++skipped;
-        }
-    }
-
-    int total = static_cast<int>(points_4d_homogeneous.cols);
-    if (skipped > 0.1 * total) {
-        std::cerr << "WARNING: " << skipped << " out of " << total
-                << " triangulated points had near-zero depth (w ≈ 0) and were skipped.\n";
-    }
-
-    return points_3d;
-}
-
-std::vector<Eigen::Vector3d> Dataset::Calculate3DOrientations(
-    const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
-) {
-    std::vector<Eigen::Vector3d> tangent_vectors;
-
-    if (confirmed_matches.empty()) {
-        std::cerr << "WARNING: No confirmed matches to compute 3D orientations.\n";
-        return tangent_vectors;
-    }
-
-    Eigen::Matrix3d K;
-    K << left_intr[0], 0, left_intr[2],
-         0, left_intr[1], left_intr[3],
-         0, 0, 1;
-
-    Eigen::Matrix3d R21;
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            R21(i, j) = rot_mat_21[i][j];
-
-    for (const auto& [left_edge, right_edge] : confirmed_matches) {
-        Eigen::Vector3d gamma1 = K.inverse() * Eigen::Vector3d(left_edge.position.x, left_edge.position.y, 1.0);
-        Eigen::Vector3d gamma2 = K.inverse() * Eigen::Vector3d(right_edge.position.x, right_edge.position.y, 1.0);
-
-        double theta1 = left_edge.orientation;
-        double theta2 = right_edge.orientation;
-
-        Eigen::Vector3d t1(std::cos(theta1), std::sin(theta1), 0.0);
-        Eigen::Vector3d t2(std::cos(theta2), std::sin(theta2), 0.0);
-
-        Eigen::Vector3d n1 = gamma1.cross(t1);
-        Eigen::Vector3d n2 = R21.transpose() * (t2.cross(gamma2));
-
-        Eigen::Vector3d T = n1.cross(n2);
-        T.normalize(); 
-
-        tangent_vectors.push_back(T);
-    }
-
-    return tangent_vectors;
-}
-
-void Dataset::BuildImagePyramids(
-    const cv::Mat& curr_left_image,
-    const cv::Mat& curr_right_image,
-    const cv::Mat& next_left_image,
-    const cv::Mat& next_right_image,
-    int num_levels,
-    std::vector<cv::Mat>& curr_left_pyramid,
-    std::vector<cv::Mat>& curr_right_pyramid,
-    std::vector<cv::Mat>& next_left_pyramid,
-    std::vector<cv::Mat>& next_right_pyramid
-) {
-    curr_left_pyramid.clear();
-    curr_right_pyramid.clear();
-    next_left_pyramid.clear();
-    next_right_pyramid.clear();
-
-    curr_left_pyramid.reserve(num_levels);
-    curr_right_pyramid.reserve(num_levels);
-    next_left_pyramid.reserve(num_levels);
-    next_right_pyramid.reserve(num_levels);
-
-    cv::buildPyramid(curr_left_image, curr_left_pyramid, num_levels - 1);
-    cv::buildPyramid(curr_right_image, curr_right_pyramid, num_levels - 1);
-    cv::buildPyramid(next_left_image, next_left_pyramid, num_levels - 1);
-    cv::buildPyramid(next_right_image, next_right_pyramid, num_levels - 1);
-}
-
-std::vector<cv::Point3d> Dataset::LinearTriangulatePoints(
-    const std::vector<std::pair<ConfirmedMatchEdge, ConfirmedMatchEdge>>& confirmed_matches
-) {
-    std::vector<cv::Point3d> triangulated_points;
-
-    if (confirmed_matches.empty()) {
-        std::cerr << "WARNING: No confirmed matches to triangulate using linear method.\n";
-        return triangulated_points;
-    }
-
-    Eigen::Matrix3d K;
-    K << left_intr[0], 0, left_intr[2],
-         0, left_intr[1], left_intr[3],
-         0, 0, 1;
-
-    Eigen::Matrix3d R;
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            R(i, j) = rot_mat_21[i][j];
-
-    Eigen::Vector3d T(trans_vec_21[0], trans_vec_21[1], trans_vec_21[2]);
-
-    for (const auto& [left_edge, right_edge] : confirmed_matches) {
-        std::vector<Eigen::Vector2d> pts;
-        pts.emplace_back(left_edge.position.x, left_edge.position.y);
-        pts.emplace_back(right_edge.position.x, right_edge.position.y);
-
-        std::vector<Eigen::Vector2d> pts_meters;
-        for (const auto& pt : pts) {
-            Eigen::Vector3d homo_pt(pt.x(), pt.y(), 1.0);
-            Eigen::Vector3d pt_cam = K.inverse() * homo_pt;
-            pts_meters.emplace_back(pt_cam.x(), pt_cam.y());
-        }
-
-        Eigen::MatrixXd A(4, 4); 
-
-        A.row(0) << 0.0, -1.0, pts_meters[0].y(), 0.0;
-        A.row(1) << 1.0,  0.0, -pts_meters[0].x(), 0.0;
-
-        Eigen::Matrix3d Rp = R;
-        Eigen::Vector3d Tp = T;
-        Eigen::Vector2d mp = pts_meters[1];
-
-        A.row(2) << mp.y() * Rp(2, 0) - Rp(1, 0),
-                    mp.y() * Rp(2, 1) - Rp(1, 1),
-                    mp.y() * Rp(2, 2) - Rp(1, 2),
-                    mp.y() * Tp.z()   - Tp.y();
-
-        A.row(3) << Rp(0, 0) - mp.x() * Rp(2, 0),
-                    Rp(0, 1) - mp.x() * Rp(2, 1),
-                    Rp(0, 2) - mp.x() * Rp(2, 2),
-                    Tp.x()   - mp.x() * Tp.z();
-
-        Eigen::Matrix4d ATA = A.transpose() * A;
-        Eigen::Vector4d gamma = ATA.jacobiSvd(Eigen::ComputeFullV).matrixV().col(3);
-
-        if (std::abs(gamma(3)) > 1e-5) {
-            gamma /= gamma(3);
-            triangulated_points.emplace_back(gamma(0), gamma(1), gamma(2));
-        }
-    }
-
-    return triangulated_points;
-}
 
 double Dataset::ComputeNCC(const cv::Mat& patch_one, const cv::Mat& patch_two){
     double mean_one = (cv::mean(patch_one))[0];
@@ -2526,42 +2277,6 @@ std::vector<cv::Mat> Dataset::LoadETH3DLeftReferenceMaps(const std::string &ster
 
     return disparity_maps;
 }
-
-// std::vector<cv::Mat> Dataset::LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps) {
-//     std::vector<cv::Mat> disparity_maps;
-//     std::vector<std::string> stereo_folders;
-
-//     for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path)) {
-//         if (entry.is_directory()) {
-//             stereo_folders.push_back(entry.path().string());
-//         }
-//     }
-
-//     std::sort(stereo_folders.begin(), stereo_folders.end());
-
-//     for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++) {
-//         std::string folder_path = stereo_folders[i];
-//         std::string disparity_csv_path = folder_path + "/disparity_map_right.csv";
-//         std::string disparity_bin_path = folder_path + "/disparity_map_right.bin";
-
-//         cv::Mat disparity_map;
-
-//         if (std::filesystem::exists(disparity_bin_path)) {
-//             disparity_map = ReadDisparityFromBinary(disparity_bin_path);
-//         } else {
-//             disparity_map = LoadDisparityFromCSV(disparity_csv_path);
-//             if (!disparity_map.empty()) {
-//                 WriteDisparityToBinary(disparity_bin_path, disparity_map);
-//             }
-//         }
-
-//         if (!disparity_map.empty()) {
-//             disparity_maps.push_back(disparity_map);
-//         }
-//     }
-
-//     return disparity_maps;
-// }
 
 void Dataset::WriteDisparityToBinary(const std::string& filepath, const cv::Mat& disparity_map) {
     std::ofstream ofs(filepath, std::ios::binary);
