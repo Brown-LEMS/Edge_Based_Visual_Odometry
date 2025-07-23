@@ -10,7 +10,6 @@
 #include <Eigen/Geometry>
 #include <yaml-cpp/yaml.h>
 #include <opencv2/opencv.hpp>
-
 #include "definitions.h"
 #include "Frame.h"
 #include "utility.h"
@@ -210,6 +209,14 @@ private:
     const std::vector<double>& secondary_edge_orientations, const std::vector<cv::Mat>& primary_patch_set_one, const std::vector<cv::Mat>& primary_patch_set_two, const std::vector<Eigen::Vector3d>& epipolar_lines_secondary, 
     const cv::Mat& secondary_image, const std::vector<cv::Point2d>& selected_ground_truth_edges = std::vector<cv::Point2d>(), int image_pair_index = -1, bool forward_direction = true);
 
+    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y );
+    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection );
+
+    std::vector<Eigen::Vector3d> PerformEpipolarShift(
+        const Eigen::Vector3d& edge1,
+        const Eigen::MatrixXd& edge2,
+        const Eigen::Vector3d& epip_coeffs);
+
    double ComputeNCC(const cv::Mat& patch_one, const cv::Mat& patch_two);
 
    std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<cv::Point2d>& edge_points, const std::vector<double>& orientations, double shift_magnitude);
@@ -283,9 +290,7 @@ private:
    void CalculateGTRightEdge(const std::vector<cv::Point2d> &left_third_order_edges_locations, const std::vector<double> &left_third_order_edges_orientation, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image);
    
    void CalculateGTLeftEdge(const std::vector<cv::Point2d>& right_third_order_edges_locations,const std::vector<double>& right_third_order_edges_orientation,const cv::Mat& disparity_map_right_reference,const cv::Mat& left_image,const cv::Mat& right_image);
-   
-   cv::Point2d PerformEpipolarShift( cv::Point2d original_edge_location, double edge_orientation, std::vector<double> epipolar_line_coeffs, bool& b_pass_epipolar_tengency_check);
-   
+      
    void Load_GT_Poses( std::string GT_Poses_File_Path );
    
    std::vector<double> GT_time_stamps;

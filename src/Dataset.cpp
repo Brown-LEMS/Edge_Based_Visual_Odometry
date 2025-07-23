@@ -16,9 +16,10 @@
 #include <chrono>
 #include <utility> 
 #include <cmath>
+#include <iomanip>
+
 #include "Dataset.h"
 #include "definitions.h"
-#include <iomanip>
 
 #if USE_GLOGS
 #include <glog/logging.h>
@@ -29,7 +30,6 @@
 #else
 #include <boost/filesystem.hpp>
 #endif
-
 
 cv::Mat merged_visualization_global;
 
@@ -1245,18 +1245,28 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
         local_disp_output_counts[thread_id].push_back(filtered_secondary_edge_coords.size());
 
+        Eigen::Vector3d eigen_primary_edge(primary_edge.x, primary_edge.y, primary_orientation);
+
+        Eigen::MatrixXd eigen_secondary_edges(filtered_secondary_edge_coords.size(), 3);
+        for (size_t i = 0; i < filtered_secondary_edge_coords.size(); ++i) {
+            eigen_secondary_edges(i, 0) = filtered_secondary_edge_coords[i].x;
+            eigen_secondary_edges(i, 1) = filtered_secondary_edge_coords[i].y;
+            eigen_secondary_edges(i, 2) = filtered_secondary_edge_orientations[i];
+        }
+
+        Eigen::Vector3d epip_coeffs(a, b, c);
+
+        std::vector<Eigen::Vector3d> corrected_edges = PerformEpipolarShift(
+            eigen_primary_edge,
+            eigen_secondary_edges,
+            epip_coeffs);
+
         std::vector<cv::Point2d> shifted_secondary_edge_coords;
         std::vector<double> shifted_secondary_edge_orientations;
-        std::vector<double> epipolar_coefficients = {a, b, c};
 
-        for (size_t j = 0; j < filtered_secondary_edge_coords.size(); j++) {
-            bool secondary_passes_tangency = false;
-
-            cv::Point2d shifted_edge = PerformEpipolarShift(filtered_secondary_edge_coords[j], filtered_secondary_edge_orientations[j], epipolar_coefficients, secondary_passes_tangency);
-            if (secondary_passes_tangency){
-                shifted_secondary_edge_coords.push_back(shifted_edge);
-                shifted_secondary_edge_orientations.push_back(filtered_secondary_edge_orientations[j]);
-            }
+        for (const auto& edge : corrected_edges) {
+            shifted_secondary_edge_coords.emplace_back(edge(0), edge(1));   
+            shifted_secondary_edge_orientations.emplace_back(edge(2));
         }
 
         local_shift_input_counts[thread_id].push_back(filtered_secondary_edge_coords.size());
@@ -1690,6 +1700,98 @@ if (forward_direction) {
     };
 }  
 
+double Dataset::getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y ) {
+	double a1_line = Epip_Line_Coeffs(0);
+	double b1_line = Epip_Line_Coeffs(1);
+	double c1_line = Epip_Line_Coeffs(2);
+	epiline_x = edge(0) - a1_line * (a1_line * edge(0) + b1_line *edge(1) + c1_line)/(pow(a1_line,2) + pow(b1_line,2));
+	epiline_y = edge(1) - b1_line* (a1_line * edge(0) + b1_line * edge(1) + c1_line)/(pow(a1_line,2) + pow(b1_line,2));
+	return sqrt(pow(edge(0) - epiline_x, 2) + pow(edge(1) - epiline_y, 2));
+}
+
+double Dataset::getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection ) {
+	double a_edgeH2 = tan(edge(2)); //tan(theta2)
+	double b_edgeH2 = -1;
+	double c_edgeH2 = -(a_edgeH2 * edge(0) - edge(1)); //−(a⋅x2−y2)
+	double a1_line = Epip_Line_Coeffs(0);
+	double b1_line = Epip_Line_Coeffs(1);
+	double c1_line = Epip_Line_Coeffs(2);
+	x_intersection = (b1_line * c_edgeH2 - b_edgeH2 * c1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
+	y_intersection = (c1_line * a_edgeH2 - c_edgeH2 * a1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
+	return sqrt((x_intersection - edge(0))*(x_intersection - edge(0))+(y_intersection - edge(1))*(y_intersection - edge(1)));
+}
+
+//> MARK: Perform Epipolar Shift
+//> Check that const notation works as intended, otherwise remove
+std::vector<Eigen::Vector3d> Dataset::PerformEpipolarShift(
+    const Eigen::Vector3d& edge1,
+    const Eigen::MatrixXd& edge2,
+    const Eigen::Vector3d& epip_coeffs)
+{
+std::vector<Eigen::Vector3d> corrected_edges;
+
+for (int i = 0; i < edge2.rows(); i++)
+{
+    Eigen::Vector3d xy1_H2(edge2(i, 0), edge2(i, 1), 1.0);
+
+    double corrected_x, corrected_y, corrected_theta;
+    double epiline_x, epiline_y;
+
+    double normal_distance_epiline = getNormalDistance2EpipolarLine(epip_coeffs, xy1_H2, epiline_x, epiline_y);
+
+    if (normal_distance_epiline < LOCATION_PERTURBATION)
+    {
+        corrected_x = epiline_x;
+        corrected_y = epiline_y;
+        corrected_theta = edge2(i, 2);
+    }
+    else
+    {
+        double x_intersection, y_intersection;
+        Eigen::Vector3d isolated_H2(edge2(i, 0), edge2(i, 1), edge2(i, 2));
+        double dist_diff_edg2 = getTangentialDistance2EpipolarLine(epip_coeffs, isolated_H2, x_intersection, y_intersection);
+
+        double theta = edge2(i, 2);
+
+        if (dist_diff_edg2 < EPIP_TANGENCY_DISPL_THRESH)
+        {
+            corrected_x = x_intersection;
+            corrected_y = y_intersection;
+            corrected_theta = theta;
+        }
+        else
+        {
+            double p_theta = epip_coeffs(0) * cos(theta) + epip_coeffs(1) * sin(theta);
+            double derivative_p_theta = -epip_coeffs(0) * sin(theta) + epip_coeffs(1) * cos(theta);
+
+            if (p_theta > 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
+		    else if (p_theta < 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
+		    else if (p_theta > 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
+		    else if (p_theta < 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
+
+            Eigen::Vector3d isolated_H2_(edge2(i, 0), edge2(i, 1), theta);
+            dist_diff_edg2 = getTangentialDistance2EpipolarLine(epip_coeffs, isolated_H2_, x_intersection, y_intersection);
+
+            if (dist_diff_edg2 < EPIP_TANGENCY_DISPL_THRESH)
+            {
+                corrected_x = x_intersection;
+                corrected_y = y_intersection;
+                corrected_theta = theta;
+            }
+            else
+            {
+                continue;
+            }
+        }
+    }
+
+    corrected_edges.emplace_back(corrected_x, corrected_y, corrected_theta);
+}
+
+return corrected_edges;
+}
+
+
 double Dataset::ComputeNCC(const cv::Mat& patch_one, const cv::Mat& patch_two){
     double mean_one = (cv::mean(patch_one))[0];
     double mean_two = (cv::mean(patch_two))[0];
@@ -1972,44 +2074,6 @@ std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2
     }
 
     return {selected_points, selected_orientations, selected_ground_truth_points};
-}
-
-cv::Point2d Dataset::PerformEpipolarShift( 
-    cv::Point2d original_edge_location, double edge_orientation,
-    std::vector<double> epipolar_line_coeffs, bool& b_pass_epipolar_tengency_check )
-{
-    cv::Point2d corrected_edge;
-    assert(epipolar_line_coeffs.size() == 3);
-    double EL_coeff_A = epipolar_line_coeffs[0];
-    double EL_coeff_B = epipolar_line_coeffs[1];
-    double EL_coeff_C = epipolar_line_coeffs[2];
-    double a1_line  = -epipolar_line_coeffs[0] / epipolar_line_coeffs[1];
-    double b1_line  = -1;
-    double c1_line  = -epipolar_line_coeffs[2] / epipolar_line_coeffs[1];
-    
-    //> Parameters of the line passing through the original edge along its direction (tangent) vector
-    double a_edgeH2 = tan(edge_orientation);
-    double b_edgeH2 = -1;
-    double c_edgeH2 = -(a_edgeH2*original_edge_location.x - original_edge_location.y); //−(a⋅x2−y2)
-
-    //> Find the intersected point of the two lines
-    corrected_edge.x = (b1_line * c_edgeH2 - b_edgeH2 * c1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
-    corrected_edge.y = (c1_line * a_edgeH2 - c_edgeH2 * a1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
-    
-    //> Find (i) the displacement between the original edge and the corrected edge, and
-    //       (ii) the intersection angle between the epipolar line and the line passing through the original edge along its direction vector
-    double epipolar_shift_displacement = cv::norm(corrected_edge - original_edge_location);
-    double m_epipolar = -a1_line / b1_line; //> Slope of epipolar line
-    double angle_diff_rad = abs(edge_orientation - atan(m_epipolar));
-    double angle_diff_deg = angle_diff_rad * (180.0 / M_PI);
-    if (angle_diff_deg > 180){
-        angle_diff_deg -= 180;
-    }
-
-    //> check if the corrected edge passes the epoplar tengency test (intersection angle < 4 degrees and displacement < 6 pixels)
-    b_pass_epipolar_tengency_check = (epipolar_shift_displacement < EPIP_TENGENCY_PROXIM_THRESH && abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
-    
-    return corrected_edge;
 }
 
 void Dataset::VisualizeGTRightEdge(const cv::Mat &left_image, const cv::Mat &right_image, const std::vector<std::pair<cv::Point2d, cv::Point2d>> &left_right_edges) {

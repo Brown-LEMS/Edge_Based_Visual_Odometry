@@ -19,6 +19,9 @@
 #define NCC_THRESH_FINAL_SCORE          (0.1)
 #define MATCH_TOL                       (3.0)     //> in pixels
 #define GT_SPATIAL_TOLERANCE            (3.0)
+#define EPIP_TANGENCY_DISPL_THRESH      (3)         //> in pixels
+#define LOCATION_PERTURBATION           (0.3)       //> in pixels
+#define ORIENT_PERTURBATION             (0.174533)  //> in radians. 0.174533 is 10 degrees
 
 #define MEASURE_TIMINGS                 (false)
 #define DISPLAY_STERO_EDGE_MATCHES      (false)

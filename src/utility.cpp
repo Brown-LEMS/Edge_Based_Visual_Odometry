@@ -29,7 +29,6 @@ void Utility::get_dG_2D(cv::Mat &Gx_2d, cv::Mat &Gy_2d, int w, double sigma) {
   cv::Mat G     = cv::Mat::ones(Gx_2d.cols, Gx_2d.rows, CV_64F);
   cv::Mat dG    = cv::Mat::ones(Gx_2d.cols, Gx_2d.rows, CV_64F);
 
-  //> get zero mean Gaussian
   unsigned Index_Row = 0, Index_Col = 0;
   for (int iy = -w; iy <= w; iy++) {
     Index_Col = 0;
@@ -40,7 +39,6 @@ void Utility::get_dG_2D(cv::Mat &Gx_2d, cv::Mat &Gy_2d, int w, double sigma) {
     Index_Row++;
   }
 
-  //> get zero mean Gaussian derivative
   Index_Row = 0, Index_Col = 0;
   for (int iy = -w; iy <= w; iy++) {
     Index_Col = 0;
@@ -50,9 +48,6 @@ void Utility::get_dG_2D(cv::Mat &Gx_2d, cv::Mat &Gy_2d, int w, double sigma) {
     }
     Index_Row++;
   }
-
-  //get_Zero_Mean_Gaussian(G, w, sigma);
-  //get_Zero_Mean_Gaussian_Derivative(dG, w, sigma);
 
   for (int ri = 0; ri < Gx_2d.rows; ri++) {
     for (int ci = 0; ci < Gx_2d.cols; ci++) {
@@ -75,7 +70,6 @@ double Utility::get_Interpolated_Gradient_Depth( Frame::Ptr Frame, cv::Point2d P
   }
 }
 
-//> Display images and features via OpenCV
 void Utility::Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2, \
                                      std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2, \
                                      std::vector<cv::DMatch> Good_Matches ) 
@@ -112,14 +106,5 @@ std::string Utility::cvMat_Type(int type) {
 
   return r;
 }
-
-// template<typename T>
-// T Utility::Uniform_Random_Number_Generator(T range_from, T range_to) {
-  
-//   std::random_device                  rand_dev;
-//   std::mt19937                        generator(rand_dev());
-//   std::uniform_int_distribution<T>    distr(range_from, range_to);
-//   return distr(generator);
-// }
 
 #endif
