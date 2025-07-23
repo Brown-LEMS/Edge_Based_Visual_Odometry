@@ -226,7 +226,8 @@ void ThirdOrderEdgeDetectionCPU::convolve_img()
                 TO_conv_mag = std::sqrt(TO_conv_Ix * TO_conv_Ix + TO_conv_Iy * TO_conv_Iy);
                 TO_conv_Ix /= TO_conv_mag;
                 TO_conv_Iy /= TO_conv_mag;
-                I_orient(si, sj) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                // I_orient(si, sj) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                I_orient(si, sj) = std::atan(TO_conv_Ix / -TO_conv_Iy);
                 // ---------------------------------------------------------
 
                 fx = 0;
@@ -269,7 +270,8 @@ void ThirdOrderEdgeDetectionCPU::convolve_img()
                 TO_conv_mag = std::sqrt(TO_conv_Ix * TO_conv_Ix + TO_conv_Iy * TO_conv_Iy);
                 TO_conv_Ix /= TO_conv_mag;
                 TO_conv_Iy /= TO_conv_mag;
-                I_orient(si, sj + 1) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                // I_orient(si, sj + 1) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                I_orient(si, sj + 1) = std::atan(TO_conv_Ix / -TO_conv_Iy);
                 // ----------------------------------------------------------------
 
                 fx = 0;
@@ -312,7 +314,8 @@ void ThirdOrderEdgeDetectionCPU::convolve_img()
                 TO_conv_mag = std::sqrt(TO_conv_Ix * TO_conv_Ix + TO_conv_Iy * TO_conv_Iy);
                 TO_conv_Ix /= TO_conv_mag;
                 TO_conv_Iy /= TO_conv_mag;
-                I_orient(si + 1, sj) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                // I_orient(si + 1, sj) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                I_orient(si + 1, sj) = std::atan(TO_conv_Ix / -TO_conv_Iy);
                 // ----------------------------------------------------------------
 
                 fx = 0;
@@ -355,7 +358,8 @@ void ThirdOrderEdgeDetectionCPU::convolve_img()
                 TO_conv_mag = std::sqrt(TO_conv_Ix * TO_conv_Ix + TO_conv_Iy * TO_conv_Iy);
                 TO_conv_Ix /= TO_conv_mag;
                 TO_conv_Iy /= TO_conv_mag;
-                I_orient(si + 1, sj + 1) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                // I_orient(si + 1, sj + 1) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                I_orient(si + 1, sj + 1) = std::atan(TO_conv_Ix / -TO_conv_Iy);
             }
         }
     }
