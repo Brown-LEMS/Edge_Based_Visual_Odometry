@@ -40,8 +40,8 @@ void get_patch_on_one_edge_side( cv::Point2d shifted_point, double theta, \
         for (int j = -half_patch_size; j <= half_patch_size; j++) {
             //> get the rotated coordinate
             cv::Point2d rotated_point(cos(theta)*(i) - sin(theta)*(j) + shifted_point.x, sin(theta)*(i) + cos(theta)*(j) + shifted_point.y);
-            patch_coord_x.at<int>(i + half_patch_size, j + half_patch_size) = rotated_point.x;
-            patch_coord_y.at<int>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
+            patch_coord_x.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.x;
+            patch_coord_y.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
 
             //> get the image intensity of the rotated coordinate
             double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
@@ -80,10 +80,10 @@ void f_TEST_NCC()
 
     std::pair<cv::Point2d, cv::Point2d> shifted_points = get_Orthogonal_Shifted_Points( target_edge );
 
-    cv::Mat patch_coord_x_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_coord_y_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_coord_x_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_coord_y_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
     cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
     cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
