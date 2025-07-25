@@ -29,9 +29,9 @@ struct Edge
   double orientation;   //> orientation of the edge point
 
   bool b_isEmpty;         //> check if this struct is value-assigned
-
-  Edge() : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true) {}
-  Edge(cv::Point2d location, double orientation, bool b_isEmpty) : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true) {}
+  int frame_source;       //> which frame this edge comes from
+  Edge() : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true), frame_source(-1) {}
+  Edge(cv::Point2d location, double orientation, bool b_isEmpty, int frame_source) : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true), frame_source(-1) {}
 };
 
 class ThirdOrderEdgeDetectionCPU

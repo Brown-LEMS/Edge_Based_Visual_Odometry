@@ -84,6 +84,16 @@ public:
     Edge GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_frame,
                    const cv::Mat &disparity_map, const cv::Mat &K_inverse, const cv::Mat &K,
                    const Edge &edge);
+    void GetGTEdges(size_t &frame_idx, StereoFrame &previous_frame, StereoFrame &current_frame,
+                    const cv::Mat &left_ref_map, const cv::Mat &left_calib_inv,
+                    const cv::Mat &left_calib, std::vector<Edge> &gt_edges,
+                    std::vector<std::pair<Edge, Edge>> &left_edges_GT_pair);
+    void EvaluateSIFTMatches(const std::vector<cv::DMatch> &matches,
+                             const std::vector<cv::KeyPoint> &previous_keypoints,
+                             const std::vector<cv::KeyPoint> &current_keypoints,
+                             const std::vector<std::pair<Edge, Edge>> &gt_correspondences,
+                             size_t frame_idx,
+                             double distance_threshold = 5.0);
 
 private:
     //> CH: shared pointer to the class of third-order edge detector

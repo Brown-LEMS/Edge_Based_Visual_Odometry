@@ -10,7 +10,7 @@ struct EdgeMatchResult;
 #include "Dataset.h"
 
 StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image,
-                                 Dataset &dataset);
+                                 Dataset &dataset, int idx);
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges = std::vector<cv::Point2d>());

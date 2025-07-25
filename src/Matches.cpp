@@ -1,5 +1,9 @@
 #include "Matches.h"
 
+// task: finished the SIFT freature detection and matching -> result : 50/60 precision & recall
+//  TODO: 1. do location filter/SCC filtering, then combine it with SIFT. Making SIFT location sensitive.
+//        2. OpenMP parallelization & code optimization
+
 /*
     calculate the epipolar line for each edge point using the fundamental matrix.
 */
@@ -60,7 +64,7 @@ Edge PerformEpipolarShift(
     //> check if the corrected edge passes the epoplar tengency test (intersection angle < 4 degrees and displacement < 6 pixels)
     b_pass_epipolar_tengency_check = (epipolar_shift_displacement < EPIP_TENGENCY_PROXIM_THRESH && abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
 
-    return Edge{corrected_edge_loc, original_edge.orientation, false}; //> Return the corrected edge with the same orientation as the original edge
+    return Edge{corrected_edge_loc, original_edge.orientation, false, original_edge.frame_source}; //> Return the corrected edge with the same orientation as the original edge
 }
 
 /*
@@ -234,7 +238,7 @@ std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogona
     return {shifted_points_one, shifted_points_two};
 }
 
-StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset)
+StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset, int idx)
 {
     ///////////////////////////////FORWARD DIRECTION///////////////////////////////
     std::vector<Edge> left_edges;
@@ -242,7 +246,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     for (const auto &data : dataset.forward_gt_data)
     {
-        left_edges.push_back(Edge{std::get<0>(data), std::get<2>(data), false});
+        left_edges.push_back(Edge{std::get<0>(data), std::get<2>(data), false, idx});
         ground_truth_right_edges.push_back(std::get<1>(data));
     }
 
@@ -415,6 +419,171 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     return StereoMatchResult{forward_match, reverse_match, confirmed_matches, bidirectional_metrics};
 }
+
+// EdgeMatchResult FrameMatches(
+//     const std::vector<Edge> &prev_edges,
+//     const std::vector<Edge> &curr_edges,
+//     const cv::Mat &prev_image,
+//     const cv::Mat &curr_image,
+//     const Dataset &dataset)
+// {
+//     EdgeMatchResult result;
+
+//     // Step 1: Extract patches from previous frame edges
+//     auto [prev_orthogonal_one, prev_orthogonal_two] = CalculateOrthogonalShifts(prev_edges, ORTHOGONAL_SHIFT_MAG, dataset);
+
+//     std::vector<Edge> filtered_prev_edges;
+//     std::vector<cv::Mat> prev_patch_set_one, prev_patch_set_two;
+
+//     ExtractPatches(
+//         PATCH_SIZE,
+//         prev_image,
+//         prev_edges,
+//         prev_orthogonal_one,
+//         prev_orthogonal_two,
+//         filtered_prev_edges,
+//         prev_patch_set_one,
+//         prev_patch_set_two,
+//         nullptr,
+//         nullptr);
+
+//     // Step 2: For each previous frame edge, find temporal correspondences
+//     std::vector<std::pair<Edge, EdgeMatch>> forward_temporal_matches;
+
+//     for (size_t i = 0; i < filtered_prev_edges.size(); ++i) {
+//         const Edge &prev_edge = filtered_prev_edges[i];
+//         const cv::Mat &prev_patch_one = prev_patch_set_one[i];
+//         const cv::Mat &prev_patch_two = prev_patch_set_two[i];
+
+//         // Step 2a: Location/Proximity Filter (temporal constraint)
+//         // Assumption: dt is small, so corresponding edges should be nearby
+//         std::vector<Edge> temporal_candidates;
+//         double TEMPORAL_SEARCH_RADIUS = 5.0; // pixels - adjust based on expected motion
+
+//         for (const Edge &curr_edge : curr_edges) {
+//             double distance = cv::norm(prev_edge.location - curr_edge.location);
+//             if (distance <= TEMPORAL_SEARCH_RADIUS) {
+//                 temporal_candidates.push_back(curr_edge);
+//             }
+//         }
+
+//         if (temporal_candidates.empty()) continue;
+
+//         // Step 2b: Extract patches for current frame candidates
+//         auto [curr_orthogonal_one, curr_orthogonal_two] = CalculateOrthogonalShifts(temporal_candidates, ORTHOGONAL_SHIFT_MAG, dataset);
+
+//         std::vector<Edge> filtered_curr_candidates;
+//         std::vector<cv::Mat> curr_patch_set_one, curr_patch_set_two;
+
+//         ExtractPatches(
+//             PATCH_SIZE,
+//             curr_image,
+//             temporal_candidates,
+//             curr_orthogonal_one,
+//             curr_orthogonal_two,
+//             filtered_curr_candidates,
+//             curr_patch_set_one,
+//             curr_patch_set_two,
+//             nullptr,
+//             nullptr);
+
+//         // Step 3: NCC/SIFT Threshold Filtering
+//         std::vector<EdgeMatch> ncc_passed_matches;
+
+//         for (size_t j = 0; j < filtered_curr_candidates.size(); ++j) {
+//             // Compute NCC scores (similar to existing FilterByNCC logic)
+//             double ncc_one = ComputeNCC(prev_patch_one, curr_patch_set_one[j]);
+//             double ncc_two = ComputeNCC(prev_patch_two, curr_patch_set_two[j]);
+//             double ncc_cross_one = ComputeNCC(prev_patch_one, curr_patch_set_two[j]);
+//             double ncc_cross_two = ComputeNCC(prev_patch_two, curr_patch_set_one[j]);
+
+//             double score_direct = std::min(ncc_one, ncc_two);
+//             double score_cross = std::min(ncc_cross_one, ncc_cross_two);
+//             double final_score = std::max(score_direct, score_cross);
+
+//             // Apply NCC threshold
+//             if (ncc_one >= NCC_THRESH_TEMPORAL && ncc_two >= NCC_THRESH_TEMPORAL) {
+//                 EdgeMatch match;
+//                 match.edge = filtered_curr_candidates[j];
+//                 match.final_score = final_score;
+//                 ncc_passed_matches.push_back(match);
+//             }
+//         }
+
+//         // Step 4: Lowe's Ratio Test
+//         if (ncc_passed_matches.size() >= 2) {
+//             // Sort by score (descending)
+//             std::sort(ncc_passed_matches.begin(), ncc_passed_matches.end(),
+//                      [](const EdgeMatch &a, const EdgeMatch &b) {
+//                          return a.final_score > b.final_score;
+//                      });
+
+//             double best_score = ncc_passed_matches[0].final_score;
+//             double second_best_score = ncc_passed_matches[1].final_score;
+//             double lowe_ratio = second_best_score / best_score;
+
+//             if (lowe_ratio < LOWE_RATIO_THRESH) {
+//                 forward_temporal_matches.emplace_back(prev_edge, ncc_passed_matches[0]);
+//             }
+//         }
+//         else if (ncc_passed_matches.size() == 1) {
+//             // Accept single good match
+//             forward_temporal_matches.emplace_back(prev_edge, ncc_passed_matches[0]);
+//         }
+//     }
+
+//     // Step 5: Bidirectional Consistency Test
+//     std::vector<std::pair<Edge, Edge>> confirmed_temporal_matches;
+
+//     // Reverse matching: curr_frame -> prev_frame
+//     std::vector<std::pair<Edge, EdgeMatch>> reverse_temporal_matches;
+//     // ... (similar process but curr->prev direction)
+
+//     // Check bidirectional consistency
+//     for (const auto &[prev_edge, forward_match] : forward_temporal_matches) {
+//         const Edge &matched_curr_edge = forward_match.edge;
+
+//         // Find reverse match for this current edge
+//         for (const auto &[curr_edge_rev, reverse_match] : reverse_temporal_matches) {
+//             if (cv::norm(curr_edge_rev.location - matched_curr_edge.location) <= MATCH_TOL) {
+//                 const Edge &reverse_matched_prev = reverse_match.edge;
+
+//                 // Check if reverse match points back to original prev_edge
+//                 if (cv::norm(reverse_matched_prev.location - prev_edge.location) <= MATCH_TOL) {
+//                     confirmed_temporal_matches.emplace_back(prev_edge, matched_curr_edge);
+//                     break;
+//                 }
+//             }
+//         }
+//     }
+
+//     // Step 6: Optional Stereo Verification
+//     // If stereo pairs available, verify temporal matches using stereo consistency
+//     std::vector<std::pair<Edge, Edge>> stereo_verified_matches;
+
+//     for (const auto &[prev_edge, curr_edge] : confirmed_temporal_matches) {
+//         // Find stereo correspondences for both prev_edge and curr_edge
+//         // Edge prev_stereo_match = FindStereoCorrespondence(prev_edge, prev_stereo_image);
+//         // Edge curr_stereo_match = FindStereoCorrespondence(curr_edge, curr_stereo_image);
+
+//         // Verify temporal consistency in stereo space
+//         // double stereo_temporal_distance = cv::norm(prev_stereo_match.location - curr_stereo_match.location);
+//         // if (stereo_temporal_distance <= STEREO_TEMPORAL_THRESH) {
+//         //     stereo_verified_matches.emplace_back(prev_edge, curr_edge);
+//         // }
+//     }
+
+//     // Prepare result
+//     result.edge_to_cluster_matches.clear();
+//     for (const auto &[prev_edge, curr_edge] : confirmed_temporal_matches) {
+//         EdgeMatch temporal_match;
+//         temporal_match.edge = curr_edge;
+//         temporal_match.final_score = 1.0; // Could store actual NCC score
+//         result.edge_to_cluster_matches.emplace_back(prev_edge, temporal_match);
+//     }
+
+//     return result;
+// }
 
 //> MARK: Main Edge Pairing
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
@@ -1165,7 +1334,7 @@ void FormClusterCenters(
 
         cv::Point2d sum_point(0.0, 0.0);
         double sum_orientation = 0.0;
-
+        int frame_idx = cluster_edges[0].frame_source;
         for (size_t j = 0; j < cluster_edges.size(); ++j)
         {
             sum_point += cluster_edges[j].location;
@@ -1176,7 +1345,7 @@ void FormClusterCenters(
         double avg_orientation = sum_orientation * (1.0 / cluster_edges.size());
 
         EdgeCluster cluster;
-        cluster.center_edge = Edge{avg_point, avg_orientation, false};
+        cluster.center_edge = Edge{avg_point, avg_orientation, false, frame_idx};
         cluster.contributing_edges = cluster_edges;
 
         cluster_centers.push_back(cluster);
@@ -1310,7 +1479,7 @@ void FilterByLowe(
     local_lowe_input_counts[thread_id].push_back(passed_ncc_matches.size());
 
     int lowe_precision_numerator = 0;
-
+    std::unordered_map<Edge, std::vector<Edge>> NccMatches;
     EdgeMatch best_match;
     double best_score = -1;
 
@@ -1353,6 +1522,9 @@ void FilterByLowe(
                 }
             }
             Edge source_edge = primary_edge;
+
+            NccMatches[source_edge].push_back(best_match.edge);
+            NccMatches[best_match.edge].push_back(source_edge);
 
             local_final_matches[thread_id].emplace_back(source_edge, best_match);
             local_lowe_output_counts[thread_id].push_back(1);

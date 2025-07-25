@@ -1,9 +1,37 @@
 #include <filesystem>
 #include <unordered_set>
+#include <numeric>
 #include "EBVO.h"
 #include "Dataset.h"
 #include "Matches.h"
 #include <opencv2/core/eigen.hpp>
+
+std::vector<cv::DMatch> FilterMatchesByProximity(
+    const std::vector<cv::DMatch> &matches,
+    const std::vector<cv::KeyPoint> &previous_keypoints,
+    const std::vector<cv::KeyPoint> &current_keypoints,
+    double max_distance_threshold = 30.0) // pixels
+{
+    std::vector<cv::DMatch> filtered_matches;
+
+    for (const cv::DMatch &match : matches)
+    {
+        // Get the matched keypoints
+        cv::Point2f prev_pt = previous_keypoints[match.queryIdx].pt;
+        cv::Point2f curr_pt = current_keypoints[match.trainIdx].pt;
+
+        // Calculate spatial distance between matched points
+        double spatial_distance = cv::norm(prev_pt - curr_pt);
+
+        // Only keep matches where points are spatially close
+        if (spatial_distance <= max_distance_threshold)
+        {
+            filtered_matches.push_back(match);
+        }
+    }
+
+    return filtered_matches;
+}
 
 EBVO::EBVO(YAML::Node config_map, bool use_GCC_filter) : dataset(config_map, use_GCC_filter) {}
 
@@ -58,52 +86,41 @@ void EBVO::PerformEdgeBasedVO()
     auto start_time = std::chrono::high_resolution_clock::now();
 
     LOG_INFO("Start looping over all image pairs");
-
-    StereoFrame current_frame, next_frame;
+    // now we change the logic, we will do previous frame and current frame instead
+    StereoFrame previous_frame, current_frame, next_frame;
+    std::vector<cv::KeyPoint> previous_edge_loc, current_edge_loc; // store the edge locations for the previous and current frames
 
     cv::Mat left_calib_inv = left_calib.inv();
     cv::Mat right_calib_inv = right_calib.inv();
 
+    cv::Mat descriptors_t0, descriptors_t1;
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+
     // Get the first frame from the dataset
-    if (!dataset.stereo_iterator->hasNext() ||
-        !dataset.stereo_iterator->getNext(current_frame))
-    {
-        LOG_ERROR("Failed to get first frame from dataset");
-        return;
-    }
+
+    // if (!dataset.stereo_iterator->hasNext() ||
+    //     !dataset.stereo_iterator->getNext(current_frame))
+    // {
+    //     LOG_ERROR("Failed to get first frame from dataset");
+    //     return;
+    // }
 
     size_t frame_idx = 0;
     while (dataset.stereo_iterator->hasNext() && num_pairs - frame_idx >= 0)
     {
-        if (!dataset.stereo_iterator->getNext(next_frame))
+        if (!dataset.stereo_iterator->getNext(current_frame))
         {
             break;
         }
 
         const cv::Mat &curr_left_img = current_frame.left_image;
         const cv::Mat &curr_right_img = current_frame.right_image;
-        const cv::Mat &next_left_img = next_frame.left_image;
-        const cv::Mat &next_right_img = next_frame.right_image;
+
         // If the current frame has ground truth, we can use it
         if (dataset.has_gt())
         {
         }
         const cv::Mat &left_ref_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
-
-        std::vector<cv::Mat> curr_left_pyramid, curr_right_pyramid;
-        std::vector<cv::Mat> next_left_pyramid, next_right_pyramid;
-        int pyramid_levels = 4;
-
-        BuildImagePyramids(
-            curr_left_img,
-            curr_right_img,
-            next_left_img,
-            next_right_img,
-            pyramid_levels,
-            curr_left_pyramid,
-            curr_right_pyramid,
-            next_left_pyramid,
-            next_right_pyramid);
 
         dataset.ncc_one_vs_err.clear();
         dataset.ncc_two_vs_err.clear();
@@ -111,14 +128,15 @@ void EBVO::PerformEdgeBasedVO()
 
         std::cout << "Image Pair #" << frame_idx << "\n";
 
-        cv::Mat left_undistorted, right_undistorted;
-        cv::undistort(curr_left_img, left_undistorted, left_calib, left_dist_coeff_mat);
-        cv::undistort(curr_right_img, right_undistorted, right_calib, right_dist_coeff_mat);
+        cv::Mat left_prev_undistorted, right_prev_undistorted, left_cur_undistorted, right_cur_undistorted;
+
+        cv::undistort(curr_left_img, left_cur_undistorted, left_calib, left_dist_coeff_mat);
+        cv::undistort(curr_right_img, right_cur_undistorted, right_calib, right_dist_coeff_mat);
 
         if (dataset.get_num_imgs() == 0)
         {
-            dataset.set_height(left_undistorted.rows);
-            dataset.set_width(left_undistorted.cols);
+            dataset.set_height(left_cur_undistorted.rows);
+            dataset.set_width(left_cur_undistorted.cols);
 
             TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(dataset.get_height(), dataset.get_width()));
         }
@@ -126,19 +144,19 @@ void EBVO::PerformEdgeBasedVO()
         std::string edge_dir = dataset.get_output_path() + "/edges";
         std::filesystem::create_directories(edge_dir);
 
-        std::string left_edge_path = edge_dir + "/left_edges_" + std::to_string(frame_idx);
-        std::string right_edge_path = edge_dir + "/right_edges_" + std::to_string(frame_idx);
+        std::string left_edge_path = edge_dir + "/left_edges_" + std::to_string(frame_idx + 1);
+        std::string right_edge_path = edge_dir + "/right_edges_" + std::to_string(frame_idx + 1);
 
-        ProcessEdges(left_undistorted, left_edge_path, TOED, dataset.left_edges);
+        ProcessEdges(left_cur_undistorted, left_edge_path, TOED, dataset.left_edges);
         std::cout << "Number of edges on the left image: " << dataset.left_edges.size() << std::endl;
 
-        ProcessEdges(right_undistorted, right_edge_path, TOED, dataset.right_edges);
+        ProcessEdges(right_cur_undistorted, right_edge_path, TOED, dataset.right_edges);
         std::cout << "Number of edges on the right image: " << dataset.right_edges.size() << std::endl;
 
         dataset.increment_num_imgs();
 
-        cv::Mat left_edge_map = cv::Mat::zeros(left_undistorted.size(), CV_8UC1);
-        cv::Mat right_edge_map = cv::Mat::zeros(right_undistorted.size(), CV_8UC1);
+        cv::Mat left_edge_map = cv::Mat::zeros(left_cur_undistorted.size(), CV_8UC1);
+        cv::Mat right_edge_map = cv::Mat::zeros(right_cur_undistorted.size(), CV_8UC1);
 
         for (const auto &edge : dataset.left_edges)
         {
@@ -157,97 +175,95 @@ void EBVO::PerformEdgeBasedVO()
         }
 
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
-        // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
-        if (dataset.has_gt())
+        std::vector<Edge> gt_edges;
+        std::vector<std::pair<Edge, Edge>> left_edges_GT_pair;
+        if (frame_idx > 0 && dataset.has_gt())
         {
-            int indices[9] = {657, 10000, 10350, 20300, 30200, 35006, 40000, 46741};
-            std::vector<Edge> gt_edges;
-            std::vector<std::pair<Edge, Edge>> left_edges_GT_pair;
-            for (int i = 0; i < 9; ++i)
+            GetGTEdges(frame_idx, previous_frame, current_frame, left_ref_map, left_calib_inv, left_calib, gt_edges, left_edges_GT_pair);
+        }
+
+        if (frame_idx > 0)
+        { // at any frame after the first, we compute SIFT descriptors on the current frame
+            current_edge_loc.clear();
+            for (const Edge &edge : dataset.left_edges)
             {
-                int index = indices[i];
-                std::cout << "Index: " << index << std::endl;
-                // Get the ground truth edge for the left image
-                Edge GTEdge = GetGTEdge(true, current_frame, next_frame,
-                                        left_ref_map, left_calib_inv, left_calib,
-                                        dataset.left_edges[index]);
-                if ( GTEdge.b_isEmpty )
-                    continue;
-                else 
+                current_edge_loc.push_back(cv::KeyPoint(edge.location, 1.0f)); // Convert to KeyPoint
+            }
+            sift->compute(current_frame.left_image, current_edge_loc, descriptors_t1);
+
+            if (!descriptors_t0.empty() && !descriptors_t1.empty())
+            {
+                // Create a matcher
+                cv::BFMatcher matcher(cv::NORM_L2); // For SIFT, use L2 norm
+
+                // Perform matching
+                std::vector<cv::DMatch> raw_matches;
+                matcher.match(descriptors_t0, descriptors_t1, raw_matches);
+
+                std::cout << "Found " << raw_matches.size() << " raw matches" << std::endl;
+                std::vector<cv::DMatch> proximity_filtered_matches = FilterMatchesByProximity(
+                    raw_matches, previous_edge_loc, current_edge_loc, 25.0); // 25 pixel threshold
+
+                std::cout << "After proximity filtering: " << proximity_filtered_matches.size() << " matches" << std::endl;
+
+                EvaluateSIFTMatches(proximity_filtered_matches, previous_edge_loc, current_edge_loc, left_edges_GT_pair, frame_idx, 5.0);
+                // Randomly select up to 100 matches for visualization
+                std::vector<cv::DMatch> selected_matches;
+                if (proximity_filtered_matches.size() <= 100)
                 {
-                    left_edges_GT_pair.push_back(std::make_pair(dataset.left_edges[index], GTEdge));
-                    gt_edges.push_back(GTEdge);
+                    selected_matches = proximity_filtered_matches; // Use all filtered matches if we have 100 or fewer
                 }
-            }
-
-            for (int i = 0; i < left_edges_GT_pair.size(); i++)
-            {
-                cv::Point2d left_edge_t0 = left_edges_GT_pair[i].first.location;
-                cv::Point2d left_edge_t1 = left_edges_GT_pair[i].second.location;
-                // std::cout << "[" << left_edge_t0.x << ", " << left_edge_t0.y << "] - [" << left_edge_t1.x << ", " << left_edge_t1.y << "]" << std::endl;
-            }
-
-            cv::Mat current_frame_vis;
-            cv::cvtColor(curr_left_img, current_frame_vis, cv::COLOR_GRAY2BGR);
-
-            // Different colors for different selected points
-            std::vector<cv::Scalar> colors = {
-                cv::Scalar(0, 0, 255),   // Red
-                cv::Scalar(0, 255, 0),   // Green
-                cv::Scalar(255, 0, 0),   // Blue
-                cv::Scalar(0, 255, 255), // Yellow
-                cv::Scalar(255, 0, 255), // Magenta
-                cv::Scalar(255, 255, 0), // Cyan
-                cv::Scalar(128, 0, 128), // Purple
-                cv::Scalar(255, 165, 0), // Orange
-                cv::Scalar(255, 20, 147) // Deep Pink
-            };
-
-            for (int i = 0; i < 9; ++i)
-            {
-                int index = indices[i];
-                if (index < dataset.left_edges.size())
+                else
                 {
-                    cv::Point2d pt = dataset.left_edges[index].location;
-                    cv::circle(current_frame_vis, pt, 8, colors[i], -1);
-                    cv::putText(current_frame_vis, std::to_string(i),
-                                cv::Point(pt.x + 10, pt.y - 10),
-                                cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
+                    std::vector<int> indices(proximity_filtered_matches.size());
+                    std::iota(indices.begin(), indices.end(), 0);
+
+                    std::random_device rd;
+                    std::mt19937 gen(rd());
+                    std::shuffle(indices.begin(), indices.end(), gen);
+
+                    selected_matches.reserve(100);
+                    for (int i = 0; i < 100; ++i)
+                    {
+                        selected_matches.push_back(proximity_filtered_matches[indices[i]]);
+                    }
                 }
+
+                std::cout << "Visualizing " << selected_matches.size() << " randomly selected matches" << std::endl;
+
+                cv::Mat img_matches;
+                cv::drawMatches(previous_frame.left_image, previous_edge_loc, // Previous frame & keypoints
+                                current_frame.left_image, current_edge_loc,   // Current frame & keypoints
+                                selected_matches,                             // Selected matches
+                                img_matches,                                  // Output image
+                                cv::Scalar::all(-1),                          // Match color (random)
+                                cv::Scalar::all(-1),                          // Single point color
+                                std::vector<char>(),                          // Matches mask
+                                cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+                // Save the visualization
+                std::string output_dir = dataset.get_output_path();
+                cv::imwrite(output_dir + "/sift_matches_frame_" + std::to_string(frame_idx) + ".png", img_matches);
             }
 
-            // Draw GT edges on next frame
-            cv::Mat next_frame_vis;
-            cv::cvtColor(next_left_img, next_frame_vis, cv::COLOR_GRAY2BGR);
-
-            for (int i = 0; i < gt_edges.size(); ++i)
+            // Update previous keypoints and descriptors for next iteration
+            previous_edge_loc = current_edge_loc;    // Copy current keypoints to previous
+            descriptors_t0 = descriptors_t1.clone(); // copy the current descriptors to previous for next iteration
+        }
+        else
+        {
+            for (const Edge &edge : dataset.left_edges)
             {
-                cv::Point2d gt_pt = gt_edges[i].location;
-                // Check if point is within image bounds
-                if (gt_pt.x >= 0 && gt_pt.x < next_frame_vis.cols &&
-                    gt_pt.y >= 0 && gt_pt.y < next_frame_vis.rows)
-                {
-                    cv::circle(next_frame_vis, gt_pt, 8, colors[i], -1);
-                    cv::putText(next_frame_vis, std::to_string(i),
-                                cv::Point(gt_pt.x + 10, gt_pt.y - 10),
-                                cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
-                }
+                previous_edge_loc.push_back(cv::KeyPoint(edge.location, 1.0f)); // Convert to KeyPoint
             }
-
-            // Save visualization images
-            std::string output_dir = dataset.get_output_path();
-            cv::imwrite(output_dir + "/current_frame_selected_edges_" + std::to_string(frame_idx) + ".png",
-                        current_frame_vis);
-            cv::imwrite(output_dir + "/next_frame_gt_edges_" + std::to_string(frame_idx) + ".png",
-                        next_frame_vis);
-
-            std::cout << "Saved edge tracking visualization for frame " << frame_idx << std::endl;
+            sift->compute(current_frame.left_image, previous_edge_loc, descriptors_t0);
+            // now previous_edge_loc stores the frame 0's edge locations, and descriptors_t0 has sift descriptors
         }
 
         // StereoMatchResult match_result = DisplayMatches(
         //     left_undistorted,
         //     right_undistorted,
-        //     dataset);
+        //     dataset, frame_idx);
 
 #if 0
         std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);
@@ -318,13 +334,16 @@ void EBVO::PerformEdgeBasedVO()
         cv::imwrite(save_path, merged_visualization);
 #endif
         frame_idx++;
-        if (frame_idx >= 1)
+        if (frame_idx >= 3)
         {
             break;
         }
-        current_frame = next_frame;
+
+        previous_frame = current_frame;
+        // previous_edge_loc is now updated in the frame_idx > 0 block above
     }
 }
+
 void EBVO::ProcessEdges(const cv::Mat &image,
                         const std::string &filepath,
                         std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
@@ -339,12 +358,12 @@ void EBVO::ProcessEdges(const cv::Mat &image,
     // }
     // else
     // {
-        std::cout << "Running third-order edge detector..." << std::endl;
-        toed->get_Third_Order_Edges(image);
-        edges = toed->toed_edges;
+    std::cout << "Running third-order edge detector..." << std::endl;
+    toed->get_Third_Order_Edges(image);
+    edges = toed->toed_edges;
 
-        // WriteEdgesToBinary(path, edges);
-        // std::cout << "Saved edge data to: " << path << std::endl;
+    // WriteEdgesToBinary(path, edges);
+    // std::cout << "Saved edge data to: " << path << std::endl;
     // }
 }
 
@@ -909,7 +928,7 @@ Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_fr
     double disparity = Bilinear_Interpolation(disparity_map, edge.location);
     if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
     {
-        std::cout << "Invalid disparity value: " << disparity << " for edge at location: " << edge.location << std::endl;
+        // std::cout << "Invalid disparity value: " << disparity << " for edge at location: " << edge.location << std::endl;
         return Edge(); // Return an empty edge if disparity is invalid
     }
 
@@ -939,4 +958,213 @@ Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_fr
     gt_edge.b_isEmpty = false;
 
     return gt_edge;
+}
+
+void EBVO::GetGTEdges(size_t &frame_idx, StereoFrame &previous_frame, StereoFrame &current_frame,
+                      const cv::Mat &left_ref_map, const cv::Mat &left_calib_inv,
+                      const cv::Mat &left_calib, std::vector<Edge> &gt_edges,
+                      std::vector<std::pair<Edge, Edge>> &left_edges_GT_pair)
+{
+    std::string output_dir = dataset.get_output_path();
+    std::string csv_filename = output_dir + "/gt_correspondences_frame_" + std::to_string(frame_idx) + ".csv";
+    std::ofstream gt_csv(csv_filename);
+
+    // Write CSV header
+    gt_csv << "edge_index,prev_x,prev_y,curr_x,curr_y,orientation\n";
+
+    for (int i = 0; i < dataset.left_edges.size(); ++i)
+    {
+
+        Edge GTEdge = GetGTEdge(true, previous_frame, current_frame,
+                                left_ref_map, left_calib_inv, left_calib,
+                                dataset.left_edges[i]);
+        if (GTEdge.b_isEmpty)
+            continue;
+        else
+        {
+            left_edges_GT_pair.push_back(std::make_pair(dataset.left_edges[i], GTEdge));
+            gt_edges.push_back(GTEdge);
+
+            const Edge &prev_edge = dataset.left_edges[i];
+            gt_csv << i << ","
+                   << std::fixed << std::setprecision(2) << prev_edge.location.x << ","
+                   << std::fixed << std::setprecision(2) << prev_edge.location.y << ","
+                   << std::fixed << std::setprecision(2) << GTEdge.location.x << ","
+                   << std::fixed << std::setprecision(2) << GTEdge.location.y << ","
+                   << std::fixed << std::setprecision(4) << prev_edge.orientation << "\n";
+        }
+    }
+    gt_csv.close();
+    std::cout << "Saved ground truth correspondences to: " << csv_filename << std::endl;
+
+    for (int i = 0; i < left_edges_GT_pair.size(); i++)
+    {
+        cv::Point2d left_edge_t0 = left_edges_GT_pair[i].first.location;
+        cv::Point2d left_edge_t1 = left_edges_GT_pair[i].second.location;
+    }
+    std::cout << left_edges_GT_pair.size() << std::endl;
+
+    // cv::Mat previous_frame_vis;
+    // cv::cvtColor(previous_frame.left_image, previous_frame_vis, cv::COLOR_GRAY2BGR);
+
+    // // Different colors for different selected points
+    // std::vector<cv::Scalar> colors;
+    // for (int i = 0; i < 100; ++i)
+    // {
+    //     int hue = (i * 179 / 100);
+    //     cv::Mat hsv(1, 1, CV_8UC3, cv::Scalar(hue, 255, 255));
+    //     cv::Mat bgr;
+    //     cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+    //     cv::Vec3b bgr_pixel = bgr.at<cv::Vec3b>(0, 0);
+    //     colors.push_back(cv::Scalar(bgr_pixel[0], bgr_pixel[1], bgr_pixel[2]));
+    // }
+
+    // for (int i = 0; i < left_edges_GT_pair.size(); ++i)
+    // {
+    //     cv::Point2d pt = left_edges_GT_pair[i].first.location;
+    //     cv::circle(previous_frame_vis, pt, 8, colors[i], -1);
+    //     cv::putText(previous_frame_vis, std::to_string(i),
+    //                 cv::Point(pt.x + 10, pt.y - 10),
+    //                 cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
+    // }
+
+    // // Draw GT edges on next frame
+    // cv::Mat current_frame_vis;
+    // cv::cvtColor(current_frame.left_image, current_frame_vis, cv::COLOR_GRAY2BGR);
+
+    // for (int i = 0; i < left_edges_GT_pair.size(); ++i)
+    // {
+    //     cv::Point2d pt = left_edges_GT_pair[i].second.location;
+    //     if (pt.x >= 0 && pt.x < current_frame_vis.cols &&
+    //         pt.y >= 0 && pt.y < current_frame_vis.rows)
+    //     {
+    //         cv::circle(current_frame_vis, pt, 8, colors[i], -1);
+    //         cv::putText(current_frame_vis, std::to_string(i),
+    //                     cv::Point(pt.x + 10, pt.y - 10),
+    //                     cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
+    //     }
+    // }
+
+    // // Save visualization images
+    // cv::imwrite(output_dir + "/current_frame_selected_edges_" + std::to_string(frame_idx - 1) + ".png",
+    //             previous_frame_vis);
+    // cv::imwrite(output_dir + "/next_frame_gt_edges_" + std::to_string(frame_idx) + ".png",
+    //             current_frame_vis);
+
+    // std::cout << "Saved edge tracking visualization for frame " << frame_idx << std::endl;
+}
+
+void EBVO::EvaluateSIFTMatches(const std::vector<cv::DMatch> &matches,
+                               const std::vector<cv::KeyPoint> &previous_keypoints,
+                               const std::vector<cv::KeyPoint> &current_keypoints,
+                               const std::vector<std::pair<Edge, Edge>> &gt_correspondences,
+                               size_t frame_idx,
+                               double distance_threshold)
+{
+
+    int true_positives = 0;
+    int false_positives = 0;
+    int total_gt_correspondences = gt_correspondences.size();
+
+    std::string output_dir = dataset.get_output_path();
+    std::string eval_filename = output_dir + "/sift_evaluation_frame_" + std::to_string(frame_idx) + ".csv";
+    std::ofstream eval_csv(eval_filename);
+
+    eval_csv << "match_idx,prev_x,prev_y,curr_x,curr_y,distance,is_correct,closest_gt_distance,gt_curr_x,gt_curr_y\n";
+
+    for (size_t match_idx = 0; match_idx < matches.size(); ++match_idx)
+    {
+        const cv::DMatch &match = matches[match_idx];
+
+        // Get the matched keypoints
+        cv::Point2f prev_pt = previous_keypoints[match.queryIdx].pt;
+        cv::Point2f curr_pt = current_keypoints[match.trainIdx].pt;
+
+        // Find the closest ground truth correspondence
+        double min_distance = std::numeric_limits<double>::max();
+        bool is_correct_match = false;
+        cv::Point2d closest_gt_prev, closest_gt_curr;
+
+        for (const auto &gt_pair : gt_correspondences)
+        {
+            cv::Point2d gt_prev = gt_pair.first.location;
+            cv::Point2d gt_curr = gt_pair.second.location;
+
+            // Calculate distance between SIFT match and GT correspondence
+            double curr_dist = cv::norm(cv::Point2d(curr_pt.x, curr_pt.y) - gt_curr);
+
+            double total_dist = curr_dist;
+
+            if (total_dist < min_distance)
+            {
+                min_distance = total_dist;
+                closest_gt_curr = gt_curr;
+
+                // Consider it correct if both points are within threshold
+                is_correct_match = (curr_dist <= distance_threshold);
+            }
+        }
+
+        if (is_correct_match)
+        {
+            true_positives++;
+        }
+        else
+        {
+            false_positives++;
+        }
+
+        eval_csv << match_idx << ","
+                 << std::fixed << std::setprecision(2) << prev_pt.x << ","
+                 << std::fixed << std::setprecision(2) << prev_pt.y << ","
+                 << std::fixed << std::setprecision(2) << curr_pt.x << ","
+                 << std::fixed << std::setprecision(2) << curr_pt.y << ","
+                 << std::fixed << std::setprecision(2) << match.distance << ","
+                 << (is_correct_match ? 1 : 0) << ","
+                 << std::fixed << std::setprecision(2) << min_distance << ","
+                 << std::fixed << std::setprecision(2) << closest_gt_curr.x << ","
+                 << std::fixed << std::setprecision(2) << closest_gt_curr.y << "\n";
+    }
+
+    eval_csv.close();
+
+    int total_sift_matches = matches.size();
+    double precision = (total_sift_matches > 0) ? (double)true_positives / total_sift_matches : 0.0;
+    double recall = (total_gt_correspondences > 0) ? (double)true_positives / total_gt_correspondences : 0.0;
+    double f1_score = (precision + recall > 0) ? 2.0 * precision * recall / (precision + recall) : 0.0;
+
+    std::cout << "\n=== SIFT Evaluation Frame " << frame_idx << " ===" << std::endl;
+    std::cout << "Distance threshold: " << distance_threshold << " pixels" << std::endl;
+    std::cout << "Total SIFT matches: " << total_sift_matches << std::endl;
+    std::cout << "Total GT correspondences: " << total_gt_correspondences << std::endl;
+    std::cout << "True Positives: " << true_positives << std::endl;
+    std::cout << "False Positives: " << false_positives << std::endl;
+    std::cout << "Precision: " << std::fixed << std::setprecision(4) << precision * 100 << "%" << std::endl;
+    std::cout << "Recall: " << std::fixed << std::setprecision(4) << recall * 100 << "%" << std::endl;
+    std::cout << "F1-Score: " << std::fixed << std::setprecision(4) << f1_score * 100 << "%" << std::endl;
+    std::cout << "=====================================\n"
+              << std::endl;
+
+    std::string summary_filename = output_dir + "/sift_metrics_summary.csv";
+    std::ofstream summary_csv;
+
+    bool file_exists = std::filesystem::exists(summary_filename);
+    summary_csv.open(summary_filename, std::ios::app);
+
+    if (!file_exists)
+    {
+        summary_csv << "frame_idx,distance_threshold,total_sift_matches,total_gt_correspondences,true_positives,false_positives,precision,recall,f1_score\n";
+    }
+
+    summary_csv << frame_idx << ","
+                << distance_threshold << ","
+                << total_sift_matches << ","
+                << total_gt_correspondences << ","
+                << true_positives << ","
+                << false_positives << ","
+                << std::fixed << std::setprecision(4) << precision << ","
+                << std::fixed << std::setprecision(4) << recall << ","
+                << std::fixed << std::setprecision(4) << f1_score << "\n";
+
+    summary_csv.close();
 }
