@@ -228,21 +228,6 @@ private:
 
    std::vector<std::pair<std::vector<cv::Point2d>, std::vector<double>>> ClusterEpipolarShiftedEdges(std::vector<cv::Point2d>& valid_corrected_edges, std::vector<double>& valid_corrected_orientations); 
 
-   void ExtractPatches(
-    int patch_size,
-    const cv::Mat& image,
-    const std::vector<cv::Point2d>& edges,
-    const std::vector<double>& orientations,
-    const std::vector<cv::Point2d>& shifted_one,
-    const std::vector<cv::Point2d>& shifted_two,
-    std::vector<cv::Point2d>& filtered_edges_out,
-    std::vector<double>& filtered_orientations_out,
-    std::vector<cv::Mat>& patch_set_one_out,
-    std::vector<cv::Mat>& patch_set_two_out,
-    const std::vector<cv::Point2d>* ground_truth_edges = nullptr, 
-    std::vector<cv::Point2d>* filtered_gt_edges_out = nullptr
-   );
-
    std::pair<std::vector<cv::Point2d>, std::vector<double>> ExtractEpipolarEdges(const Eigen::Vector3d& epipolar_line, const std::vector<cv::Point2d>& edge_locations, const std::vector<double>& edge_orientations, double distance_threshold); 
    
    std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d& fund_mat, const std::vector<cv::Point2d>& edges);
