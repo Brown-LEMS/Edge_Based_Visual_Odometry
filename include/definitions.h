@@ -15,7 +15,9 @@
 #define MAX_DISPARITY                   (23.0063)
 #define EDGE_CLUSTER_THRESH             (0.3)   //> in pixels
 #define ORTHOGONAL_SHIFT_MAG            (5)     //> in pixels
-#define PATCH_SIZE                      (9)     //> in pixels
+
+//> NOTE: Use PATCH_SIZE = 9 to get 99% recall rate (Milestone #22)
+#define PATCH_SIZE                      (7)     //> in pixels
 #define PATCH_HALF_SIZE                 (PATCH_SIZE / 2) //> in pixels
 #define NCC_THRESH_FINAL_SCORE          (0.1)
 #define MATCH_TOL                       (3.0)     //> in pixels

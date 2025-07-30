@@ -15,7 +15,6 @@
 #include "utility.h"
 #include "./toed/cpu_toed.hpp"
 
-
 // =======================================================================================================
 // class Dataset: Fetch data from dataset specified in the configuration file
 //
@@ -62,7 +61,6 @@ struct RecallMetrics {
   double epi_cluster_recall;
   double ncc_recall;
   double lowe_recall;
-
 
   std::vector<int> epi_input_counts;
   std::vector<int> epi_output_counts;
@@ -213,10 +211,15 @@ private:
     EdgeMatchResult CalculateMatches(const std::vector<cv::Point2d>& selected_primary_edges, const std::vector<double>& selected_primary_orientations, const std::vector<cv::Point2d>& secondary_edge_coords, 
     const std::vector<double>& secondary_edge_orientations, const std::vector<cv::Mat>& primary_patch_set_one, const std::vector<cv::Mat>& primary_patch_set_two, const std::vector<Eigen::Vector3d>& epipolar_lines_secondary, 
     const cv::Mat& secondary_image, const std::vector<cv::Point2d>& selected_ground_truth_edges = std::vector<cv::Point2d>(), int image_pair_index = -1, bool forward_direction = true);
+
     bool is_patch_in_bounds(const cv::Point2d& pt, int half_patch, int width, int height);
+
     std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel);
+
     void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat img);
+
     double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y );
+    
     double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection );
 
     std::vector<Eigen::Vector3d> PerformEpipolarShift(
@@ -285,6 +288,5 @@ private:
 
    std::vector< cv::Point2d > ground_truth_right_edges_after_lowe;
 };
-
 
 #endif

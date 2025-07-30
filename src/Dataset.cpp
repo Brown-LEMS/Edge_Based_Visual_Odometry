@@ -29,6 +29,7 @@
 #else
 #include <boost/filesystem.hpp>
 #endif
+
 // =======================================================================================================
 // Class Dataset: Fetch data from dataset specified in the configuration file
 //
@@ -248,7 +249,7 @@ void Dataset::PerformEdgeBasedVO() {
 
     LOG_INFO("Start looping over all image pairs");
 
-    //TODO: Determine how to process final image pair
+    //> TODO: Determine how to process the last two image pairs
     for (size_t i = 0; i < image_pairs.size()-1; ++i) {
         const cv::Mat& curr_left_img = image_pairs[i].first;
         const cv::Mat& curr_right_img = image_pairs[i].second;
@@ -1148,7 +1149,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
     const int skip = 1;
 
-    //> Start looping over left edges
+    //> MARK: Start looping over left edges
     #pragma omp for schedule(static, omp_threads) reduction(+: epi_true_positive, epi_false_negative, epi_true_negative, disp_true_positive, disp_false_negative, shift_true_positive, shift_false_negative, cluster_true_positive, cluster_false_negative, cluster_true_negative, ncc_true_positive, ncc_false_negative, lowe_true_positive, lowe_false_negative, per_edge_epi_precision, per_edge_disp_precision, per_edge_shift_precision, per_edge_clust_precision, per_edge_ncc_precision, per_edge_lowe_precision, epi_edges_evaluated, disp_edges_evaluated, shift_edges_evaluated, clust_edges_evaluated, ncc_edges_evaluated, lowe_edges_evaluated)
     for (size_t i = 0; i < selected_primary_edges.size(); i += skip) {
         const auto& primary_edge = selected_primary_edges[i];
@@ -1178,7 +1179,7 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
             angle_diff_deg -= 180;
         }
 
-        //> CHECK IF THIS ALSO NEEDS TO BE CHANGED!
+        //> TODO: Check if this needs to removed/changed
         bool primary_passes_tangency = (abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
         if (!primary_passes_tangency) {
             continue;
