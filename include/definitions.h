@@ -22,6 +22,14 @@
 #define NCC_THRESH_STRONG_ONE_SIDE (0.65)
 #define MATCH_TOL (3) //> in pixels
 
+#define EPIP_TANGENCY_DISPL_THRESH      (3)         //> in pixels
+#define LOCATION_PERTURBATION           (0.4)         //> in pixels
+#define ORIENT_PERTURBATION             (0.174533)  //> in radians. 0.174533 is 10 degrees
+#define CLUSTER_DIST_THRESH             (1)         //> τc, in pixels
+#define CLUSTER_ORIENT_THRESH           (20.0)      //> in degrees
+#define MAX_CLUSTER_SIZE                (10)        //> max number of edges per cluster
+#define CLUSTER_ORIENT_GAUSS_SIGMA      (2.0)
+
 #define MEASURE_TIMINGS (false)
 #define DISPLAY_STERO_EDGE_MATCHES (false)
 
@@ -48,6 +56,7 @@
 #define SHOW_YAML_FILE_DATA (false)
 #define DEBUG_FALSE_NEGATIVES (false)
 #define DEBUG_COLLECT_NCC_AND_ERR (false)
+#define DEBUG_EDGE_MATCHES_BETWEEN_LEFT_IMGS (false)
 //> ----------------------------------------------
 #define WRITE_FEATURES_TO_FILE (false)
 #define WRITE_CORRESPONDENCES_TO_FILE (false)

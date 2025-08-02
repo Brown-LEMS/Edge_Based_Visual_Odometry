@@ -140,24 +140,24 @@ void EBVO::PerformEdgeBasedVO()
         cv::Mat left_edge_map = cv::Mat::zeros(left_undistorted.size(), CV_8UC1);
         cv::Mat right_edge_map = cv::Mat::zeros(right_undistorted.size(), CV_8UC1);
 
-        for (const auto &edge : dataset.left_edges)
-        {
-            if (edge.location.x >= 0 && edge.location.x < left_edge_map.cols && edge.location.y >= 0 && edge.location.y < left_edge_map.rows)
-            {
-                left_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
-            }
-        }
+        // for (const auto &edge : dataset.left_edges)
+        // {
+        //     if (edge.location.x >= 0 && edge.location.x < left_edge_map.cols && edge.location.y >= 0 && edge.location.y < left_edge_map.rows)
+        //     {
+        //         left_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
+        //     }
+        // }
 
-        for (const auto &edge : dataset.right_edges)
-        {
-            if (edge.location.x >= 0 && edge.location.x < right_edge_map.cols && edge.location.y >= 0 && edge.location.y < right_edge_map.rows)
-            {
-                right_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
-            }
-        }
+        // for (const auto &edge : dataset.right_edges)
+        // {
+        //     if (edge.location.x >= 0 && edge.location.x < right_edge_map.cols && edge.location.y >= 0 && edge.location.y < right_edge_map.rows)
+        //     {
+        //         right_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
+        //     }
+        // }
 
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
-        // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
+#if DEBUG_EDGE_MATCHES_BETWEEN_LEFT_IMGS
         if (dataset.has_gt())
         {
             int indices[9] = {657, 10000, 10350, 20300, 30200, 35006, 40000, 46741};
@@ -166,7 +166,6 @@ void EBVO::PerformEdgeBasedVO()
             for (int i = 0; i < 9; ++i)
             {
                 int index = indices[i];
-                std::cout << "Index: " << index << std::endl;
                 // Get the ground truth edge for the left image
                 Edge GTEdge = GetGTEdge(true, current_frame, next_frame,
                                         left_ref_map, left_calib_inv, left_calib,
@@ -243,11 +242,14 @@ void EBVO::PerformEdgeBasedVO()
 
             std::cout << "Saved edge tracking visualization for frame " << frame_idx << std::endl;
         }
+#endif
 
-        // StereoMatchResult match_result = DisplayMatches(
-        //     left_undistorted,
-        //     right_undistorted,
-        //     dataset);
+        StereoMatchResult match_result = get_Stereo_Edge_Pairs(
+            left_undistorted,
+            right_undistorted,
+            dataset);
+
+        exit(1);
 
 #if 0
         std::vector<cv::Point3d> points_opencv = Calculate3DPoints(match_result.confirmed_matches);

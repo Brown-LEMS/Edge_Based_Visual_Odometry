@@ -24,6 +24,41 @@
 
 Utility::Utility() {}
 
+//> Normal distance from an edge to the corresponding epipolar line
+double Utility::getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y ) 
+{
+  double a1_line = Epip_Line_Coeffs(0);
+  double b1_line = Epip_Line_Coeffs(1);
+  double c1_line = Epip_Line_Coeffs(2);
+  epiline_x = edge(0) - a1_line * (a1_line * edge(0) + b1_line *edge(1) + c1_line)/(pow(a1_line,2) + pow(b1_line,2));
+  epiline_y = edge(1) - b1_line* (a1_line * edge(0) + b1_line * edge(1) + c1_line)/(pow(a1_line,2) + pow(b1_line,2));
+  return sqrt(pow(edge(0) - epiline_x, 2) + pow(edge(1) - epiline_y, 2));
+}
+
+double Utility::getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y ) 
+{
+  Eigen::Vector3d edge(edges(index, 0), edges(index, 1), 1.0);
+  return getNormalDistance2EpipolarLine( Epip_Line_Coeffs, edge, epiline_x, epiline_y );
+}
+
+//> Tangential distance from an edge to the corresponding epipolar line
+double Utility::getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection ) {
+  double a_edgeH2 = tan(edge(2)); //tan(theta2)
+  double b_edgeH2 = -1;
+  double c_edgeH2 = -(a_edgeH2 * edge(0) - edge(1)); //−(a⋅x2−y2)
+  double a1_line = Epip_Line_Coeffs(0);
+  double b1_line = Epip_Line_Coeffs(1);
+  double c1_line = Epip_Line_Coeffs(2);
+  x_intersection = (b1_line * c_edgeH2 - b_edgeH2 * c1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
+  y_intersection = (c1_line * a_edgeH2 - c_edgeH2 * a1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
+  return sqrt((x_intersection - edge(0))*(x_intersection - edge(0))+(y_intersection - edge(1))*(y_intersection - edge(1)));
+}
+
+double Utility::getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection ) {
+  Eigen::Vector3d edge(edges(index, 0), edges(index, 1), edges(index, 2));
+  return getTangentialDistance2EpipolarLine( Epip_Line_Coeffs, edge, x_intersection, y_intersection );
+}
+
 void Utility::get_dG_2D(cv::Mat &Gx_2d, cv::Mat &Gy_2d, int w, double sigma)
 {
 

@@ -8,8 +8,9 @@ struct EdgeMatchResult;
 #include "definitions.h"
 #include "utility.h"
 #include "Dataset.h"
+#include "EdgeClusterer.h"
 
-StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image,
+StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image,
                                  Dataset &dataset);
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
@@ -44,7 +45,7 @@ Edge PerformEpipolarShift(
     Edge original_edge,
     std::vector<double> epipolar_line_coeffs, bool &b_pass_epipolar_tengency_check);
 // checked
-std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
+std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
 
 std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold);
 
@@ -86,7 +87,8 @@ void FormClusterCenters(
 void EpipolarShiftFilter(
     const std::vector<Edge> &filtered_edges,
     std::vector<Edge> &shifted_edges,
-    const Eigen::Vector3d &epipolar_line);
+    const Eigen::Vector3d &epipolar_line,
+    Utility util = Utility());
 
 void FilterByNCC(
     const cv::Mat &primary_patch_one,
