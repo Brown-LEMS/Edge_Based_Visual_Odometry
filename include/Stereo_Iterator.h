@@ -86,6 +86,7 @@ public:
     bool getNext(StereoFrame &frame) override;
     void reset() override;
     bool readETH3DGroundTruth(const std::string &images_file, StereoFrame &frame);
+    size_t getCurrentIndex() const { return current_index > 0 ? current_index - 2 : 0; }
 
 private:
     std::vector<std::string> folders;

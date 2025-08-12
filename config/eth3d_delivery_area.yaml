@@ -3,7 +3,7 @@
 # Dataset Details
 dataset_dir: "/Users/saulll./Desktop/Stereo-Edge-Based-VO/Datasets"
 output_dir: "/Users/saulll./Desktop/Stereo-Edge-Based-VO/Results/delivery_area_results/test_one"
-sequence_name: "ETH3D/stereo/delivery_area"
+sequence_name: "ETH3D/Stereo/delivery_area"
 dataset_type: "ETH3D"
 
 # Stereo Intrinsic Parameters

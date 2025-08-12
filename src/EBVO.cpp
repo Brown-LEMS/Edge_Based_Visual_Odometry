@@ -338,7 +338,7 @@ void EBVO::PerformEdgeBasedVO()
         cv::imwrite(save_path, merged_visualization);
 #endif
         frame_idx++;
-        if (frame_idx >= 3)
+        if (frame_idx >= 1)
         {
             break;
         }
@@ -353,20 +353,20 @@ void EBVO::ProcessEdges(const cv::Mat &image,
 {
     std::string path = filepath + ".bin";
 
-    // if (std::filesystem::exists(path))
-    // {
-    //     // std::cout << "Loading edge data from: " << path << std::endl;
-    //     ReadEdgesFromBinary(path, edges);
-    // }
-    // else
-    // {
+    if (std::filesystem::exists(path))
+    {
+        // std::cout << "Loading edge data from: " << path << std::endl;
+        ReadEdgesFromBinary(path, edges);
+    }
+    else
+    {
         std::cout << "Running third-order edge detector..." << std::endl;
         toed->get_Third_Order_Edges(image);
         edges = toed->toed_edges;
 
-        // WriteEdgesToBinary(path, edges);
-        // std::cout << "Saved edge data to: " << path << std::endl;
-    // }
+        WriteEdgesToBinary(path, edges);
+        std::cout << "Saved edge data to: " << path << std::endl;
+    }
 }
 
 /*

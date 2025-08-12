@@ -236,6 +236,12 @@ std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogona
 
 StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset)
 {
+    size_t image_pair_index = 0;
+    ETH3DIterator* eth3d_iter = dynamic_cast<ETH3DIterator*>(dataset.stereo_iterator.get());
+    if (eth3d_iter) {
+        image_pair_index = eth3d_iter->getCurrentIndex();
+    }
+
     ///////////////////////////////FORWARD DIRECTION///////////////////////////////
     std::vector<Edge> left_edges;
     std::vector<cv::Point2d> ground_truth_right_edges;
@@ -279,7 +285,10 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         epipolar_lines_right,
         right_image,
         dataset,
-        filtered_ground_truth_right_edges);
+        filtered_ground_truth_right_edges,
+        image_pair_index,
+        true
+    );
 
     ///////////////////////////////REVERSE DIRECTION///////////////////////////////
     std::vector<Edge> reverse_primary_edges;
@@ -323,21 +332,23 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         right_patch_set_two,
         epipolar_lines_left,
         left_image,
-        dataset);
+        dataset,
+        std::vector<cv::Point2d>(),
+        image_pair_index,
+        false
+    );
 
     std::vector<std::pair<Edge, Edge>> confirmed_matches;
 
     int matches_before_bct = static_cast<int>(forward_match.edge_to_cluster_matches.size());
-    // std::cout << "Number of matches before BCT: " << matches_before_bct << std::endl;
-
     auto bct_start = std::chrono::high_resolution_clock::now();
 
+    ///////////////////////////////BCT///////////////////////////////
     int forward_left_index = 0;
     int bct_true_positive = 0;
-    for (const auto &[left_edge, patch_match_forward] : forward_match.edge_to_cluster_matches)
+    for (const auto &[left_edge, patch_match_forward] : forward_match.edge_to_cluster_matches) 
     {
-
-        const auto &right_contributing_edges = patch_match_forward.contributing_edges; // gonna be vector of edges
+        const auto &right_contributing_edges = patch_match_forward.contributing_edges;
         bool break_flag = false;
         for (size_t i = 0; i < right_contributing_edges.size(); ++i)
         {
@@ -348,12 +359,10 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             {
                 if (cv::norm(rev_right_edge.location - right_edge.location) <= MATCH_TOL)
                 {
-
                     for (const auto &rev_contributing_left : patch_match_rev.contributing_edges)
                     {
                         if (cv::norm(rev_contributing_left.location - left_edge.location) <= MATCH_TOL)
                         {
-
                             confirmed_matches.emplace_back(left_edge, right_edge);
 
                             cv::Point2d GT_right_edge_location = dataset.ground_truth_right_edges_after_lowe[forward_left_index];
@@ -375,36 +384,26 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         forward_left_index++;
     }
 
-    // //> Measure the recall of bidirectional consistency test
-    // int bct_true_positive = 0;
-    // for (int i = 0; i < confirmed_matches.size(); i++) {
-    //     ConfirmedMatchEdge right_confirmed = confirmed_matches[i].second;
-    //     cv::Point2d right_edge_location = right_confirmed.location;
-    //     cv::Point2d GT_right_edge_location = ground_truth_right_edges_after_lowe[i];
-    //     if (cv::norm(right_edge_location - GT_right_edge_location) <= MATCH_TOL) {
-    //         bct_true_positive++;
-    //     }
-    // }
-    // std::cout << "BCT true positives: " << bct_true_positive << std::endl;
-
     auto bct_end = std::chrono::high_resolution_clock::now();
     double total_time_bct = std::chrono::duration<double, std::milli>(bct_end - bct_start).count();
 
     double per_image_bct_time = (matches_before_bct > 0) ? total_time_bct / matches_before_bct : 0.0;
 
     int matches_after_bct = static_cast<int>(confirmed_matches.size());
-    // std::cout << "Number of matches after BCT: " << matches_after_bct << std::endl;
-    // std::cout << "Number of stacked GT right edges: " << dataset.ground_truth_right_edges_after_lowe.size() << std::endl;
 
-    // double per_image_bct_precision = (matches_before_bct > 0) ? static_cast<double>(matches_after_bct) / matches_before_bct: 0.0;
     double per_image_bct_precision = (matches_before_bct > 0) ? bct_true_positive / (double)(matches_after_bct) : 0.0;
-    std::cout << "BCT precision = " << per_image_bct_precision << std::endl;
 
     int bct_denonimator = forward_match.recall_metrics.lowe_true_positive + forward_match.recall_metrics.lowe_false_negative;
-    // int bct_true_positives = static_cast<int>(confirmed_matches.size());
 
     double bct_recall = (bct_denonimator > 0) ? bct_true_positive / (double)(bct_denonimator) : 0.0;
-    std::cout << "BCT recall = " << bct_recall << std::endl;
+
+    std::cout << "Matches Before BCT"     << ": " << matches_before_bct << "\n";
+    std::cout << "Matches After BCT"      << ": " << matches_after_bct << "\n";
+    std::cout << "BCT True Positives"     << ": " << bct_true_positive << "\n";
+    std::cout << "Stacked GT Right Edges" << ": " << dataset.ground_truth_right_edges_after_lowe.size() << "\n";
+
+    std::cout << "BCT Precision"           << ": " << per_image_bct_precision << "\n";
+    std::cout << "BCT Recall"              << ": " << bct_recall << "\n";
 
     BidirectionalMetrics bidirectional_metrics;
     bidirectional_metrics.matches_before_bct = matches_before_bct;
@@ -419,7 +418,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 //> MARK: Main Edge Pairing
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
-                                 const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges)
+                                 const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges, int image_pair_index, bool forward_direction)
 {
     auto total_start = std::chrono::high_resolution_clock::now();
     // bunch of counts
@@ -515,6 +514,29 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     int clust_edges_evaluated = 0;
     int ncc_edges_evaluated = 0;
     int lowe_edges_evaluated = 0;
+
+    std::ofstream veridical_csv;
+    std::ofstream nonveridical_csv;
+
+    if (forward_direction) {
+        std::filesystem::path ncc_dir = dataset.get_output_path();
+        ncc_dir /= "ncc_stats";
+
+        std::filesystem::create_directories(ncc_dir);
+
+        std::filesystem::path veridical_path = ncc_dir / ("image_pair_" + std::to_string(image_pair_index) + "_veridical_edges.csv");
+        std::filesystem::path nonveridical_path = ncc_dir / ("image_pair_" + std::to_string(image_pair_index) + "_nonveridical_edges.csv");
+
+        veridical_csv.open(veridical_path.string());
+        nonveridical_csv.open(nonveridical_path.string());
+
+        if (!veridical_csv || !nonveridical_csv) {
+            std::cerr << "WARNING: Failed to open CSV files for writing.\n" << std::endl;
+        }
+
+        veridical_csv << ",x,y,ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
+        nonveridical_csv << ",x,y,ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
+    }     
 
 #pragma omp parallel
     {
@@ -628,7 +650,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             {
                 RecallUpdate(shift_true_positive, shift_false_negative, shift_edges_evaluated,
                              per_edge_shift_precision, shifted_secondary_edge, ground_truth_edge,
-                             3.0);
+                             GT_SPATIAL_TOLERANCE);
             }
             ///////////////////////////////EPIPOLAR CLUSTER THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
@@ -654,7 +676,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             {
                 RecallUpdate(cluster_true_positive, cluster_false_negative, clust_edges_evaluated,
                              per_edge_clust_precision, cluster_centers, ground_truth_edge,
-                             3.0);
+                             GT_SPATIAL_TOLERANCE);
             }
             ///////////////////////////////EXTRACT PATCHES THRESHOLD////////////////////////////////////////////
 #if MEASURE_TIMINGS
@@ -721,7 +743,12 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 ncc_false_negative,
                 per_edge_ncc_precision,
                 ncc_edges_evaluated,
-                3.0);
+                NCC_THRESH_FINAL_SCORE,
+                forward_direction,
+                image_pair_index,
+                veridical_csv,
+                nonveridical_csv
+            );
 
             local_ncc_input_counts[thread_id].push_back(filtered_cluster_centers.size());
             local_ncc_output_counts[thread_id].push_back(passed_ncc_matches.size());
@@ -747,8 +774,13 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                          lowe_false_negative,
                          per_edge_lowe_precision,
                          lowe_edges_evaluated,
-                         3.0);
+                         GT_SPATIAL_TOLERANCE);
         } //> MARK: end of looping over left edges
+    }
+
+    if (forward_direction) {
+        veridical_csv.close();
+        nonveridical_csv.close();
     }
 
 #if MEASURE_TIMINGS
@@ -1196,7 +1228,11 @@ void FilterByNCC(
     int &ncc_false_negative,
     double &per_edge_ncc_precision,
     int &ncc_edges_evaluated,
-    double threshold)
+    double threshold,
+    bool forward_direction,
+    int image_pair_index,
+    std::ofstream &veridical_csv,
+    std::ofstream &nonveridical_csv)
 {
     int ncc_precision_numerator = 0;
     bool ncc_match_found = false;
@@ -1216,76 +1252,59 @@ void FilterByNCC(
             double final_score = std::max(score_one, score_two);
 
 #if DEBUG_COLLECT_NCC_AND_ERR
-            double err_to_gt = cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge);
-            std::pair<double, double> pair_ncc_one_err(err_to_gt, ncc_one);
-            std::pair<double, double> pair_ncc_two_err(err_to_gt, ncc_two);
-            ncc_one_vs_err.push_back(pair_ncc_one_err);
-            ncc_two_vs_err.push_back(pair_ncc_two_err);
+               double err_to_gt = cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge);
+               std::pair<double, double> pair_ncc_one_err(err_to_gt, ncc_one);
+               std::pair<double, double> pair_ncc_two_err(err_to_gt, ncc_two);
+               ncc_one_vs_err.push_back(pair_ncc_one_err);
+               ncc_two_vs_err.push_back(pair_ncc_two_err);
 #endif
-            if (ncc_one >= NCC_THRESH_STRONG_BOTH_SIDES && ncc_two >= NCC_THRESH_STRONG_BOTH_SIDES)
-            {
+
+            if (final_score > threshold) {
                 EdgeMatch info;
                 info.edge = filtered_cluster_centers[i].center_edge;
                 info.final_score = final_score;
                 info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
                 passed_ncc_matches.push_back(info);
 
-                if (gt)
-                {
-                    if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= threshold)
-                    {
+                if (forward_direction) {
+                    std::ostream& target_stream = 
+                        (cv::norm(info.edge.location - ground_truth_edge) <= GT_SPATIAL_TOLERANCE)
+                        ? veridical_csv : nonveridical_csv;
 
-                        ncc_match_found = true;
-                        ncc_precision_numerator++;
+                    #pragma omp critical(csv_write)
+                    {
+                        target_stream << "," << info.edge.location.x << "," << info.edge.location.y << ","
+                                        << ncc_one << "," << ncc_two << "," << ncc_three << "," << ncc_four << ","
+                                        << score_one << "," << score_two << "," << final_score << "\n";
                     }
+
+                    // #pragma omp critical(console_log)
+                    // {
+                    //     std::cout << ((cv::norm(info.edge.location - ground_truth_edge) <= GT_SPATIAL_TOLERANCE)
+                    //         ? "[VERIDICAL] " : "[NON-VERIDICAL] ")
+                    //         << "Image Pair: " << image_pair_index
+                    //         << ", x: " << info.edge.location.x << ", y: " << info.edge.location.y
+                    //         << ", NCCs: [" << ncc_one << ", " << ncc_two << ", " << ncc_three << ", " << ncc_four << "]"
+                    //         << ", Scores: [" << score_one << ", " << score_two << "], Final: " << final_score
+                    //         << std::endl;
+                    // }
                 }
-            }
-            else if (ncc_one >= NCC_THRESH_STRONG_ONE_SIDE || ncc_two >= NCC_THRESH_STRONG_ONE_SIDE)
-            {
-                EdgeMatch info;
-                info.edge = filtered_cluster_centers[i].center_edge;
-                info.final_score = final_score;
-                info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                passed_ncc_matches.push_back(info);
 
-                if (gt)
-                {
-                    if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= threshold)
-                    {
-                        ncc_match_found = true;
-                        ncc_precision_numerator++;
-                    }
-                }
-            }
-            else if (ncc_one >= NCC_THRESH_WEAK_BOTH_SIDES && ncc_two >= NCC_THRESH_WEAK_BOTH_SIDES && filtered_cluster_centers.size() == 1)
-            {
-                EdgeMatch info;
-                info.edge = filtered_cluster_centers[i].center_edge;
-                info.final_score = final_score;
-                info.contributing_edges = filtered_cluster_centers[i].contributing_edges;
-                passed_ncc_matches.push_back(info);
-
-                if (gt)
-                {
-                    if (cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= threshold)
-                    {
-                        ncc_match_found = true;
-                        ncc_precision_numerator++;
-                    }
+                if (cv::norm(info.edge.location - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {
+                    ncc_match_found = true;
+                    ncc_precision_numerator++;
                 }
             }
         }
-        if (ncc_match_found)
-        {
+
+        if (ncc_match_found) {
             ncc_true_positive++;
-        }
-        else
-        {
+        } else {
             ncc_false_negative++;
         }
     }
-    if (!passed_ncc_matches.empty())
-    {
+
+    if (!passed_ncc_matches.empty()) {
         per_edge_ncc_precision += static_cast<double>(ncc_precision_numerator) / passed_ncc_matches.size();
         ncc_edges_evaluated++;
     }
@@ -1371,7 +1390,7 @@ void FilterByLowe(
         if (gt)
         {
             local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
-            if (cv::norm(best_match.edge.location - ground_truth_edge) <= 3.0)
+            if (cv::norm(best_match.edge.location - ground_truth_edge) <= threshold)
             {
                 lowe_precision_numerator++;
                 lowe_true_positive++;
