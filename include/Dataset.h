@@ -243,10 +243,6 @@ private:
 
     void CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image);
 
-    void Load_GT_Poses(std::string GT_Poses_File_Path);
-
-    void Align_Images_and_GT_Poses();
-
     bool compute_grad_depth = false;
     cv::Mat Gx_2d, Gy_2d;
     cv::Mat Small_Patch_Radius_Map;

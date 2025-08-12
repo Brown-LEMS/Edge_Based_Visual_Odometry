@@ -1,4 +1,17 @@
-CMAKE_MINIMUM_REQUIRED( VERSION 2.8 )
+option(SAUL_BUILD "Building on Saul's machine" ON)
+
+if(SAUL_BUILD)
+  CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
+  message(STATUS "Building on Saul's machine (CMake >= 3.10)")
+else()
+  CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+  message(STATUS "Building on Brown CCV Oscars (CMake >= 2.8)")
+endif()
+
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+
 message(STATUS "CMake version: ${CMAKE_VERSION}")
 
 set(CMAKE_CXX_STANDARD "17")
@@ -8,8 +21,6 @@ if(NOT CMAKE_CXX_STANDARD_REQUIRED)
 endif()
 
 PROJECT(EDGE_BASED_VO)
-
-# set(SAUL_BUILD 1)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g -Wall" CACHE STRING "" FORCE)
 
@@ -37,16 +48,22 @@ message( "========================\n")
 if(DEFINED SAUL_BUILD)
   #> for MACOS
   set(THIRD_PARTY_LIBS
-      ${OpenCV_LIBS}
-      ${Eigen_LIBS}        
-      ${GLOG_LIBRARIES}
-      ${GFLAGS_LIBRARIES}
-      pthread
-      ${CSparse_LIBRARY}
-      /usr/local/lib/libyaml-cpp.so
-    )
-  include_directories(/usr/local/include/yaml-cpp)
-  include_directories(${EIGEN3_INCLUDE_DIR} ${CSPARSE_INCLUDE_DIR})
+  ${OpenCV_LIBS}
+  ${Eigen_LIBS}
+  ${GLOG_LIBRARIES}
+  ${GFLAGS_LIBRARIES}
+  pthread
+  ${CSparse_LIBRARY}
+  yaml-cpp
+)
+
+include_directories(
+  ${EIGEN3_INCLUDE_DIR}
+  ${CSPARSE_INCLUDE_DIR}
+  /opt/homebrew/include
+)
+link_directories(/opt/homebrew/lib)
+
 else()
   #> for Brown CCV Oscars
   set(THIRD_PARTY_LIBS

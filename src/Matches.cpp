@@ -328,7 +328,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
     std::vector<std::pair<Edge, Edge>> confirmed_matches;
 
     int matches_before_bct = static_cast<int>(forward_match.edge_to_cluster_matches.size());
-    std::cout << "Number of matches before BCT: " << matches_before_bct << std::endl;
+    // std::cout << "Number of matches before BCT: " << matches_before_bct << std::endl;
 
     auto bct_start = std::chrono::high_resolution_clock::now();
 
@@ -385,7 +385,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
     //         bct_true_positive++;
     //     }
     // }
-    std::cout << "BCT true positives: " << bct_true_positive << std::endl;
+    // std::cout << "BCT true positives: " << bct_true_positive << std::endl;
 
     auto bct_end = std::chrono::high_resolution_clock::now();
     double total_time_bct = std::chrono::duration<double, std::milli>(bct_end - bct_start).count();
@@ -393,8 +393,8 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
     double per_image_bct_time = (matches_before_bct > 0) ? total_time_bct / matches_before_bct : 0.0;
 
     int matches_after_bct = static_cast<int>(confirmed_matches.size());
-    std::cout << "Number of matches after BCT: " << matches_after_bct << std::endl;
-    std::cout << "Number of stacked GT right edges: " << dataset.ground_truth_right_edges_after_lowe.size() << std::endl;
+    // std::cout << "Number of matches after BCT: " << matches_after_bct << std::endl;
+    // std::cout << "Number of stacked GT right edges: " << dataset.ground_truth_right_edges_after_lowe.size() << std::endl;
 
     // double per_image_bct_precision = (matches_before_bct > 0) ? static_cast<double>(matches_after_bct) / matches_before_bct: 0.0;
     double per_image_bct_precision = (matches_before_bct > 0) ? bct_true_positive / (double)(matches_after_bct) : 0.0;
@@ -840,7 +840,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     {
         final_matches.insert(final_matches.end(), local_matches.begin(), local_matches.end());
     }
-    std::cout << "Final matches size: " << final_matches.size() << std::endl;
+    // std::cout << "Final matches size: " << final_matches.size() << std::endl;
     for (const auto &local_counts : local_epi_input_counts)
         epi_input_counts.insert(epi_input_counts.end(), local_counts.begin(), local_counts.end());
     for (const auto &local_counts : local_epi_output_counts)

@@ -31,7 +31,8 @@ struct Edge
   bool b_isEmpty;         //> check if this struct is value-assigned
 
   Edge() : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true) {}
-  Edge(cv::Point2d location, double orientation, bool b_isEmpty) : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true) {}
+  Edge(cv::Point2d location, double orientation, bool b_isEmpty)
+      : location(location), orientation(orientation), b_isEmpty(b_isEmpty) {}
 };
 
 class ThirdOrderEdgeDetectionCPU
