@@ -528,8 +528,17 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             std::cerr << "WARNING: Failed to open CSV files for writing.\n" << std::endl;
         }
 
-        veridical_csv << ",x,y,ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
-        nonveridical_csv << ",x,y,ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
+        veridical_csv << ",left_x,left_y,left_theta,"
+                    << "right_x,right_y,right_theta,"
+                    << "gt_right_x,gt_right_y,"
+                    << "epipolar_a,epipolar_b,epipolar_c,"
+                    << "ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
+
+        nonveridical_csv << ",left_x,left_y,left_theta,"
+                    << "right_x,right_y,right_theta,"
+                    << "gt_right_x,gt_right_y,"
+                    << "epipolar_a,epipolar_b,epipolar_c,"
+                    << "ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
     }     
 
 #pragma omp parallel
@@ -739,7 +748,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 forward_direction,
                 image_pair_index,
                 veridical_csv,
-                nonveridical_csv
+                nonveridical_csv,
+                primary_edge,
+                epipolar_line
             );
 
             local_ncc_input_counts[thread_id].push_back(filtered_cluster_centers.size());
@@ -1170,7 +1181,7 @@ void FormClusterCenters(
         cv::Point2d sum_point(0.0, 0.0);
         double sum_orientation = 0.0;
 
-        for (size_t j = 0; j < cluster_edges.size(); ++j)
+        for (size_t j = 0; j < cluster_edges.size(); j++)
         {
             sum_point += cluster_edges[j].location;
             sum_orientation += cluster_edges[j].orientation;
@@ -1204,7 +1215,9 @@ void FilterByNCC(
     bool forward_direction,
     int image_pair_index,
     std::ofstream &veridical_csv,
-    std::ofstream &nonveridical_csv)
+    std::ofstream &nonveridical_csv,
+    const Edge &primary_edge,
+    const Eigen::Vector3d &epipolar_line)
 {
     int ncc_precision_numerator = 0;
     bool ncc_match_found = false;
@@ -1224,7 +1237,7 @@ void FilterByNCC(
             double final_score = std::max(score_one, score_two);
 
 #if DEBUG_COLLECT_NCC_AND_ERR
-               double err_to_gt = cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge);
+               double err_to_gt = cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge);   
                std::pair<double, double> pair_ncc_one_err(err_to_gt, ncc_one);
                std::pair<double, double> pair_ncc_two_err(err_to_gt, ncc_two);
                ncc_one_vs_err.push_back(pair_ncc_one_err);
@@ -1245,21 +1258,14 @@ void FilterByNCC(
 
                     #pragma omp critical(csv_write)
                     {
-                        target_stream << "," << info.edge.location.x << "," << info.edge.location.y << ","
-                                        << ncc_one << "," << ncc_two << "," << ncc_three << "," << ncc_four << ","
-                                        << score_one << "," << score_two << "," << final_score << "\n";
+                        target_stream << std::fixed << std::setprecision(8) << ","
+                        << primary_edge.location.x << "," << primary_edge.location.y << "," << primary_edge.orientation << ","
+                        << info.edge.location.x << "," << info.edge.location.y << "," << info.edge.orientation << ","
+                        << ground_truth_edge.x << "," << ground_truth_edge.y << ","
+                        << epipolar_line(0) << "," << epipolar_line(1) << "," << epipolar_line(2) << ","
+                        << ncc_one << "," << ncc_two << "," << ncc_three << "," << ncc_four << ","
+                        << score_one << "," << score_two << "," << final_score << "\n";
                     }
-
-                    // #pragma omp critical(console_log)
-                    // {
-                    //     std::cout << ((cv::norm(info.edge.location - ground_truth_edge) <= GT_SPATIAL_TOLERANCE)
-                    //         ? "[VERIDICAL] " : "[NON-VERIDICAL] ")
-                    //         << "Image Pair: " << image_pair_index
-                    //         << ", x: " << info.edge.location.x << ", y: " << info.edge.location.y
-                    //         << ", NCCs: [" << ncc_one << ", " << ncc_two << ", " << ncc_three << ", " << ncc_four << "]"
-                    //         << ", Scores: [" << score_one << ", " << score_two << "], Final: " << final_score
-                    //         << std::endl;
-                    // }
                 }
 
                 if (cv::norm(info.edge.location - ground_truth_edge) <= GT_SPATIAL_TOLERANCE) {

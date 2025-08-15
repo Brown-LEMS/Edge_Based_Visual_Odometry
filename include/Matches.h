@@ -105,7 +105,9 @@ void FilterByNCC(
     bool forward_direction,
     int image_pair_index,
     std::ofstream &veridical_csv,
-    std::ofstream &nonveridical_csv
+    std::ofstream &nonveridical_csv,
+    const Edge& primary_edge,
+    const Eigen::Vector3d& epipolar_line
 );
 
 void FilterByLowe(
