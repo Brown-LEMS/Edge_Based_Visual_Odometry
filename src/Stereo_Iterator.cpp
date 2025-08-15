@@ -1,7 +1,7 @@
 #include "Stereo_Iterator.h"
 
 // =====================================================================================================================
-// class Stereo_Iterator: image iterator to load images from dataset once at a time
+// class Stereo_Iterator: image iterator to load images from dataset one at a time
 //
 // ChangeLogs
 //    Jue  25-06-14    Initially created.
@@ -66,7 +66,8 @@ bool EuRoCIterator::getNext(StereoFrame &frame)
             frame.left_image = left;
             frame.right_image = right;
             frame.timestamp = timestamp;
-            // Ground truth will be handled by AlignedStereoIterator
+            frame.left_image_path = left_img;
+            frame.right_image_path = right_img;
             return true;
         }
 
@@ -117,6 +118,8 @@ bool ETH3DIterator::getNext(StereoFrame &frame)
         {
             frame.left_image = left;
             frame.right_image = right;
+            frame.left_image_path = left_path;
+            frame.right_image_path = right_path;
             frame.timestamp = static_cast<double>(current_index - 1);
 
             if (!readETH3DGroundTruth(camera_motion, frame))

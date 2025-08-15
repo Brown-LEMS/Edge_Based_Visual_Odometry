@@ -28,6 +28,9 @@ struct StereoFrame
     cv::Mat right_image;
     double timestamp;
 
+    std::string left_image_path;
+    std::string right_image_path;
+
     // Add ground truth if available
     // bool has_gt = false;
     Eigen::Matrix3d gt_rotation;

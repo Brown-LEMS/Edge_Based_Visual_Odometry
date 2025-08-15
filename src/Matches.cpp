@@ -391,19 +391,13 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     int matches_after_bct = static_cast<int>(confirmed_matches.size());
 
-    double per_image_bct_precision = (matches_before_bct > 0) ? bct_true_positive / (double)(matches_after_bct) : 0.0;
 
-    int bct_denonimator = forward_match.recall_metrics.lowe_true_positive + forward_match.recall_metrics.lowe_false_negative;
+    double per_image_bct_precision = (matches_after_bct > 0) ? bct_true_positive / (double)(matches_after_bct) : 0.0;
 
-    double bct_recall = (bct_denonimator > 0) ? bct_true_positive / (double)(bct_denonimator) : 0.0;
+    int bct_denominator = forward_match.recall_metrics.lowe_true_positive + forward_match.recall_metrics.lowe_false_negative;
+    double bct_recall = (bct_denominator > 0) ? bct_true_positive / (double)(bct_denominator) : 0.0;
 
-    std::cout << "Matches Before BCT"     << ": " << matches_before_bct << "\n";
-    std::cout << "Matches After BCT"      << ": " << matches_after_bct << "\n";
-    std::cout << "BCT True Positives"     << ": " << bct_true_positive << "\n";
-    std::cout << "Stacked GT Right Edges" << ": " << dataset.ground_truth_right_edges_after_lowe.size() << "\n";
 
-    std::cout << "BCT Precision"           << ": " << per_image_bct_precision << "\n";
-    std::cout << "BCT Recall"              << ": " << bct_recall << "\n";
 
     BidirectionalMetrics bidirectional_metrics;
     bidirectional_metrics.matches_before_bct = matches_before_bct;
@@ -544,8 +538,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
         cv::Point2d ground_truth_edge;
 
-        // MAKE SURE TO UPDATE THIS ACCORDINGLY
-        //  int skip = (!selected_ground_truth_edges.empty()) ? 100 : 1;
         const int skip = 1;
 
 //> Start looping over left edges
@@ -788,74 +780,54 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     total_time = std::chrono::duration<double, std::milli>(total_end - total_start).count();
 #endif
 
+
     double epi_distance_recall = 0.0;
     if ((epi_true_positive + epi_false_negative) > 0)
     {
         epi_distance_recall = static_cast<double>(epi_true_positive) / (epi_true_positive + epi_false_negative);
     }
+    double per_image_epi_precision = (epi_edges_evaluated > 0) ? (per_edge_epi_precision / epi_edges_evaluated) : (0.0);
+
 
     double max_disparity_recall = 0.0;
     if ((disp_true_positive + disp_false_negative) > 0)
     {
         max_disparity_recall = static_cast<double>(disp_true_positive) / (disp_true_positive + disp_false_negative);
     }
+    double per_image_disp_precision = (disp_edges_evaluated > 0) ? (per_edge_disp_precision / disp_edges_evaluated) : (0.0);
+
 
     double epi_shift_recall = 0.0;
     if ((shift_true_positive + shift_false_negative) > 0)
     {
         epi_shift_recall = static_cast<double>(shift_true_positive) / (shift_true_positive + shift_false_negative);
     }
+    double per_image_shift_precision = (shift_edges_evaluated > 0) ? (per_edge_shift_precision / shift_edges_evaluated) : (0.0);
+
 
     double epi_cluster_recall = 0.0;
     if ((cluster_true_positive + cluster_false_negative) > 0)
     {
         epi_cluster_recall = static_cast<double>(cluster_true_positive) / (cluster_true_positive + cluster_false_negative);
     }
+    double per_image_clust_precision = (clust_edges_evaluated > 0) ? (per_edge_clust_precision / clust_edges_evaluated) : (0.0);
+
 
     double ncc_recall = 0.0;
     if ((ncc_true_positive + ncc_false_negative) > 0)
     {
         ncc_recall = static_cast<double>(ncc_true_positive) / (ncc_true_positive + ncc_false_negative);
     }
+    double per_image_ncc_precision = (ncc_edges_evaluated > 0) ? (per_edge_ncc_precision / ncc_edges_evaluated) : (0.0);
+
 
     double lowe_recall = 0.0;
     if ((lowe_true_positive + lowe_false_negative) > 0)
     {
         lowe_recall = static_cast<double>(lowe_true_positive) / (lowe_true_positive + lowe_false_negative);
     }
-
-    // std::cout << "Epipolar Distance Recall: " << std::fixed << std::setprecision(2) << epi_distance_recall * 100 << "%" << std::endl;
-    // std::cout << "Max Disparity Threshold Recall: " << std::fixed << std::setprecision(2) << max_disparity_recall * 100 << "%" << std::endl;
-    // std::cout << "Epipolar Shift Threshold Recall: " << std::fixed << std::setprecision(2) << epi_shift_recall * 100 << "%" << std::endl;
-    // std::cout << "Epipolar Cluster Threshold Recall: " << std::fixed << std::setprecision(2) << epi_cluster_recall * 100 << "%" << std::endl;
-    // std::cout << "NCC Threshold Recall: " << std::fixed << std::setprecision(2) << ncc_recall * 100 << "%" << std::endl;
-    // std::cout << "LRT Threshold Recall: " << std::fixed << std::setprecision(2) << lowe_recall * 100 << "%" << std::endl;
-
-    double per_image_epi_precision = (epi_edges_evaluated > 0) ? (per_edge_epi_precision / epi_edges_evaluated) : (0.0);
-    double per_image_disp_precision = (disp_edges_evaluated > 0) ? (per_edge_disp_precision / disp_edges_evaluated) : (0.0);
-    double per_image_shift_precision = (shift_edges_evaluated > 0) ? (per_edge_shift_precision / shift_edges_evaluated) : (0.0);
-    double per_image_clust_precision = (clust_edges_evaluated > 0) ? (per_edge_clust_precision / clust_edges_evaluated) : (0.0);
-    double per_image_ncc_precision = (ncc_edges_evaluated > 0) ? (per_edge_ncc_precision / ncc_edges_evaluated) : (0.0);
     double per_image_lowe_precision = (lowe_edges_evaluated > 0) ? (per_edge_lowe_precision / lowe_edges_evaluated) : (0.0);
 
-    // std::cout << "Epipolar Distance Precision: "
-    //     << std::fixed << std::setprecision(2)
-    //     << per_image_epi_precision * 100 << "%" << std::endl;
-    // std::cout << "Maximum Disparity Precision: "
-    //     << std::fixed << std::setprecision(2)
-    //     << per_image_disp_precision * 100 << "%" << std::endl;
-    // std::cout << "Epipolar Shift Precision: "
-    //     << std::fixed << std::setprecision(2)
-    //     << per_image_shift_precision * 100 << "%" << std::endl;
-    // std::cout << "Epipolar Cluster Precision: "
-    //     << std::fixed << std::setprecision(2)
-    //     << per_image_clust_precision * 100 << "%" << std::endl;
-    // std::cout << "NCC Precision: "
-    //     << std::fixed << std::setprecision(2)
-    //     << per_image_ncc_precision * 100 << "%" << std::endl;
-    // std::cout << "LRT Precision: "
-    //     << std::fixed << std::setprecision(2)
-    //     << per_image_lowe_precision * 100 << "%" << std::endl;
 
     double per_image_epi_time = (time_epi_edges_evaluated > 0) ? (time_epi / time_epi_edges_evaluated) : (0.0);
     double per_image_disp_time = (time_disp_edges_evaluated > 0) ? (time_disp / time_disp_edges_evaluated) : 0.0;

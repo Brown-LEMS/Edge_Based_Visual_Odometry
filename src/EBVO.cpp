@@ -106,7 +106,9 @@ void EBVO::PerformEdgeBasedVO()
         dataset.ncc_two_vs_err.clear();
         dataset.ground_truth_right_edges_after_lowe.clear();
 
-        std::cout << "Image Pair #" << frame_idx << "\n";
+        std::cout << "====================[ Image Pair #" << frame_idx << " ]====================\n";
+        std::cout << "Left  Image: " << current_frame.left_image_path << "\n";
+        std::cout << "Right Image: " << current_frame.right_image_path << "\n\n";
 
         cv::Mat left_undistorted, right_undistorted;
         cv::undistort(curr_left_img, left_undistorted, left_calib, left_dist_coeff_mat);
@@ -120,17 +122,20 @@ void EBVO::PerformEdgeBasedVO()
             TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(dataset.get_height(), dataset.get_width()));
         }
 
-        std::string edge_dir = dataset.get_output_path() + "/edges";
+        std::string edge_dir = dataset.get_output_path() + "/edge_bins";
         std::filesystem::create_directories(edge_dir);
 
         std::string left_edge_path = edge_dir + "/left_edges_" + std::to_string(frame_idx);
         std::string right_edge_path = edge_dir + "/right_edges_" + std::to_string(frame_idx);
 
         ProcessEdges(left_undistorted, left_edge_path, TOED, dataset.left_edges);
-        std::cout << "Number of edges on the left image: " << dataset.left_edges.size() << std::endl;
-
         ProcessEdges(right_undistorted, right_edge_path, TOED, dataset.right_edges);
-        std::cout << "Number of edges on the right image: " << dataset.right_edges.size() << std::endl;
+
+        std::cout << "[Edge Detection]\n";
+        std::cout << "  Left  - Edges: " << dataset.left_edges.size();
+        std::cout << " | Saved: " << left_edge_path << ".bin" << std::endl;
+        std::cout << "  Right - Edges: " << dataset.right_edges.size();
+        std::cout << " | Saved: " << right_edge_path << ".bin" << std::endl << std::endl;
 
         dataset.increment_num_imgs();
 
@@ -245,7 +250,26 @@ void EBVO::PerformEdgeBasedVO()
             left_undistorted,
             right_undistorted,
             dataset);
-        
+
+        // Print recall and precision for each stage using metrics from match_result
+        const RecallMetrics& recall = match_result.forward_match.recall_metrics;
+        const BidirectionalMetrics& bct = match_result.bidirectional_metrics;
+        std::cout << std::fixed << std::setprecision(4);
+        std::cout << "[Epipolar Distance] Recall: " << recall.epi_distance_recall
+                  << " | Precision: " << recall.per_image_epi_precision << std::endl;
+        std::cout << "[Max Disparity] Recall: " << recall.max_disparity_recall
+                  << " | Precision: " << recall.per_image_disp_precision << std::endl;
+        std::cout << "[Epipolar Shift] Recall: " << recall.epi_shift_recall
+                  << " | Precision: " << recall.per_image_shift_precision << std::endl;
+        std::cout << "[Cluster] Recall: " << recall.epi_cluster_recall
+                  << " | Precision: " << recall.per_image_clust_precision << std::endl;
+        std::cout << "[NCC] Recall: " << recall.ncc_recall
+                  << " | Precision: " << recall.per_image_ncc_precision << std::endl;
+        std::cout << "[Lowe's Ratio] Recall: " << recall.lowe_recall
+                  << " | Precision: " << recall.per_image_lowe_precision << std::endl;
+        std::cout << "[BCT] Recall: " << bct.per_image_bct_recall
+                  << " | Precision: " << bct.per_image_bct_precision << std::endl;
+
         WriteEdgeMatchResult(
             match_result,
             max_disparity_values,
@@ -360,12 +384,12 @@ void EBVO::ProcessEdges(const cv::Mat &image,
     }
     else
     {
-        std::cout << "Running third-order edge detector..." << std::endl;
+        // std::cout << "Running third-order edge detector..." << std::endl;
         toed->get_Third_Order_Edges(image);
         edges = toed->toed_edges;
 
         WriteEdgesToBinary(path, edges);
-        std::cout << "Saved edge data to: " << path << std::endl;
+        // std::cout << "Saved edge data to: " << path << std::endl;
     }
 }
 
