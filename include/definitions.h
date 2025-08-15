@@ -17,7 +17,7 @@
 #define EDGE_CLUSTER_THRESH (0.3) //> in pixels
 #define ORTHOGONAL_SHIFT_MAG (5)  //> in pixels
 #define PATCH_SIZE (7)            //> in pixels
-#define NCC_THRESH_FINAL_SCORE (-0.3) //> in [0, 1]
+#define NCC_THRESH_FINAL_SCORE (0.1) //> in [0, 1]
 #define MATCH_TOL (3) //> in pixels
 #define GT_SPATIAL_TOLERANCE (3)
 
