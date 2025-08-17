@@ -15,29 +15,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges = std::vector<cv::Point2d>(), int image_pair_index = -1, bool forward_direction = true);
 
-void ExtractClusterPatches(
-    int patch_size,
-    const cv::Mat &image,
-    const std::vector<EdgeCluster> &cluster_centers,
-    const std::vector<cv::Point2d> *right_edges,
-    const std::vector<cv::Point2d> &shifted_one,
-    const std::vector<cv::Point2d> &shifted_two,
-    std::vector<EdgeCluster> &cluster_centers_out,
-    std::vector<cv::Point2d> *filtered_right_edges_out,
-    std::vector<cv::Mat> &patch_set_one_out,
-    std::vector<cv::Mat> &patch_set_two_out);
-// clear
-void ExtractPatches(
-    int patch_size,
-    const cv::Mat &image,
-    const std::vector<Edge> &edges,
-    const std::vector<cv::Point2d> &shifted_one,
-    const std::vector<cv::Point2d> &shifted_two,
-    std::vector<Edge> &filtered_edges_out,
-    std::vector<cv::Mat> &patch_set_one_out,
-    std::vector<cv::Mat> &patch_set_two_out,
-    const std::vector<cv::Point2d> *ground_truth_edges,
-    std::vector<cv::Point2d> *filtered_gt_edges_out);
+bool is_patch_in_bounds(const cv::Point2d& pt, int img_width, int img_height);
+void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat img);
+std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel);
 
 std::vector<Eigen::Vector3d> PerformEpipolarShift(
 const Eigen::Vector3d& edge1,
@@ -52,8 +32,6 @@ std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &va
 std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold);
 
 std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges);
-
-std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<Edge> &edge_points, double shift_magnitude, Dataset &dataset);
 
 bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epipolar_line);
 

@@ -195,96 +195,39 @@ std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &va
     return clusters;
 }
 
-/*
-    Extract patches from the image based on the cluster centers and shifted edge points.
-    The function checks if the patches are within bounds before extracting them.
-*/
-void ExtractClusterPatches(
-    int patch_size,
-    const cv::Mat &image,
-    const std::vector<EdgeCluster> &cluster_centers,
-    const std::vector<cv::Point2d> *right_edges,
-    const std::vector<cv::Point2d> &shifted_one,
-    const std::vector<cv::Point2d> &shifted_two,
-    std::vector<EdgeCluster> &cluster_centers_out,
-    std::vector<cv::Point2d> *filtered_right_edges_out,
-    std::vector<cv::Mat> &patch_set_one_out,
-    std::vector<cv::Mat> &patch_set_two_out)
-{
-    int half_patch = std::ceil(patch_size / 2);
-
-    for (int i = 0; i < shifted_one.size(); i++)
-    {
-        double x1 = shifted_one[i].x;
-        double y1 = shifted_one[i].y;
-        double x2 = shifted_two[i].x;
-        double y2 = shifted_two[i].y;
-
-        bool in_bounds_one = (x1 - half_patch >= 0 && x1 + half_patch < image.cols &&
-                              y1 - half_patch >= 0 && y1 + half_patch < image.rows);
-        bool in_bounds_two = (x2 - half_patch >= 0 && x2 + half_patch < image.cols &&
-                              y2 - half_patch >= 0 && y2 + half_patch < image.rows);
-
-        if (in_bounds_one && in_bounds_two)
-        {
-            cv::Point2f center1(static_cast<float>(x1), static_cast<float>(y1));
-            cv::Point2f center2(static_cast<float>(x2), static_cast<float>(y2));
-            cv::Size size(patch_size, patch_size);
-
-            cv::Mat patch1, patch2;
-            cv::getRectSubPix(image, size, center1, patch1);
-            cv::getRectSubPix(image, size, center2, patch2);
-
-            if (patch1.type() != CV_32F)
-            {
-                patch1.convertTo(patch1, CV_32F);
-            }
-            if (patch2.type() != CV_32F)
-            {
-                patch2.convertTo(patch2, CV_32F);
-            }
-
-            patch_set_one_out.push_back(patch1);
-            patch_set_two_out.push_back(patch2);
-            cluster_centers_out.push_back(cluster_centers[i]);
-
-            if (right_edges && filtered_right_edges_out)
-            {
-                filtered_right_edges_out->push_back((*right_edges)[i]);
-            }
-        }
-    }
+bool is_patch_in_bounds(const cv::Point2d& pt, int width, int height) {
+    return pt.x - HALF_PATCH_SIZE >= 0 && pt.x + HALF_PATCH_SIZE < width &&
+           pt.y - HALF_PATCH_SIZE >= 0 && pt.y + HALF_PATCH_SIZE < height;
 }
 
-/*
-    Calculate orthogonal shifts for edge points based on their orientations.
-    Returns two vectors of shifted points, one for each orthogonal direction.
-*/
-std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<Edge> &edge_points, double shift_magnitude, Dataset &dataset)
+std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel)
 {
-    std::vector<cv::Point2d> shifted_points_one;
-    std::vector<cv::Point2d> shifted_points_two;
+    double shifted_x1 = edgel.location.x + ORTHOGONAL_SHIFT_MAG * (std::sin(edgel.orientation));
+    double shifted_y1 = edgel.location.y + ORTHOGONAL_SHIFT_MAG * (-std::cos(edgel.orientation));
+    double shifted_x2 = edgel.location.x + ORTHOGONAL_SHIFT_MAG * (-std::sin(edgel.orientation));
+    double shifted_y2 = edgel.location.y + ORTHOGONAL_SHIFT_MAG * (std::cos(edgel.orientation));
 
-    for (size_t i = 0; i < edge_points.size(); ++i)
-    {
-        const auto &edge_point = edge_points[i].location;
-        double theta = edge_points[i].orientation;
+    cv::Point2d shifted_point_plus(shifted_x1, shifted_y1);
+    cv::Point2d shifted_point_minus(shifted_x2, shifted_y2);
 
-        double orthogonal_x1 = std::sin(theta);
-        double orthogonal_y1 = -std::cos(theta);
-        double orthogonal_x2 = -std::sin(theta);
-        double orthogonal_y2 = std::cos(theta);
+    return {shifted_point_plus, shifted_point_minus};
+}
 
-        double shifted_x1 = edge_point.x + shift_magnitude * orthogonal_x1;
-        double shifted_y1 = edge_point.y + shift_magnitude * orthogonal_y1;
-        double shifted_x2 = edge_point.x + shift_magnitude * orthogonal_x2;
-        double shifted_y2 = edge_point.y + shift_magnitude * orthogonal_y2;
+void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat img) 
+{
+    CV_Assert(img.type() == CV_64F);
 
-        shifted_points_one.emplace_back(shifted_x1, shifted_y1);
-        shifted_points_two.emplace_back(shifted_x2, shifted_y2);
+    for (int i = -HALF_PATCH_SIZE; i <= HALF_PATCH_SIZE; i++) {
+        for (int j = -HALF_PATCH_SIZE; j <= HALF_PATCH_SIZE; j++) {
+
+            cv::Point2d rotated_point(cos(theta)*(i) - sin(theta)*(j) + shifted_point.x, sin(theta)*(i) + cos(theta)*(j) + shifted_point.y);
+            patch_coord_x.at<double>(i + HALF_PATCH_SIZE, j + HALF_PATCH_SIZE) = rotated_point.x;
+            patch_coord_y.at<double>(i + HALF_PATCH_SIZE, j + HALF_PATCH_SIZE) = rotated_point.y;
+
+            double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
+            patch_val.at<double>(i + HALF_PATCH_SIZE, j + HALF_PATCH_SIZE) = interp_val;
+        }
     }
-
-    return {shifted_points_one, shifted_points_two};
 }
 
 StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset)
@@ -294,6 +237,16 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
     if (eth3d_iter) {
         image_pair_index = eth3d_iter->getCurrentIndex();
     }
+
+    cv::Mat left_image_64f, right_image_64f;
+    if (left_image.type() != CV_64F)
+        left_image.convertTo(left_image_64f, CV_64F);
+    else
+        left_image_64f = left_image;
+    if (right_image.type() != CV_64F)
+        right_image.convertTo(right_image_64f, CV_64F);
+    else
+        right_image_64f = right_image;
 
     ///////////////////////////////FORWARD DIRECTION///////////////////////////////
     std::vector<Edge> left_edges;
@@ -305,25 +258,73 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         ground_truth_right_edges.push_back(std::get<1>(data));
     }
 
-    auto [left_orthogonal_one, left_orthogonal_two] = CalculateOrthogonalShifts(left_edges, ORTHOGONAL_SHIFT_MAG, dataset);
-
     std::vector<Edge> filtered_left_edges;
     std::vector<cv::Point2d> filtered_ground_truth_right_edges;
 
     std::vector<cv::Mat> left_patch_set_one;
     std::vector<cv::Mat> left_patch_set_two;
 
-    ExtractPatches(
-        PATCH_SIZE,
-        left_image,
-        left_edges,
-        left_orthogonal_one,
-        left_orthogonal_two,
-        filtered_left_edges,
-        left_patch_set_one,
-        left_patch_set_two,
-        &ground_truth_right_edges,
-        &filtered_ground_truth_right_edges);
+    int left_img_width  = left_image_64f.cols;
+    int left_img_height = left_image_64f.rows;
+
+    int primary_skipped_patches = 0;
+    
+    for (size_t i = 0; i < left_edges.size(); ++i) {
+        const Edge &edge = left_edges[i];
+
+        auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
+
+        if (!is_patch_in_bounds(shifted_plus, left_img_width, left_img_height) ||
+            !is_patch_in_bounds(shifted_minus, left_img_width, left_img_height)) {
+            primary_skipped_patches++;
+            continue;
+        }
+
+        cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    
+        cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    
+        get_patch_on_one_edge_side(
+            shifted_plus,
+            edge.orientation,
+            patch_coord_x_plus,
+            patch_coord_y_plus,
+            patch_plus,
+            left_image_64f
+        );
+    
+        get_patch_on_one_edge_side(
+            shifted_minus,
+            edge.orientation,
+            patch_coord_x_minus,
+            patch_coord_y_minus,
+            patch_minus,
+            left_image_64f
+        );
+    
+        cv::Mat patch_plus_32f, patch_minus_32f;
+        if (patch_plus.type() != CV_32F) {
+            patch_plus.convertTo(patch_plus_32f, CV_32F);
+        }
+        if (patch_minus.type() != CV_32F) {
+            patch_minus.convertTo(patch_minus_32f, CV_32F);
+        }
+    
+        filtered_left_edges.push_back(edge);
+        if (!ground_truth_right_edges.empty()) {
+            filtered_ground_truth_right_edges.push_back(ground_truth_right_edges[i]);
+        }
+
+        left_patch_set_one.push_back(patch_plus_32f);
+        left_patch_set_two.push_back(patch_minus_32f);
+    }
+
+    std::cout << "Skipped " << primary_skipped_patches << " out of " << left_edges.size()
+          << " left edges due to patch out-of-bounds.\n";
 
     Eigen::Matrix3d fundamental_matrix_21 = dataset.get_fund_mat_21();
     Eigen::Matrix3d fundamental_matrix_12 = dataset.get_fund_mat_12();
@@ -336,7 +337,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         left_patch_set_one,
         left_patch_set_two,
         epipolar_lines_right,
-        right_image,
+        right_image_64f,
         dataset,
         filtered_ground_truth_right_edges,
         image_pair_index,
@@ -356,25 +357,69 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         }
     }
 
-    auto [right_orthogonal_one, right_orthogonal_two] = CalculateOrthogonalShifts(reverse_primary_edges, ORTHOGONAL_SHIFT_MAG, dataset);
-
     std::vector<Edge> filtered_right_edges;
-    std::vector<cv::Point2d> filtered_ground_truth_left_edges;
 
     std::vector<cv::Mat> right_patch_set_one;
     std::vector<cv::Mat> right_patch_set_two;
 
-    ExtractPatches(
-        PATCH_SIZE,
-        right_image,
-        reverse_primary_edges,
-        right_orthogonal_one,
-        right_orthogonal_two,
-        filtered_right_edges,
-        right_patch_set_one,
-        right_patch_set_two,
-        nullptr,
-        nullptr);
+    int right_img_width  = right_image_64f.cols;
+    int right_img_height = right_image_64f.rows;
+
+    int skipped_reverse_patches = 0;
+    
+    for (size_t i = 0; i < reverse_primary_edges.size(); ++i) {
+        const Edge& edge = reverse_primary_edges[i];
+
+        auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
+
+        if (!is_patch_in_bounds(shifted_plus, right_img_width, right_img_height) ||
+            !is_patch_in_bounds(shifted_minus, right_img_width, right_img_height)) {
+            skipped_reverse_patches++;
+            continue;
+        }
+
+        cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    
+        cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+
+        get_patch_on_one_edge_side(
+            shifted_plus,
+            edge.orientation,
+            patch_coord_x_plus,
+            patch_coord_y_plus,
+            patch_plus,
+            right_image_64f
+        );
+
+        get_patch_on_one_edge_side(
+            shifted_minus,
+            edge.orientation,
+            patch_coord_x_minus,
+            patch_coord_y_minus,
+            patch_minus,
+            right_image_64f
+        );
+
+        cv::Mat patch_plus_32f, patch_minus_32f;
+        if (patch_plus.type() != CV_32F) {
+            patch_plus.convertTo(patch_plus_32f, CV_32F);
+        }
+        if (patch_minus.type() != CV_32F) {
+            patch_minus.convertTo(patch_minus_32f, CV_32F);
+        }
+
+        filtered_right_edges.push_back(edge);
+
+        right_patch_set_one.push_back(patch_plus_32f);
+        right_patch_set_two.push_back(patch_minus_32f);
+    }
+
+    std::cout << "Skipped " << skipped_reverse_patches << " out of " << reverse_primary_edges.size()
+          << " right edges due to patch out-of-bounds.\n";  
 
     std::vector<Eigen::Vector3d> epipolar_lines_left = CalculateEpipolarLine(fundamental_matrix_12, filtered_right_edges);
 
@@ -384,7 +429,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         right_patch_set_one,
         right_patch_set_two,
         epipolar_lines_left,
-        left_image,
+        left_image_64f,
         dataset,
         std::vector<cv::Point2d>(),
         image_pair_index,
@@ -736,38 +781,70 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 #if MEASURE_TIMINGS
             auto start_patch = std::chrono::high_resolution_clock::now();
 #endif
-
-            // clust_output_counts.push_back(cluster_centers.size());
             local_clust_output_counts[thread_id].push_back(cluster_centers.size());
-
-            std::vector<Edge> cluster_coords;
-
-            for (const auto &cluster : cluster_centers)
-            {
-                // checked: std::cout << "Cluster center edge location: " << cluster.center_edge.location << std::endl;
-                cluster_coords.push_back(cluster.center_edge);
-            }
-
-            auto [secondary_orthogonal_one, secondary_orthogonal_two] = CalculateOrthogonalShifts(
-                cluster_coords,
-                ORTHOGONAL_SHIFT_MAG,
-                dataset);
 
             std::vector<EdgeCluster> filtered_cluster_centers;
             std::vector<cv::Mat> secondary_patch_set_one;
             std::vector<cv::Mat> secondary_patch_set_two;
 
-            ExtractClusterPatches(
-                PATCH_SIZE,
-                secondary_image,
-                cluster_centers,
-                nullptr,
-                secondary_orthogonal_one,
-                secondary_orthogonal_two,
-                filtered_cluster_centers,
-                nullptr,
-                secondary_patch_set_one,
-                secondary_patch_set_two);
+            int secondary_img_width  = secondary_image.cols;
+            int secondary_img_height = secondary_image.rows;
+
+            int cluster_skipped_patches = 0;
+
+            for (const auto& cluster : cluster_centers) {
+                Edge edge = cluster.center_edge;
+
+                auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
+
+                if (!is_patch_in_bounds(shifted_plus, secondary_img_width, secondary_img_height) ||
+                    !is_patch_in_bounds(shifted_minus, secondary_img_width, secondary_img_height)) {
+                    cluster_skipped_patches++;
+                    continue;
+                }
+
+                cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+
+                cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+
+                get_patch_on_one_edge_side(
+                    shifted_plus,
+                    edge.orientation,
+                    patch_coord_x_plus,
+                    patch_coord_y_plus,
+                    patch_plus,
+                    secondary_image
+                );
+
+                get_patch_on_one_edge_side(
+                    shifted_minus,
+                    edge.orientation,
+                    patch_coord_x_minus,
+                    patch_coord_y_minus,
+                    patch_minus,
+                    secondary_image
+                );
+
+                cv::Mat patch_plus_32f, patch_minus_32f;
+                if (patch_plus.type() != CV_32F) {
+                    patch_plus.convertTo(patch_plus_32f, CV_32F);
+                }
+                if (patch_minus.type() != CV_32F) {
+                    patch_minus.convertTo(patch_minus_32f, CV_32F);
+                }
+
+                filtered_cluster_centers.push_back(cluster);
+                secondary_patch_set_one.push_back(patch_plus_32f);
+                secondary_patch_set_two.push_back(patch_minus_32f);
+            }
+
+            std::cout << "Skipped " << cluster_skipped_patches << " out of " << cluster_centers.size()
+                    << " secondary edges due to patch out-of-bounds.\n";
+
             local_patch_input_counts[thread_id].push_back(cluster_centers.size());
 
 #if MEASURE_TIMINGS
@@ -778,8 +855,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////NCC THRESHOLD/////////////////////////////////////////////////////
             auto start_ncc = std::chrono::high_resolution_clock::now();
 #endif
-
-            //    patch_output_counts.push_back(filtered_cluster_centers.size());
             local_patch_output_counts[thread_id].push_back(filtered_cluster_centers.size());
 
             std::vector<EdgeMatch> passed_ncc_matches;
@@ -982,68 +1057,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             per_image_lowe_time,
             per_image_total_time},
         final_matches};
-}
-
-/*
-    Extract patches from the image based on shifted edge points and orientations.
-    The function checks if the patches are within bounds before extracting them.
-    It also filters edges and orientations based on the extracted patches.
-*/
-void ExtractPatches(
-    int patch_size,
-    const cv::Mat &image,
-    const std::vector<Edge> &edges,
-    const std::vector<cv::Point2d> &shifted_one,
-    const std::vector<cv::Point2d> &shifted_two,
-    std::vector<Edge> &filtered_edges_out,
-    std::vector<cv::Mat> &patch_set_one_out,
-    std::vector<cv::Mat> &patch_set_two_out,
-    const std::vector<cv::Point2d> *ground_truth_edges,
-    std::vector<cv::Point2d> *filtered_gt_edges_out)
-{
-    int half_patch = std::ceil(patch_size / 2);
-
-    for (int i = 0; i < shifted_one.size(); i++)
-    {
-        double x1 = shifted_one[i].x;
-        double y1 = shifted_one[i].y;
-        double x2 = shifted_two[i].x;
-        double y2 = shifted_two[i].y;
-
-        bool in_bounds_one = (x1 - half_patch >= 0 && x1 + half_patch < image.cols &&
-                              y1 - half_patch >= 0 && y1 + half_patch < image.rows);
-        bool in_bounds_two = (x2 - half_patch >= 0 && x2 + half_patch < image.cols &&
-                              y2 - half_patch >= 0 && y2 + half_patch < image.rows);
-
-        if (in_bounds_one && in_bounds_two)
-        {
-            cv::Point2f center1(static_cast<float>(x1), static_cast<float>(y1));
-            cv::Point2f center2(static_cast<float>(x2), static_cast<float>(y2));
-            cv::Size size(patch_size, patch_size);
-
-            cv::Mat patch1, patch2;
-            cv::getRectSubPix(image, size, center1, patch1);
-            cv::getRectSubPix(image, size, center2, patch2);
-
-            if (patch1.type() != CV_32F)
-            {
-                patch1.convertTo(patch1, CV_32F);
-            }
-            if (patch2.type() != CV_32F)
-            {
-                patch2.convertTo(patch2, CV_32F);
-            }
-
-            filtered_edges_out.push_back(edges[i]);
-            patch_set_one_out.push_back(patch1);
-            patch_set_two_out.push_back(patch2);
-
-            if (ground_truth_edges && filtered_gt_edges_out)
-            {
-                filtered_gt_edges_out->push_back((*ground_truth_edges)[i]);
-            }
-        }
-    }
 }
 
 bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epipolar_line)
