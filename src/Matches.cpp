@@ -266,8 +266,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     int left_img_width  = left_image_64f.cols;
     int left_img_height = left_image_64f.rows;
-
-    int primary_skipped_patches = 0;
     
     for (size_t i = 0; i < left_edges.size(); ++i) {
         const Edge &edge = left_edges[i];
@@ -276,7 +274,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
         if (!is_patch_in_bounds(shifted_plus, left_img_width, left_img_height) ||
             !is_patch_in_bounds(shifted_minus, left_img_width, left_img_height)) {
-            primary_skipped_patches++;
             continue;
         }
 
@@ -323,9 +320,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         left_patch_set_two.push_back(patch_minus_32f);
     }
 
-    std::cout << "Skipped " << primary_skipped_patches << " out of " << left_edges.size()
-          << " left edges due to patch out-of-bounds.\n";
-
     Eigen::Matrix3d fundamental_matrix_21 = dataset.get_fund_mat_21();
     Eigen::Matrix3d fundamental_matrix_12 = dataset.get_fund_mat_12();
 
@@ -365,8 +359,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
     int right_img_width  = right_image_64f.cols;
     int right_img_height = right_image_64f.rows;
 
-    int skipped_reverse_patches = 0;
-    
     for (size_t i = 0; i < reverse_primary_edges.size(); ++i) {
         const Edge& edge = reverse_primary_edges[i];
 
@@ -374,7 +366,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
         if (!is_patch_in_bounds(shifted_plus, right_img_width, right_img_height) ||
             !is_patch_in_bounds(shifted_minus, right_img_width, right_img_height)) {
-            skipped_reverse_patches++;
             continue;
         }
 
@@ -417,9 +408,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         right_patch_set_one.push_back(patch_plus_32f);
         right_patch_set_two.push_back(patch_minus_32f);
     }
-
-    std::cout << "Skipped " << skipped_reverse_patches << " out of " << reverse_primary_edges.size()
-          << " right edges due to patch out-of-bounds.\n";  
 
     std::vector<Eigen::Vector3d> epipolar_lines_left = CalculateEpipolarLine(fundamental_matrix_12, filtered_right_edges);
 
@@ -790,8 +778,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             int secondary_img_width  = secondary_image.cols;
             int secondary_img_height = secondary_image.rows;
 
-            int cluster_skipped_patches = 0;
-
             for (const auto& cluster : cluster_centers) {
                 Edge edge = cluster.center_edge;
 
@@ -799,7 +785,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
                 if (!is_patch_in_bounds(shifted_plus, secondary_img_width, secondary_img_height) ||
                     !is_patch_in_bounds(shifted_minus, secondary_img_width, secondary_img_height)) {
-                    cluster_skipped_patches++;
                     continue;
                 }
 
@@ -841,9 +826,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 secondary_patch_set_one.push_back(patch_plus_32f);
                 secondary_patch_set_two.push_back(patch_minus_32f);
             }
-
-            std::cout << "Skipped " << cluster_skipped_patches << " out of " << cluster_centers.size()
-                    << " secondary edges due to patch out-of-bounds.\n";
 
             local_patch_input_counts[thread_id].push_back(cluster_centers.size());
 
