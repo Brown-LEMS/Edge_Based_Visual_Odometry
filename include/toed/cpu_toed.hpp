@@ -27,7 +27,6 @@ struct Edge
 {
   cv::Point2d location; //> x, y location of the edge point
   double orientation;   //> orientation of the edge point
-
   bool b_isEmpty;         //> check if this struct is value-assigned
 
   Edge() : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true) {}

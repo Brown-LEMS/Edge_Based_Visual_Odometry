@@ -39,11 +39,14 @@ void ExtractPatches(
     const std::vector<cv::Point2d> *ground_truth_edges,
     std::vector<cv::Point2d> *filtered_gt_edges_out);
 
-// checked
-Edge PerformEpipolarShift(
-    Edge original_edge,
-    std::vector<double> epipolar_line_coeffs, bool &b_pass_epipolar_tengency_check);
-// checked
+std::vector<Eigen::Vector3d> PerformEpipolarShift(
+const Eigen::Vector3d& edge1,
+const Eigen::MatrixXd& edge2,
+const Eigen::Vector3d& epip_coeffs);
+
+double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y);
+double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection);
+
 std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
 
 std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold);
@@ -84,6 +87,7 @@ void FormClusterCenters(
     std::vector<std::vector<Edge>> &clusters);
 
 void EpipolarShiftFilter(
+    const Edge &primary_edge,
     const std::vector<Edge> &filtered_edges,
     std::vector<Edge> &shifted_edges,
     const Eigen::Vector3d &epipolar_line);
