@@ -48,7 +48,6 @@ double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eige
 }
 
 //> MARK: Perform Epipolar Shift
-//> Check that const notation works as intended, otherwise remove
 std::vector<Eigen::Vector3d> PerformEpipolarShift(
     const Eigen::Vector3d& edge1,
     const Eigen::MatrixXd& edge2,
@@ -56,63 +55,63 @@ std::vector<Eigen::Vector3d> PerformEpipolarShift(
 {
     std::vector<Eigen::Vector3d> shifted_edges;
 
-        for (int i = 0; i < edge2.rows(); i++)
+for (int i = 0; i < edge2.rows(); i++)
+{
+    Eigen::Vector3d xy1_H2(edge2(i, 0), edge2(i, 1), 1.0);
+
+    double corrected_x, corrected_y, corrected_theta;
+    double epiline_x, epiline_y;
+
+    double normal_distance_epiline = getNormalDistance2EpipolarLine(epip_coeffs, xy1_H2, epiline_x, epiline_y);
+
+    if (normal_distance_epiline < LOCATION_PERTURBATION)
+    {
+        corrected_x = epiline_x;
+        corrected_y = epiline_y;
+        corrected_theta = edge2(i, 2);
+    }
+    else
+    {
+        double x_intersection, y_intersection;
+        Eigen::Vector3d isolated_H2(edge2(i, 0), edge2(i, 1), edge2(i, 2));
+        double dist_diff_edg2 = getTangentialDistance2EpipolarLine(epip_coeffs, isolated_H2, x_intersection, y_intersection);
+
+        double theta = edge2(i, 2);
+
+        if (dist_diff_edg2 < EPIP_TANGENCY_DISPL_THRESH)
         {
-            Eigen::Vector3d xy1_H2(edge2(i, 0), edge2(i, 1), 1.0);
+            corrected_x = x_intersection;
+            corrected_y = y_intersection;
+            corrected_theta = theta;
+        }
+        else
+        {
+            double p_theta = epip_coeffs(0) * cos(theta) + epip_coeffs(1) * sin(theta);
+            double derivative_p_theta = -epip_coeffs(0) * sin(theta) + epip_coeffs(1) * cos(theta);
 
-            double corrected_x, corrected_y, corrected_theta;
-            double epiline_x, epiline_y;
+            if (p_theta > 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
+		    else if (p_theta < 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
+		    else if (p_theta > 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
+		    else if (p_theta < 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
 
-            double normal_distance_epiline = getNormalDistance2EpipolarLine(epip_coeffs, xy1_H2, epiline_x, epiline_y);
+            Eigen::Vector3d isolated_H2_(edge2(i, 0), edge2(i, 1), theta);
+            dist_diff_edg2 = getTangentialDistance2EpipolarLine(epip_coeffs, isolated_H2_, x_intersection, y_intersection);
 
-            if (normal_distance_epiline < LOCATION_PERTURBATION)
+            if (dist_diff_edg2 < EPIP_TANGENCY_DISPL_THRESH)
             {
-                corrected_x = epiline_x;
-                corrected_y = epiline_y;
-                corrected_theta = edge2(i, 2);
+                corrected_x = x_intersection;
+                corrected_y = y_intersection;
+                corrected_theta = theta;
             }
             else
             {
-                double x_intersection, y_intersection;
-                Eigen::Vector3d isolated_H2(edge2(i, 0), edge2(i, 1), edge2(i, 2));
-                double dist_diff_edg2 = getTangentialDistance2EpipolarLine(epip_coeffs, isolated_H2, x_intersection, y_intersection);
-
-                double theta = edge2(i, 2);
-
-                if (dist_diff_edg2 < EPIP_TANGENCY_DISPL_THRESH)
-                {
-                    corrected_x = x_intersection;
-                    corrected_y = y_intersection;
-                    corrected_theta = theta;
-                }
-                else
-                {
-                    double p_theta = epip_coeffs(0) * cos(theta) + epip_coeffs(1) * sin(theta);
-                    double derivative_p_theta = -epip_coeffs(0) * sin(theta) + epip_coeffs(1) * cos(theta);
-
-                    if (p_theta > 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
-                    else if (p_theta < 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
-                    else if (p_theta > 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
-                    else if (p_theta < 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
-
-                    Eigen::Vector3d isolated_H2_(edge2(i, 0), edge2(i, 1), theta);
-                    dist_diff_edg2 = getTangentialDistance2EpipolarLine(epip_coeffs, isolated_H2_, x_intersection, y_intersection);
-
-                    if (dist_diff_edg2 < EPIP_TANGENCY_DISPL_THRESH)
-                    {
-                        corrected_x = x_intersection;
-                        corrected_y = y_intersection;
-                        corrected_theta = theta;
-                    }
-                    else
-                    {
-                        continue;
-                    }
-                }
+                continue;
             }
+        }
+    }
 
             shifted_edges.emplace_back(corrected_x, corrected_y, corrected_theta);
-        }
+}
 
     return shifted_edges;
 }
@@ -212,16 +211,23 @@ std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edg
 void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat img) 
 {
     int half_patch_size = floor(PATCH_SIZE / 2);
-
+    
     for (int i = -half_patch_size; i <= half_patch_size; i++) {
         for (int j = -half_patch_size; j <= half_patch_size; j++) {
 
-        cv::Point2d rotated_point(cos(theta)*(i) - sin(theta)*(j) + shifted_point.x, sin(theta)*(i) + cos(theta)*(j) + shifted_point.y);
-        patch_coord_x.at<int>(i + half_patch_size, j + half_patch_size) = rotated_point.x;
-        patch_coord_y.at<int>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
+            cv::Point2d rotated_point(cos(theta)*(i) - sin(theta)*(j) + shifted_point.x, sin(theta)*(i) + cos(theta)*(j) + shifted_point.y);
+            patch_coord_x.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.x;
+            patch_coord_y.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
+            // Check if the rotated point is within image bounds
+            if (rotated_point.x < 0 || rotated_point.x >= img.cols ||
+                rotated_point.y < 0 || rotated_point.y >= img.rows) {
+                std::cerr << "Warning: Rotated point (" << rotated_point.x << ", " << rotated_point.y
+                          << ") is out of image bounds (" << img.cols << " x " << img.rows << ")." << std::endl;
+            }
 
-        double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
-        patch_val.at<double>(i + half_patch_size, j + half_patch_size) = interp_val;
+            double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
+            patch_val.at<double>(i + half_patch_size, j + half_patch_size) = interp_val;
+            std::cout << "Patch Value: " << patch_val.at<double>(i + half_patch_size, j + half_patch_size) << std::endl;
         }
     }
 }
@@ -269,13 +275,14 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
         auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
 
-        cv::Mat patch_coord_x_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-        cv::Mat patch_coord_y_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
     
-        cv::Mat patch_coord_x_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-        cv::Mat patch_coord_y_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        std::cout << "This works #0" << std::endl;
     
         get_patch_on_one_edge_side(
             shifted_plus,
@@ -285,6 +292,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             patch_plus,
             left_image_64f
         );
+        std::cout << "This works #1" << std::endl;
     
         get_patch_on_one_edge_side(
             shifted_minus,
@@ -294,7 +302,8 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             patch_minus,
             left_image_64f
         );
-    
+        std::cout << "This works #2" << std::endl;
+
         cv::Mat patch_plus_32f, patch_minus_32f;
         if (patch_plus.type() != CV_32F) {
             patch_plus.convertTo(patch_plus_32f, CV_32F);
@@ -363,12 +372,12 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
         auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
 
-        cv::Mat patch_coord_x_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-        cv::Mat patch_coord_y_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
-        cv::Mat patch_coord_x_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-        cv::Mat patch_coord_y_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
         get_patch_on_one_edge_side(
@@ -379,6 +388,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             patch_plus,
             right_image_64f
         );
+        std::cout << "This works #3" << std::endl;
 
         get_patch_on_one_edge_side(
             shifted_minus,
@@ -388,6 +398,7 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             patch_minus,
             right_image_64f
         );
+        std::cout << "This works #4" << std::endl;
 
         cv::Mat patch_plus_32f, patch_minus_32f;
         if (patch_plus.type() != CV_32F) {
@@ -802,31 +813,33 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
                 auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
 
-                cv::Mat patch_coord_x_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-                cv::Mat patch_coord_y_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
                 cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
-                cv::Mat patch_coord_x_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
-                cv::Mat patch_coord_y_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
                 cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
                 get_patch_on_one_edge_side(
                     shifted_plus,
-                    cluster.center_edge.orientation,
+                    edge.orientation,
                     patch_coord_x_plus,
                     patch_coord_y_plus,
                     patch_plus,
                     secondary_image
                 );
+                std::cout << "This works #5" << std::endl;  
 
                 get_patch_on_one_edge_side(
                     shifted_minus,
-                    cluster.center_edge.orientation,
+                    edge.orientation,
                     patch_coord_x_minus,
                     patch_coord_y_minus,
                     patch_minus,
                     secondary_image
                 );
+                std::cout << "This works #6" << std::endl;
 
                 cv::Mat patch_plus_32f, patch_minus_32f;
                 if (patch_plus.type() != CV_32F) {
