@@ -34,7 +34,6 @@ class Utility
 {
 
 public:
-    //> Make the class shareable as a pointer
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
     typedef std::shared_ptr<Utility> Ptr;
 

@@ -1,6 +1,5 @@
 //> Macro definitions
 #define USE_GLOGS (false)
-
 #define USE_CPP17 (true)
 
 //> OpenMP settings
@@ -11,19 +10,18 @@
 #endif
 
 //> Stereo edge matching settings
-#define EPIP_TENGENCY_ORIENT_THRESH (12) //> in degrees
-#define EPIP_TENGENCY_PROXIM_THRESH (4)  //> in pixels
-#define MAX_DISPARITY (23.0063)          //> in pixels
-#define EDGE_CLUSTER_THRESH (0.3)        //> in pixels
-#define ORTHOGONAL_SHIFT_MAG (5)         //> in pixels
-#define PATCH_SIZE (7)                   //> in pixels
-#define HALF_PATCH_SIZE (PATCH_SIZE / 2) //> in pixels
-#define NCC_THRESH_FINAL_SCORE (0.1)     //> in [0, 1]
-#define MATCH_TOL (3)                    //> in pixels
-#define GT_SPATIAL_TOLERANCE (3)         //> in pixels
-#define EPIP_TANGENCY_DISPL_THRESH (3)   //> in pixels
-#define LOCATION_PERTURBATION (0.3)      //> in pixels
-#define ORIENT_PERTURBATION (0.174533)   //> in radians. 0.174533 is 10 degrees
+#define EPIP_TANGENCY_ORIENT_THRESH (12.0) //> in degrees
+#define MAX_DISP (23.0063)                 //> in pixels
+#define EDGE_CLUSTER_THRESH (0.3)          //> in pixels
+#define ORTHOGONAL_SHIFT_MAG (5.0)         //> in pixels
+#define PATCH_SIZE (7.0)                   //> in pixels
+#define HALF_PATCH_SIZE (PATCH_SIZE / 2.0) //> in pixels
+#define NCC_THRESH (0.1)                   //> in [0, 1]
+#define MATCH_TOL (3.0)                    //> in pixels
+#define GT_SPATIAL_TOL (3.0)               //> in pixels
+#define EPIP_TANGENCY_DISPL_THRESH (3.0)   //> in pixels
+#define LOCATION_PERTURBATION (0.3)        //> in pixels
+#define ORIENT_PERTURBATION (0.174533)     //> in radians. 0.174533 is 10 degrees
 
 #define MEASURE_TIMINGS (false)
 #define DISPLAY_STERO_EDGE_MATCHES (false)
