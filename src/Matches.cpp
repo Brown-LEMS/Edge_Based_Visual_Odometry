@@ -196,9 +196,9 @@ std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &va
     return clusters;
 }
 
-bool is_patch_in_bounds(const cv::Point2d& pt, int width, int height) {
-    return pt.x - HALF_PATCH_SIZE >= 0 && pt.x + HALF_PATCH_SIZE < width &&
-           pt.y - HALF_PATCH_SIZE >= 0 && pt.y + HALF_PATCH_SIZE < height;
+bool is_patch_in_bounds(const cv::Point2d& point, int image_width, int image_height) {
+    return (point.x >= HALF_PATCH_SIZE && point.x < image_width - HALF_PATCH_SIZE &&
+            point.y >= HALF_PATCH_SIZE && point.y < image_height - HALF_PATCH_SIZE);
 }
 
 std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel)
@@ -221,7 +221,7 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat
     for (int i = -HALF_PATCH_SIZE; i <= HALF_PATCH_SIZE; i++) {
         for (int j = -HALF_PATCH_SIZE; j <= HALF_PATCH_SIZE; j++) {
 
-            cv::Point2d rotated_point(cos(theta)*(i) - sin(theta)*(j) + shifted_point.x, sin(theta)*(i) + cos(theta)*(j) + shifted_point.y);
+            cv::Point2d rotated_point(cos(theta) * (i) - sin(theta) * (j) + shifted_point.x, sin(theta) * (i) + cos(theta) * (j) + shifted_point.y);
             patch_coord_x.at<double>(i + HALF_PATCH_SIZE, j + HALF_PATCH_SIZE) = rotated_point.x;
             patch_coord_y.at<double>(i + HALF_PATCH_SIZE, j + HALF_PATCH_SIZE) = rotated_point.y;
 
@@ -233,21 +233,22 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat
 
 StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset)
 {
-    size_t image_pair_index = 0;
-    ETH3DIterator* eth3d_iter = dynamic_cast<ETH3DIterator*>(dataset.stereo_iterator.get());
-    if (eth3d_iter) {
-        image_pair_index = eth3d_iter->getCurrentIndex();
-    }
-
     cv::Mat left_image_64f, right_image_64f;
     if (left_image.type() != CV_64F)
         left_image.convertTo(left_image_64f, CV_64F);
     else
         left_image_64f = left_image;
+    
     if (right_image.type() != CV_64F)
         right_image.convertTo(right_image_64f, CV_64F);
     else
         right_image_64f = right_image;
+
+    size_t image_pair_index = 0;
+    ETH3DIterator* eth3d_iter = dynamic_cast<ETH3DIterator*>(dataset.stereo_iterator.get());
+    if (eth3d_iter) {
+        image_pair_index = eth3d_iter->getCurrentIndex();
+    }
 
     ///////////////////////////////FORWARD DIRECTION///////////////////////////////
     std::vector<Edge> left_edges;
@@ -308,10 +309,17 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         if (patch_plus.type() != CV_32F) {
             patch_plus.convertTo(patch_plus_32f, CV_32F);
         }
+        else {
+            patch_plus_32f = patch_plus;
+        }
+        
         if (patch_minus.type() != CV_32F) {
             patch_minus.convertTo(patch_minus_32f, CV_32F);
         }
-    
+        else {
+            patch_minus_32f = patch_minus;
+        }
+
         filtered_left_edges.push_back(edge);
         if (!ground_truth_right_edges.empty()) {
             filtered_ground_truth_right_edges.push_back(ground_truth_right_edges[i]);
@@ -400,8 +408,15 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         if (patch_plus.type() != CV_32F) {
             patch_plus.convertTo(patch_plus_32f, CV_32F);
         }
+        else {
+            patch_plus_32f = patch_plus;
+        }
+
         if (patch_minus.type() != CV_32F) {
             patch_minus.convertTo(patch_minus_32f, CV_32F);
+        }
+        else {
+            patch_minus_32f = patch_minus;
         }
 
         filtered_right_edges.push_back(edge);
@@ -817,7 +832,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
                 get_patch_on_one_edge_side(
                     shifted_plus,
-                    edge.orientation,
+                    cluster.center_edge.orientation,
                     patch_coord_x_plus,
                     patch_coord_y_plus,
                     patch_plus,
@@ -826,7 +841,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
                 get_patch_on_one_edge_side(
                     shifted_minus,
-                    edge.orientation,
+                    cluster.center_edge.orientation,
                     patch_coord_x_minus,
                     patch_coord_y_minus,
                     patch_minus,
@@ -837,11 +852,19 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                 if (patch_plus.type() != CV_32F) {
                     patch_plus.convertTo(patch_plus_32f, CV_32F);
                 }
+                else {
+                    patch_plus_32f = patch_plus;
+                }
+
                 if (patch_minus.type() != CV_32F) {
                     patch_minus.convertTo(patch_minus_32f, CV_32F);
                 }
+                else {
+                    patch_minus_32f = patch_minus;
+                }
 
                 filtered_cluster_centers.push_back(cluster);
+
                 secondary_patch_set_one.push_back(patch_plus_32f);
                 secondary_patch_set_two.push_back(patch_minus_32f);
             }
