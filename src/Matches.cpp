@@ -722,7 +722,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
             Eigen::Vector3d eigen_primary_edge(primary_edge.location.x, primary_edge.location.y, primary_edge.orientation);
 
-            Eigen::MatrixXd eigen_secondary_edges(filtered_secondary_edge_coords.size(), 3);
+            Eigen::MatrixXd eigen_secondary_edges(filtered_secondary_edges.size(), 3);
             for (size_t i = 0; i < filtered_secondary_edges.size(); ++i)
             {
                 eigen_secondary_edges(i, 0) = filtered_secondary_edges[i].location.x;
@@ -737,7 +737,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             std::vector<Edge> shifted_secondary_edges;
             for (const auto& shifted_edge : shifted_edges) {
                 Edge e;
-                e.location = cv::Point2d(shifted_edge(0), shifted_edge(1)); //CONFIRM THAT WE'RE POPULATING THE LOCATION CORRECTLY >> THAT WE'RE NOT ACCIDENTALLY USING THE ORIENTATION
+                e.location = cv::Point2d(shifted_edge(0), shifted_edge(1));
                 e.orientation = shifted_edge(2);
                 e.b_isEmpty = false;
                 shifted_secondary_edges.push_back(e);
