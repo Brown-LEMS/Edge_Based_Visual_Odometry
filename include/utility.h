@@ -14,7 +14,6 @@
 #include <opencv2/xfeatures2d.hpp>
 #include <Eigen/Core>
 #include <Eigen/Dense>
-
 #include "definitions.h"
 #include "Frame.h"
 
@@ -50,7 +49,6 @@ public:
 template <typename T>
 double Bilinear_Interpolation(cv::Mat meshGrid, cv::Point2d P)
 {
-
     //> y2 Q12--------Q22
     //      |          |
     //      |    P     |

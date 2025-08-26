@@ -1,11 +1,14 @@
 #ifndef MATCHES_H
 #define MATCHES_H
+
 #include "definitions.h"
 #include "utility.h"
 #include "Dataset.h"
 
 class Dataset;
+
 struct StereoMatchResult;
+
 struct EdgeMatchResult;
 
 StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image,
@@ -65,12 +68,6 @@ void RecallUpdate(int &true_positive,
 void FormClusterCenters(
     std::vector<EdgeCluster> &cluster_centers,
     std::vector<std::vector<Edge>> &clusters);
-
-void EpipolarShiftFilter(
-    const Edge &primary_edge,
-    const std::vector<Edge> &filtered_edges,
-    std::vector<Edge> &shifted_edges,
-    const Eigen::Vector3d &epipolar_line);
 
 void FilterByNCC(
     const cv::Mat &primary_patch_one,

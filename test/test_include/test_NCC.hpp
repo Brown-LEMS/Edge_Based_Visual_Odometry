@@ -38,12 +38,11 @@ void get_patch_on_one_edge_side( cv::Point2d shifted_point, double theta, \
     int half_patch_size = floor(PATCH_SIZE / 2);
     for (int i = -half_patch_size; i <= half_patch_size; i++) {
         for (int j = -half_patch_size; j <= half_patch_size; j++) {
-            //> get the rotated coordinate
+
             cv::Point2d rotated_point(cos(theta)*(i) - sin(theta)*(j) + shifted_point.x, sin(theta)*(i) + cos(theta)*(j) + shifted_point.y);
             patch_coord_x.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.x;
             patch_coord_y.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
 
-            //> get the image intensity of the rotated coordinate
             double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
             patch_val.at<double>(i + half_patch_size, j + half_patch_size) = interp_val;
         }

@@ -379,29 +379,25 @@ void EBVO::ProcessEdges(const cv::Mat &image,
 
     if (std::filesystem::exists(path))
     {
-        // std::cout << "Loading edge data from: " << path << std::endl;
         ReadEdgesFromBinary(path, edges);
     }
     else
     {
-        // std::cout << "Running third-order edge detector..." << std::endl;
         toed->get_Third_Order_Edges(image);
         edges = toed->toed_edges;
 
         WriteEdgesToBinary(path, edges);
-        // std::cout << "Saved edge data to: " << path << std::endl;
     }
 }
 
 /*
     Pick a random edge
 */
-std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> EBVO::PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height)
+std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> EBVO::PickRandomEdges(const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height)
 {
     std::vector<cv::Point2d> valid_edges;
     std::vector<double> valid_orientations;
     std::vector<cv::Point2d> valid_ground_truth_edges;
-    int half_patch = patch_size / 2;
 
     if (edges.size() != orientations.size() || edges.size() != ground_truth_right_edges.size())
     {
@@ -411,8 +407,8 @@ std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2
     for (size_t i = 0; i < edges.size(); ++i)
     {
         const auto &edge = edges[i];
-        if (edge.x >= half_patch && edge.x < img_width - half_patch &&
-            edge.y >= half_patch && edge.y < img_height - half_patch)
+        if (edge.x >= HALF_PATCH_SIZE && edge.x < img_width - HALF_PATCH_SIZE &&
+            edge.y >= HALF_PATCH_SIZE && edge.y < img_height - HALF_PATCH_SIZE)
         {
             valid_edges.push_back(edge);
             valid_orientations.push_back(orientations[i]);

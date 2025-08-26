@@ -7,12 +7,10 @@
 #include <iostream>
 #include <string.h>
 #include <vector>
-
 #include <omp.h>
 #include <opencv2/opencv.hpp>
-
 #include "../include/toed/cpu_toed.hpp"
-#include "../include/definitions.h"
+#include "../../include/definitions.h"
 
 // ==============================================================================================================
 // Third-Order Edge Detection: This code is borrowed from https://github.com/C-H-Chien/Third-Order-Edge-Detector
@@ -522,24 +520,30 @@ int ThirdOrderEdgeDetectionCPU::non_maximum_suppresion()
     write_array_to_file("subpix_pos_y_map_cpu.txt", subpix_pos_y_map, interp_img_height, interp_img_width);
 #endif
 
-    //> construct edge maps: loop over the subpix_pos_x_map to push to an output list
-    cv::Point2d edge_location;
-    Edge edge;
-    edge_pt_list_idx = 0;
-    for (int i = 10; i < interp_img_height-10; i++)
+//> construct edge maps: loop over the subpix_pos_x_map to push to an output list
+cv::Point2d edge_location;
+Edge edge;
+edge_pt_list_idx = 0;
+for (int i = 10; i < interp_img_height - 10; i++)
+{
+    for (int j = 10; j < interp_img_width - 10; j++)
     {
-        for (int j = 10; j < interp_img_width-10; j++)
+        if (subpix_pos_x_map(i, j) != 0)
         {
-            if (subpix_pos_x_map(i, j) != 0)
+            // -- compute subpixel locations first --
+            double x = (subpix_pos_x_map(i, j) - 1) / 2.0;
+            double y = (subpix_pos_y_map(i, j) - 1) / 2.0;
+
+            //> constrain edge location to be away from image boundary
+            if (x > EDGE_IMAGE_MARGIN && y > EDGE_IMAGE_MARGIN && x < img_width - EDGE_IMAGE_MARGIN && y < img_height - EDGE_IMAGE_MARGIN)
             {
-                // -- store all necessary information of final edges --
                 // -- 1) subpixel location x --
-                subpix_edge_pts_final(edge_pt_list_idx, 0) = (subpix_pos_x_map(i, j) - 1) / 2;
-                // TOED_edges(edge_pt_list_idx, 0) = (subpix_pos_x_map(i, j)-1) / 2;
+                subpix_edge_pts_final(edge_pt_list_idx, 0) = x;
+                // TOED_edges(edge_pt_list_idx, 0) = x;
 
                 // -- 2) subpixel location y --
-                subpix_edge_pts_final(edge_pt_list_idx, 1) = (subpix_pos_y_map(i, j) - 1) / 2;
-                // TOED_edges(edge_pt_list_idx, 1) = (subpix_pos_y_map(i, j)-1) / 2;
+                subpix_edge_pts_final(edge_pt_list_idx, 1) = y;
+                // TOED_edges(edge_pt_list_idx, 1) = y;
 
                 // -- 3) orientation of subpixel --
                 subpix_edge_pts_final(edge_pt_list_idx, 2) = I_orient(i, j);
@@ -550,8 +554,8 @@ int ThirdOrderEdgeDetectionCPU::non_maximum_suppresion()
                 // TOED_edges(edge_pt_list_idx, 3) = subpix_grad_mag_map(i, j);
 
                 //> returning the structure used by the odometry
-                edge_location.x = subpix_edge_pts_final(edge_pt_list_idx, 0);
-                edge_location.y = subpix_edge_pts_final(edge_pt_list_idx, 1);
+                edge_location.x = x;
+                edge_location.y = y;
 
                 edge.location = edge_location;
                 edge.orientation = subpix_edge_pts_final(edge_pt_list_idx, 2);
@@ -561,12 +565,10 @@ int ThirdOrderEdgeDetectionCPU::non_maximum_suppresion()
                 // -- 5) add up the edge point list index --
                 edge_pt_list_idx++;
             }
-            else
-            {
-                continue;
-            }
         }
     }
+}
+
 
 #if WriteDataToFile
     write_array_to_file("data_final_output_cpu.txt", subpix_edge_pts_final, edge_pt_list_idx, num_of_edge_data);

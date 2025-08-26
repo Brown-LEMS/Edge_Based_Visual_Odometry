@@ -4,7 +4,6 @@
 /*
     calculate the epipolar line for each edge point using the fundamental matrix.
 */
-
 std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges)
 {
     std::vector<Eigen::Vector3d> epipolar_lines;
@@ -33,9 +32,9 @@ double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::V
 }
 
 double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection) {
-	double a_edgeH2 = tan(edge(2)); //tan(theta2)
+	double a_edgeH2 = tan(edge(2)); 
 	double b_edgeH2 = -1;
-	double c_edgeH2 = -(a_edgeH2 * edge(0) - edge(1)); //−(a⋅x2−y2)
+	double c_edgeH2 = -(a_edgeH2 * edge(0) - edge(1));
 
 	double a1_line = Epip_Line_Coeffs(0);
 	double b1_line = Epip_Line_Coeffs(1);
@@ -47,13 +46,12 @@ double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eige
 	return sqrt((x_intersection - edge(0)) * (x_intersection - edge(0)) + (y_intersection - edge(1)) * (y_intersection - edge(1)));
 }
 
-//> MARK: Perform Epipolar Shift
 std::vector<Eigen::Vector3d> PerformEpipolarShift(
     const Eigen::Vector3d& edge1,
     const Eigen::MatrixXd& edge2,
     const Eigen::Vector3d& epip_coeffs)
 {
-    std::vector<Eigen::Vector3d> shifted_edges;
+    std::vector<Eigen::Vector3d> corrected_edges;
 
 for (int i = 0; i < edge2.rows(); i++)
 {
@@ -110,10 +108,10 @@ for (int i = 0; i < edge2.rows(); i++)
         }
     }
 
-            shifted_edges.emplace_back(corrected_x, corrected_y, corrected_theta);
+            corrected_edges.emplace_back(corrected_x, corrected_y, corrected_theta);
 }
 
-    return shifted_edges;
+    return corrected_edges;
 }
 
 /*
@@ -123,11 +121,6 @@ for (int i = 0; i < edge2.rows(); i++)
 std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold)
 {
     std::vector<Edge> extracted_edges;
-
-    // if (edges.size() != edge_orientations.size())
-    // {
-    //     throw std::runtime_error("Edge locations and orientations size mismatch.");
-    // }
 
     for (size_t i = 0; i < edges.size(); ++i)
     {
@@ -209,7 +202,7 @@ std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edg
 }
 
 void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat img) 
-{
+{   
     int half_patch_size = floor(PATCH_SIZE / 2);
     
     for (int i = -half_patch_size; i <= half_patch_size; i++) {
@@ -218,16 +211,9 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat
             cv::Point2d rotated_point(cos(theta)*(i) - sin(theta)*(j) + shifted_point.x, sin(theta)*(i) + cos(theta)*(j) + shifted_point.y);
             patch_coord_x.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.x;
             patch_coord_y.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
-            // Check if the rotated point is within image bounds
-            if (rotated_point.x < 0 || rotated_point.x >= img.cols ||
-                rotated_point.y < 0 || rotated_point.y >= img.rows) {
-                std::cerr << "Warning: Rotated point (" << rotated_point.x << ", " << rotated_point.y
-                          << ") is out of image bounds (" << img.cols << " x " << img.rows << ")." << std::endl;
-            }
 
             double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
             patch_val.at<double>(i + half_patch_size, j + half_patch_size) = interp_val;
-            std::cout << "Patch Value: " << patch_val.at<double>(i + half_patch_size, j + half_patch_size) << std::endl;
         }
     }
 }
@@ -266,9 +252,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
     std::vector<cv::Mat> left_patch_set_one;
     std::vector<cv::Mat> left_patch_set_two;
-
-    int left_img_width  = left_image_64f.cols;
-    int left_img_height = left_image_64f.rows;
     
     for (size_t i = 0; i < left_edges.size(); ++i) {
         const Edge &edge = left_edges[i];
@@ -282,7 +265,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
         cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        std::cout << "This works #0" << std::endl;
     
         get_patch_on_one_edge_side(
             shifted_plus,
@@ -292,7 +274,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             patch_plus,
             left_image_64f
         );
-        std::cout << "This works #1" << std::endl;
     
         get_patch_on_one_edge_side(
             shifted_minus,
@@ -302,7 +283,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             patch_minus,
             left_image_64f
         );
-        std::cout << "This works #2" << std::endl;
 
         cv::Mat patch_plus_32f, patch_minus_32f;
         if (patch_plus.type() != CV_32F) {
@@ -364,9 +344,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
     std::vector<cv::Mat> right_patch_set_one;
     std::vector<cv::Mat> right_patch_set_two;
 
-    int right_img_width  = right_image_64f.cols;
-    int right_img_height = right_image_64f.rows;
-
     for (size_t i = 0; i < reverse_primary_edges.size(); ++i) {
         const Edge& edge = reverse_primary_edges[i];
 
@@ -388,7 +365,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             patch_plus,
             right_image_64f
         );
-        std::cout << "This works #3" << std::endl;
 
         get_patch_on_one_edge_side(
             shifted_minus,
@@ -398,7 +374,6 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
             patch_minus,
             right_image_64f
         );
-        std::cout << "This works #4" << std::endl;
 
         cv::Mat patch_plus_32f, patch_minus_32f;
         if (patch_plus.type() != CV_32F) {
@@ -513,7 +488,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges, int image_pair_index, bool forward_direction)
 {
     auto total_start = std::chrono::high_resolution_clock::now();
-    // bunch of counts
+
     std::vector<int> epi_input_counts;
     std::vector<int> epi_output_counts;
 
@@ -805,9 +780,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             std::vector<cv::Mat> secondary_patch_set_one;
             std::vector<cv::Mat> secondary_patch_set_two;
 
-            int secondary_img_width  = secondary_image.cols;
-            int secondary_img_height = secondary_image.rows;
-
             for (const auto& cluster : cluster_centers) {
                 Edge edge = cluster.center_edge;
 
@@ -829,7 +801,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                     patch_plus,
                     secondary_image
                 );
-                std::cout << "This works #5" << std::endl;  
 
                 get_patch_on_one_edge_side(
                     shifted_minus,
@@ -839,7 +810,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                     patch_minus,
                     secondary_image
                 );
-                std::cout << "This works #6" << std::endl;
 
                 cv::Mat patch_plus_32f, patch_minus_32f;
                 if (patch_plus.type() != CV_32F) {
@@ -1087,15 +1057,18 @@ bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epip
 
     double a1_line = -a / b;
     double b1_line = -1;
+
     double m_epipolar = -a1_line / b1_line;
     double angle_diff_rad = abs(primary_edge.orientation - atan(m_epipolar));
     double angle_diff_deg = angle_diff_rad * (180.0 / M_PI);
+
     if (angle_diff_deg > 180)
     {
         angle_diff_deg -= 180;
     }
 
     bool primary_passes_tangency = (abs(angle_diff_deg - 0) > EPIP_TANGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TANGENCY_ORIENT_THRESH) ? (true) : (false);
+
     return primary_passes_tangency;
 }
 
@@ -1285,6 +1258,7 @@ void FilterByNCC(
 {
     int ncc_precision_numerator = 0;
     bool ncc_match_found = false;
+    
     if (!primary_patch_one.empty() && !primary_patch_two.empty() &&
         !secondary_patch_set_one.empty() && !secondary_patch_set_two.empty())
     {
