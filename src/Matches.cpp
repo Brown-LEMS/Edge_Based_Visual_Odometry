@@ -196,11 +196,6 @@ std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &va
     return clusters;
 }
 
-bool is_patch_in_bounds(const cv::Point2d& point, int image_width, int image_height) {
-    return (point.x >= HALF_PATCH_SIZE && point.x < image_width - HALF_PATCH_SIZE &&
-            point.y >= HALF_PATCH_SIZE && point.y < image_height - HALF_PATCH_SIZE);
-}
-
 std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel)
 {
     double shifted_x1 = edgel.location.x + ORTHOGONAL_SHIFT_MAG * (std::sin(edgel.orientation));
@@ -216,17 +211,17 @@ std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edg
 
 void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat img) 
 {
-    CV_Assert(img.type() == CV_64F);
+    int half_patch_size = floor(PATCH_SIZE / 2);
 
-    for (int i = -HALF_PATCH_SIZE; i <= HALF_PATCH_SIZE; i++) {
-        for (int j = -HALF_PATCH_SIZE; j <= HALF_PATCH_SIZE; j++) {
+    for (int i = -half_patch_size; i <= half_patch_size; i++) {
+        for (int j = -half_patch_size; j <= half_patch_size; j++) {
 
-            cv::Point2d rotated_point(cos(theta) * (i) - sin(theta) * (j) + shifted_point.x, sin(theta) * (i) + cos(theta) * (j) + shifted_point.y);
-            patch_coord_x.at<double>(i + HALF_PATCH_SIZE, j + HALF_PATCH_SIZE) = rotated_point.x;
-            patch_coord_y.at<double>(i + HALF_PATCH_SIZE, j + HALF_PATCH_SIZE) = rotated_point.y;
+        cv::Point2d rotated_point(cos(theta)*(i) - sin(theta)*(j) + shifted_point.x, sin(theta)*(i) + cos(theta)*(j) + shifted_point.y);
+        patch_coord_x.at<int>(i + half_patch_size, j + half_patch_size) = rotated_point.x;
+        patch_coord_y.at<int>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
 
-            double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
-            patch_val.at<double>(i + HALF_PATCH_SIZE, j + HALF_PATCH_SIZE) = interp_val;
+        double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
+        patch_val.at<double>(i + half_patch_size, j + half_patch_size) = interp_val;
         }
     }
 }
@@ -274,17 +269,12 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
         auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
 
-        if (!is_patch_in_bounds(shifted_plus, left_img_width, left_img_height) ||
-            !is_patch_in_bounds(shifted_minus, left_img_width, left_img_height)) {
-            continue;
-        }
-
-        cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_x_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
     
-        cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_x_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
     
         get_patch_on_one_edge_side(
@@ -373,17 +363,12 @@ StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right
 
         auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
 
-        if (!is_patch_in_bounds(shifted_plus, right_img_width, right_img_height) ||
-            !is_patch_in_bounds(shifted_minus, right_img_width, right_img_height)) {
-            continue;
-        }
-
-        cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_x_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-    
-        cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+
+        cv::Mat patch_coord_x_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+        cv::Mat patch_coord_y_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
         cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
         get_patch_on_one_edge_side(
@@ -817,17 +802,12 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
                 auto [shifted_plus, shifted_minus] = get_Orthogonal_Shifted_Points(edge);
 
-                if (!is_patch_in_bounds(shifted_plus, secondary_img_width, secondary_img_height) ||
-                    !is_patch_in_bounds(shifted_minus, secondary_img_width, secondary_img_height)) {
-                    continue;
-                }
-
-                cv::Mat patch_coord_x_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-                cv::Mat patch_coord_y_plus  = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_x_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_y_plus  = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
                 cv::Mat patch_plus          = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
-                cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-                cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_x_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
+                cv::Mat patch_coord_y_minus = cv::Mat_<int>(PATCH_SIZE, PATCH_SIZE);
                 cv::Mat patch_minus         = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
                 get_patch_on_one_edge_side(
