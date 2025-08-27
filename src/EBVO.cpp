@@ -43,6 +43,7 @@ void EBVO::PerformEdgeBasedVO()
 
     std::vector<RecallMetrics> all_forward_recall_metrics;
     std::vector<BidirectionalMetrics> all_bct_metrics;
+    std::vector<std::vector<double>> all_edge_to_epi_distances;
 
     dataset.load_dataset(dataset.get_dataset_type(), left_ref_disparity_maps, num_pairs);
 
@@ -251,6 +252,8 @@ void EBVO::PerformEdgeBasedVO()
             right_undistorted,
             dataset);
 
+        all_edge_to_epi_distances.push_back(match_result.forward_match.edge_to_epi_distances);
+
         // Print recall and precision for each stage using metrics from match_result
         const RecallMetrics& recall = match_result.forward_match.recall_metrics;
         const BidirectionalMetrics& bct = match_result.bidirectional_metrics;
@@ -270,7 +273,7 @@ void EBVO::PerformEdgeBasedVO()
         std::cout << "[BCT] Recall: " << bct.per_image_bct_recall
                   << " | Precision: " << bct.per_image_bct_precision << std::endl;
 
-        WriteEdgeMatchResult(
+        WriteEdgeMatchResultToCSV(
             match_result,
             max_disparity_values,
             per_image_avg_before_epi,
@@ -368,6 +371,35 @@ void EBVO::PerformEdgeBasedVO()
         }
         current_frame = next_frame;
     }
+
+    WriteEpiDistancesToCSV(all_edge_to_epi_distances);
+}
+
+void EBVO::WriteEpiDistancesToCSV(const std::vector<std::vector<double>> &all_edge_to_epi_distances)
+{
+    std::string output_dir = dataset.get_output_path() + "/figure_stats";
+    std::filesystem::create_directories(output_dir);
+    std::string full_path = output_dir + "/edge_to_epi_distances.csv";
+    std::ofstream csv(full_path);
+    
+    if (!csv.is_open()) {
+        std::cerr << "[WARNING] Failed to open CSV file for writing: " << full_path << std::endl;
+        return;
+    }
+
+    csv << "veridical_edge_to_epi_distance\n";
+    for (const auto &distances : all_edge_to_epi_distances) {
+        for (const auto &distance : distances) {
+            csv << distance << "\n";
+            if (!csv) {
+                std::cerr << "[WARNING] Error occurred while writing to CSV file." << std::endl;
+                csv.close();
+                return;
+            }
+        }
+    }
+
+    csv.close();
 }
 
 void EBVO::ProcessEdges(const cv::Mat &image,
@@ -517,7 +549,7 @@ void EBVO::WriteEdgesToBinary(const std::string &filepath,
     ofs.write(reinterpret_cast<const char *>(edges.data()), sizeof(Edge) * size);
 }
 
-void EBVO::WriteEdgeMatchResult(StereoMatchResult &match_result,
+void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
                                 std::vector<double> &max_disparity_values,
                                 std::vector<double> &per_image_avg_before_epi,
                                 std::vector<double> &per_image_avg_after_epi,

@@ -33,7 +33,7 @@ std::vector<Eigen::Vector3d> PerformEpipolarShift(
 
 std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
 
-std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold);
+std::vector<std::pair<Edge, double>> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold);
 
 std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges);
 
@@ -45,10 +45,11 @@ bool FilterByEpipolarDistance(
     int &epi_true_negative,
     double &per_edge_epi_precision,
     int &epi_edges_evaluated,
-    const std::vector<Edge> &secondary_edges,
-    const std::vector<Edge> &test_secondary_edges,
+    const std::vector<std::pair<Edge, double>> &secondary_edges,
+    const std::vector<std::pair<Edge, double>> &test_secondary_edges,
     cv::Point2d &ground_truth_edge,
-    double threshold);
+    double threshold,
+    std::vector<double> &passing_distances);
 
 void FilterByDisparity(
     std::vector<Edge> &filtered_secondary_edges,

@@ -131,9 +131,9 @@ struct RecallMetrics
 struct EdgeMatchResult
 {
     RecallMetrics recall_metrics;
+    std::vector<double> edge_to_epi_distances;
     std::vector<std::pair<Edge, EdgeMatch>> edge_to_cluster_matches;
 };
-
 struct BidirectionalMetrics
 {
     int matches_before_bct;

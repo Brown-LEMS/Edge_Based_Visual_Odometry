@@ -24,6 +24,8 @@ public:
     // Main function to perform edge-based visual odometry
     void PerformEdgeBasedVO();
 
+    void WriteEpiDistancesToCSV(const std::vector<std::vector<double>> &all_edge_to_epi_distances);
+
     void ProcessEdges(const cv::Mat &image,
                       const std::string &filepath,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
@@ -36,8 +38,8 @@ public:
 
     void WriteEdgesToBinary(const std::string &filepath,
                             const std::vector<Edge> &edges);
-                            
-    void WriteEdgeMatchResult(StereoMatchResult &match_result,
+
+    void WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
                               std::vector<double> &max_disparity_values,
                               std::vector<double> &per_image_avg_before_epi,
                               std::vector<double> &per_image_avg_after_epi,

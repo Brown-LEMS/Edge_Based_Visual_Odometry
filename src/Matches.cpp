@@ -118,9 +118,9 @@ for (int i = 0; i < edge2.rows(); i++)
     Extract edges that are close to the epipolar line within a specified distance threshold.
     Returns a pair of vectors: one for the extracted edge locations and one for their orientations.
 */
-std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold)
+std::vector<std::pair<Edge, double>> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold)
 {
-    std::vector<Edge> extracted_edges;
+    std::vector<std::pair<Edge, double>> extracted_edges;
 
     for (size_t i = 0; i < edges.size(); ++i)
     {
@@ -128,11 +128,12 @@ std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, con
         double x = edge.location.x;
         double y = edge.location.y;
 
-        double distance = std::abs(epipolar_line(0) * x + epipolar_line(1) * y + epipolar_line(2)) / std::sqrt((epipolar_line(0) * epipolar_line(0)) + (epipolar_line(1) * epipolar_line(1)));
+        double distance = std::abs(epipolar_line(0) * x + epipolar_line(1) * y + epipolar_line(2)) /
+                          std::sqrt((epipolar_line(0) * epipolar_line(0)) + (epipolar_line(1) * epipolar_line(1)));
 
         if (distance < distance_threshold)
         {
-            extracted_edges.push_back(edge);
+            extracted_edges.emplace_back(edge, distance);
         }
     }
 
@@ -539,6 +540,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     //> CH: Local structures for GT right edge after Lowe's ratio test
     std::vector<std::vector<cv::Point2d>> local_GT_right_edges_after_lowe(omp_get_max_threads());
 
+    // Store ground truth to epipolar line distances for analysis
+    std::vector<std::vector<double>> all_passing_distances;
+
     int time_epi_edges_evaluated = 0;
     int time_disp_edges_evaluated = 0;
     int time_shift_edges_evaluated = 0;
@@ -627,15 +631,14 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
         for (size_t i = 0; i < selected_primary_edges.size(); i += skip)
         {
             const auto &primary_edge = selected_primary_edges[i];
+            const auto &epipolar_line = epipolar_lines_secondary[i];
+            const auto &primary_patch_one = primary_patch_set_one[i];
+            const auto &primary_patch_two = primary_patch_set_two[i];
 
             if (!selected_ground_truth_edges.empty())
             {
                 ground_truth_edge = selected_ground_truth_edges[i];
             }
-
-            const auto &epipolar_line = epipolar_lines_secondary[i];
-            const auto &primary_patch_one = primary_patch_set_one[i];
-            const auto &primary_patch_two = primary_patch_set_two[i];
 
             if (!CheckEpipolarTangency(primary_edge, epipolar_line))
             {
@@ -646,8 +649,15 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 #if MEASURE_TIMINGS
             auto start_epi = std::chrono::high_resolution_clock::now();
 #endif
-            std::vector<Edge> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 0.5);
-            std::vector<Edge> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 3);
+            auto secondary_candidates_pairs = ExtractEpipolarEdges(epipolar_line, secondary_edges, 100);
+            std::vector<Edge> secondary_candidate_edges;
+            secondary_candidate_edges.reserve(secondary_candidates_pairs.size());
+            for (const auto& pair : secondary_candidates_pairs) secondary_candidate_edges.push_back(pair.first);
+
+            auto test_secondary_candidates_pairs = ExtractEpipolarEdges(epipolar_line, secondary_edges, 3);
+            std::vector<Edge> test_secondary_candidate_edges;
+            test_secondary_candidate_edges.reserve(test_secondary_candidates_pairs.size());
+            for (const auto& pair : test_secondary_candidates_pairs) test_secondary_candidate_edges.push_back(pair.first);
 
             local_epi_input_counts[thread_id].push_back(secondary_edges.size());
 
@@ -660,31 +670,34 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD RECALL//////////////////////////
             if (!selected_ground_truth_edges.empty())
             {
+                std::vector<double> passing_distances;
                 if (FilterByEpipolarDistance(
                         epi_true_positive, epi_false_negative, epi_true_negative, per_edge_epi_precision, epi_edges_evaluated,
-                        secondary_candidates_data, test_secondary_candidates_data, ground_truth_edge,
-                        0.5
+                        secondary_candidates_pairs, test_secondary_candidates_pairs, ground_truth_edge,
+                        0.5,
+                        passing_distances
                         ))
                     continue;
+                    all_passing_distances.push_back(passing_distances);
             }
             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
             auto start_disp = std::chrono::high_resolution_clock::now();
 #endif
 
-            // epi_output_counts.push_back(secondary_candidates_data.size());
-            local_epi_output_counts[thread_id].push_back(secondary_candidates_data.size());
+            // epi_output_counts.push_back(secondary_candidate_edges.size());
+            local_epi_output_counts[thread_id].push_back(secondary_candidate_edges.size());
 
             std::vector<Edge> filtered_secondary_edges;
 
-            FilterByDisparity(
+            FilterByDisparity(  
                 filtered_secondary_edges,
-                secondary_candidates_data,
+                secondary_candidate_edges,
                 !selected_ground_truth_edges.empty(),
                 primary_edge);
 
-            // disp_input_counts.push_back(secondary_candidates_data.size());
-            local_disp_input_counts[thread_id].push_back(secondary_candidates_data.size());
+            // disp_input_counts.push_back(secondary_candidate_edges.size());
+            local_disp_input_counts[thread_id].push_back(secondary_candidate_edges.size());
 
 #if MEASURE_TIMINGS
             time_disp_edges_evaluated++;
@@ -1005,6 +1018,12 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
         dataset.ground_truth_right_edges_after_lowe.insert(dataset.ground_truth_right_edges_after_lowe.end(), local_GT_right_edges_stack.begin(), local_GT_right_edges_stack.end());
     }
 
+    // Flatten all_passing_distances into a single vector
+    std::vector<double> edge_to_epi_distances;
+    for (const auto& vector : all_passing_distances) {
+        edge_to_epi_distances.insert(edge_to_epi_distances.end(), vector.begin(), vector.end());
+    }
+
     return EdgeMatchResult{
         RecallMetrics{
             epi_distance_recall,
@@ -1043,7 +1062,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             per_image_ncc_time,
             per_image_lowe_time,
             per_image_total_time},
-        final_matches};
+        edge_to_epi_distances,
+        final_matches
+    };
 }
 
 bool CheckEpipolarTangency(const Edge &primary_edge, const Eigen::Vector3d &epipolar_line)
@@ -1078,23 +1099,38 @@ bool FilterByEpipolarDistance(
     int &epi_true_negative,
     double &per_edge_epi_precision,
     int &epi_edges_evaluated,
-    const std::vector<Edge> &secondary_edges,
-    const std::vector<Edge> &test_secondary_edges,
+    const std::vector<std::pair<Edge, double>> &secondary_edges,
+    const std::vector<std::pair<Edge, double>> &test_secondary_edges,
     cv::Point2d &ground_truth_edge,
-    double threshold)
+    double threshold,
+    std::vector<double> &passing_distances)
 {
     int epi_precision_numerator = 0;
     bool match_found = false;
+
+    passing_distances.clear();
+
+    double min_distance = std::numeric_limits<double>::max();
+    double min_value = 0.0;
+
     for (const auto &candidate : secondary_edges)
     {
-        if (cv::norm(candidate.location - ground_truth_edge) <= threshold)
+        double dist = cv::norm(candidate.first.location - ground_truth_edge);
+
+        if (dist <= threshold)
         {
+            if (dist < min_distance) {
+                min_distance = dist;
+                min_value = candidate.second;
+            }
+            
             epi_precision_numerator++;
             match_found = true;
         }
     }
     if (match_found)
     {
+        passing_distances.push_back(min_value);
         epi_true_positive++;
     }
     else
@@ -1102,7 +1138,7 @@ bool FilterByEpipolarDistance(
         bool gt_match_found = false;
         for (const auto &test_candidate : test_secondary_edges)
         {
-            if (cv::norm(test_candidate.location - ground_truth_edge) <= threshold)
+            if (cv::norm(test_candidate.first.location - ground_truth_edge) <= threshold)
             {
                 gt_match_found = true;
                 break;
