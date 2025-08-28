@@ -511,6 +511,8 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     std::vector<int> lowe_input_counts;
     std::vector<int> lowe_output_counts;
 
+    std::vector<std::vector<double>> all_passing_distances;
+
     double total_time;
 
     //> CH: this is a global structure of final_matches
@@ -540,8 +542,8 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     //> CH: Local structures for GT right edge after Lowe's ratio test
     std::vector<std::vector<cv::Point2d>> local_GT_right_edges_after_lowe(omp_get_max_threads());
 
-    // Store ground truth to epipolar line distances for analysis
-    std::vector<std::vector<double>> all_passing_distances;
+    //> SLL: Local structure for veridical right edge to epipolar line distances
+    std::vector<std::vector<std::vector<double>>> local_all_passing_distances(omp_get_max_threads());
 
     int time_epi_edges_evaluated = 0;
     int time_disp_edges_evaluated = 0;
@@ -678,7 +680,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                         passing_distances
                         ))
                     continue;
-                    all_passing_distances.push_back(passing_distances);
+                    local_all_passing_distances[thread_id].push_back(passing_distances);
             }
             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD//////////////////////////
 #if MEASURE_TIMINGS
@@ -1012,10 +1014,13 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
         lowe_input_counts.insert(lowe_input_counts.end(), local_counts.begin(), local_counts.end());
     for (const auto &local_counts : local_lowe_output_counts)
         lowe_output_counts.insert(lowe_output_counts.end(), local_counts.begin(), local_counts.end());
-
     for (const auto &local_GT_right_edges_stack : local_GT_right_edges_after_lowe)
     {
         dataset.ground_truth_right_edges_after_lowe.insert(dataset.ground_truth_right_edges_after_lowe.end(), local_GT_right_edges_stack.begin(), local_GT_right_edges_stack.end());
+    }
+    for (const auto &local_counts : local_all_passing_distances)
+    {
+        all_passing_distances.insert(all_passing_distances.end(), local_counts.begin(), local_counts.end());
     }
 
     // Flatten all_passing_distances into a single vector
