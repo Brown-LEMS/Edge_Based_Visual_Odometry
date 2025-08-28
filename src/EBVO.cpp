@@ -477,43 +477,53 @@ void EBVO::CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &d
 {
     dataset.forward_gt_data.clear();
 
+    // Collect valid disparities
+    std::vector<double> valid_disparities;
+    for (const Edge &e : edges)
+    {
+        double disparity = Bilinear_Interpolation(disparity_map, e.location);
+        if (std::isnan(disparity) || std::isinf(disparity))
+        {
+            continue;
+        }
+        cv::Point2d right_edge(e.location.x - disparity, e.location.y);
+        dataset.forward_gt_data.emplace_back(e.location, right_edge, e.orientation);
+        valid_disparities.push_back(disparity);
+    }
+
+    StoreValidDisparitiesToCSV(valid_disparities);
+}
+
+// Store valid disparity values in CSV files inside the 'figure_stats' directory, splitting files if needed
+void EBVO::StoreValidDisparitiesToCSV(const std::vector<double>& disparities)
+{
     static size_t total_rows_written = 0;
     static int file_index = 1;
     static std::ofstream csv_file;
     static const size_t max_rows_per_file = 1'000'000;
 
+    std::string output_dir = dataset.get_output_path() + "/figure_stats";
+    std::filesystem::create_directories(output_dir);
+
     if (!csv_file.is_open())
     {
-        std::string filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
+        std::string filename = output_dir + "/valid_disparity_vals_" + std::to_string(file_index) + ".csv";
         csv_file.open(filename, std::ios::out);
     }
 
-    for (const Edge &e : edges)
+    for (const double& disparity : disparities)
     {
-        double disparity = Bilinear_Interpolation(disparity_map, e.location);
-
-        if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
-        {
-            continue;
-        }
-
-        cv::Point2d right_edge(e.location.x - disparity, e.location.y);
-
-        dataset.forward_gt_data.emplace_back(e.location, right_edge, e.orientation);
-
         if (total_rows_written >= max_rows_per_file)
         {
             csv_file.close();
             ++file_index;
             total_rows_written = 0;
-            std::string next_filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
+            std::string next_filename = output_dir + "/valid_disparity_vals_" + std::to_string(file_index) + ".csv";
             csv_file.open(next_filename, std::ios::out);
         }
-
         csv_file << disparity << "\n";
         ++total_rows_written;
     }
-
     csv_file.flush();
 }
 

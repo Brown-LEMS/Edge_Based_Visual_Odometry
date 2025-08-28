@@ -651,7 +651,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 #if MEASURE_TIMINGS
             auto start_epi = std::chrono::high_resolution_clock::now();
 #endif
-            auto secondary_candidates_pairs = ExtractEpipolarEdges(epipolar_line, secondary_edges, 100);
+            auto secondary_candidates_pairs = ExtractEpipolarEdges(epipolar_line, secondary_edges, 0.5);
             std::vector<Edge> secondary_candidate_edges;
             secondary_candidate_edges.reserve(secondary_candidates_pairs.size());
             for (const auto& pair : secondary_candidates_pairs) secondary_candidate_edges.push_back(pair.first);

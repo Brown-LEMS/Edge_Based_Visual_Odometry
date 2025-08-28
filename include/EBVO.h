@@ -33,6 +33,8 @@ public:
 
     void CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image);
 
+    void StoreValidDisparitiesToCSV(const std::vector<double>& disparities);
+
     void ReadEdgesFromBinary(const std::string &filepath,
                              std::vector<Edge> &edges);
 
