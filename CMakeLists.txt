@@ -1,5 +1,9 @@
 CMAKE_MINIMUM_REQUIRED( VERSION 3.10 )
-cmake_policy(SET CMP0167 NEW)
+
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+
 message(STATUS "CMake version: ${CMAKE_VERSION}")
 
 set(CMAKE_CXX_STANDARD "17")

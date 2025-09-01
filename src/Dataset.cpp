@@ -196,7 +196,7 @@ void Dataset::write_ncc_vals_to_files( int img_index ) {
 }
 
 void Dataset::PerformEdgeBasedVO() {
-    int num_pairs = 3;
+    int num_pairs = 2;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs; 
     std::vector<cv::Mat> left_ref_disparity_maps;
     std::vector<double> max_disparity_values;
@@ -1112,35 +1112,39 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
 
     std::ofstream veridical_csv;
     std::ofstream nonveridical_csv;
+    std::ofstream epi_distance_csv;
     
     if (forward_direction) {
         std::filesystem::path ncc_dir = output_path;
         ncc_dir /= "ncc_stats";
+
+        std::string ncc_header = ",left_x,left_y,left_theta,"
+                                 "right_x,right_y,right_theta,"
+                                 "gt_right_x,gt_right_y,"
+                                 "epipolar_a,epipolar_b,epipolar_c,"
+                                 "ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
     
-        std::filesystem::create_directories(ncc_dir);
+        veridical_csv = OpenCsvFile(ncc_dir,
+            "image_pair_" + std::to_string(image_pair_index) + "_veridical_edges.csv",
+            ncc_header);
     
-        std::filesystem::path veridical_path = ncc_dir / ("image_pair_" + std::to_string(image_pair_index) + "_veridical_edges.csv");
-        std::filesystem::path nonveridical_path = ncc_dir / ("image_pair_" + std::to_string(image_pair_index) + "_nonveridical_edges.csv");
+        nonveridical_csv = OpenCsvFile(ncc_dir,
+            "image_pair_" + std::to_string(image_pair_index) + "_nonveridical_edges.csv",
+            ncc_header);
+
+        std::filesystem::path epi_dir = output_path;
+        epi_dir /= "epi_distance_stats";
+
+        std::string epi_header = "left_edge_index,"
+        "left_x,left_y,left_theta,"
+        "right_x,right_y,right_theta,"
+        "epipolar_a,epipolar_b,epipolar_c,"
+        "epipolar_distance\n";
     
-        veridical_csv.open(veridical_path.string());
-        nonveridical_csv.open(nonveridical_path.string());
-    
-        if (!veridical_csv || !nonveridical_csv) {
-            std::cerr << "WARNING: Failed to open CSV files for writing.\n" << std::endl;
-        }
-    
-        veridical_csv << ",left_x,left_y,left_theta,"
-                      << "right_x,right_y,right_theta,"
-                      << "gt_right_x,gt_right_y,"
-                      << "epipolar_a,epipolar_b,epipolar_c,"
-                      << "ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
-    
-        nonveridical_csv << ",left_x,left_y,left_theta,"
-                         << "right_x,right_y,right_theta,"
-                         << "gt_right_x,gt_right_y,"
-                         << "epipolar_a,epipolar_b,epipolar_c,"
-                         << "ncc1,ncc2,ncc3,ncc4,score1,score2,final_score\n";
-    }           
+        epi_distance_csv = OpenCsvFile(epi_dir,
+            "image_pair_" + std::to_string(image_pair_index) + "_epipolar_distances.csv",
+            epi_header);
+    }         
 
 #pragma omp parallel
 {
@@ -1190,12 +1194,11 @@ EdgeMatchResult Dataset::CalculateMatches(const std::vector<cv::Point2d>& select
         auto start_epi = std::chrono::high_resolution_clock::now();
 #endif
 
-        std::pair<std::vector<cv::Point2d>, std::vector<double>> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edge_coords, secondary_edge_orientations, 0.5);
-        std::vector<cv::Point2d> secondary_candidate_edges = secondary_candidates_data.first;
-        std::vector<double> secondary_candidate_orientations = secondary_candidates_data.second;
+        auto [secondary_candidate_edges, secondary_candidate_orientations, secondary_candidate_distances] =
+            ExtractEpipolarEdges(epipolar_line, secondary_edge_coords, secondary_edge_orientations, 0.5);
 
-        std::pair<std::vector<cv::Point2d>, std::vector<double>> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edge_coords, secondary_edge_orientations, 3);
-        std::vector<cv::Point2d> test_secondary_candidate_edges = test_secondary_candidates_data.first;
+        auto [test_secondary_candidate_edges, test_secondary_candidate_orientations, test_secondary_candidate_distances] =
+            ExtractEpipolarEdges(epipolar_line, secondary_edge_coords, secondary_edge_orientations, 3.0);
 
         local_epi_input_counts[thread_id].push_back(secondary_edge_coords.size());
 
@@ -1972,9 +1975,10 @@ std::vector<std::pair<std::vector<cv::Point2d>, std::vector<double>>> Dataset::C
     return clusters;
 }
 
-std::pair<std::vector<cv::Point2d>, std::vector<double>>Dataset::ExtractEpipolarEdges(const Eigen::Vector3d& epipolar_line, const std::vector<cv::Point2d>& edge_locations, const std::vector<double>& edge_orientations, double distance_threshold) {
+std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<double>> Dataset::ExtractEpipolarEdges(const Eigen::Vector3d& epipolar_line, const std::vector<cv::Point2d>& edge_locations, const std::vector<double>& edge_orientations, double distance_threshold) {
    std::vector<cv::Point2d> extracted_edges;
    std::vector<double> extracted_orientations;
+   std::vector<double> extracted_distances;
 
    if (edge_locations.size() != edge_orientations.size()) {
        throw std::runtime_error("Edge locations and orientations size mismatch.");
@@ -1991,10 +1995,11 @@ std::pair<std::vector<cv::Point2d>, std::vector<double>>Dataset::ExtractEpipolar
        if (distance < distance_threshold) {
            extracted_edges.push_back(edge);
            extracted_orientations.push_back(edge_orientations[i]);
+           extracted_distances.push_back(distance);
        }
    }
 
-   return {extracted_edges, extracted_orientations};
+   return {extracted_edges, extracted_orientations, extracted_distances};
 }
 
 std::vector<Eigen::Vector3d> Dataset::CalculateEpipolarLine(const Eigen::Matrix3d& fund_mat, const std::vector<cv::Point2d>& edges) {
@@ -2611,6 +2616,25 @@ void Dataset::onMouse(int event, int x, int y, int, void*) {
                     cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
         cv::imshow("Edge Matching Using NCC & Bidirectional Consistency", display);
     }
+}
+
+std::ofstream Dataset::OpenCsvFile(
+    const std::filesystem::path& directory,
+    const std::string& filename,
+    const std::string& header
+) {
+    std::filesystem::create_directories(directory);
+
+    std::filesystem::path filepath = directory / filename;
+
+    std::ofstream csv_file(filepath.string());
+    if (!csv_file) {
+        std::cerr << "WARNING: Failed to open CSV file: " << filepath << std::endl;
+        return {};
+    }
+
+    csv_file << header;
+    return csv_file;
 }
 
 #endif

@@ -4,9 +4,9 @@
 
 //> OpenMP settings
 #define ACTIVATE_OPENCV_SUPPORT         (true)
-#define USE_DEFINED_NUM_OF_CORES        (false)
+#define USE_DEFINED_NUM_OF_CORES        (true)
 #if USE_DEFINED_NUM_OF_CORES
-#define USE_NUM_CORES_FOR_OMP           (8)
+#define USE_NUM_CORES_FOR_OMP           (1)
 #endif
 
 //> Stereo edge matching settings
