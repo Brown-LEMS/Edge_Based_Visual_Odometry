@@ -11,20 +11,38 @@ struct StereoMatchResult;
 
 struct EdgeMatchResult;
 
-StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image,
+struct RecallPrecision {
+    double recall;
+    double precision;
+};
+
+StereoMatchResult GetStereoEdgePairs(const cv::Mat &left_image, const cv::Mat &right_image,
                                  Dataset &dataset);
 
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges = std::vector<cv::Point2d>(), int image_pair_index = -1, bool forward_direction = true);
 
-std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel);
+static cv::Mat Ensure64F(const cv::Mat& img);
 
-void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat image);
+static size_t GetImagePairIndex(const Dataset& dataset);    
 
-double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y);
+static BidirectionalMetrics PerformBCT(
+    const EdgeMatchResult& forward_match,
+    const EdgeMatchResult& reverse_match,
+    const Dataset& dataset,
+    std::vector<std::pair<Edge, Edge>>& confirmed_matches
+);
 
-double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection);
+std::pair<cv::Point2d, cv::Point2d> GetOrthogonalShiftedPoints(const Edge edgel);
+
+RecallPrecision ComputeRecallAndPrecision(int true_positive, int false_negative, int edges_evaluated, double per_edge_precision);
+
+void GetPatchForEdge(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat image);
+
+double GetNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y);
+
+double GetTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection);
 
 std::vector<Eigen::Vector3d> PerformEpipolarShift(
                                                 const Eigen::Vector3d& edge1,

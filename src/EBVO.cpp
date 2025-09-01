@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <unordered_set>
+
 #include "EBVO.h"
 #include "Dataset.h"
 #include "Matches.h"
@@ -7,14 +8,15 @@
 
 EBVO::EBVO(YAML::Node config_map, bool use_GCC_filter) : dataset(config_map, use_GCC_filter) {}
 
+/*
+    The main processing function that performs edge-based visual odometry on a sequence of stereo image pairs.
+    It loads images, detects edges, matches them, and evaluates the matching performance.
+*/
 void EBVO::PerformEdgeBasedVO()
 {
-    // The main processing function that performs edge-based visual odometry on a sequence of stereo image pairs.
-    // It loads images, detects edges, matches them, and evaluates the matching performance.
     int num_pairs = 100000;
     std::vector<std::pair<cv::Mat, cv::Mat>> image_pairs;
     std::vector<cv::Mat> left_ref_disparity_maps;
-    // std::vector<cv::Mat> right_ref_disparity_maps;
     std::vector<double> max_disparity_values;
 
     std::vector<double> per_image_avg_before_epi;
@@ -65,7 +67,6 @@ void EBVO::PerformEdgeBasedVO()
     cv::Mat left_calib_inv = left_calib.inv();
     cv::Mat right_calib_inv = right_calib.inv();
 
-    // Get the first frame from the dataset
     if (!dataset.stereo_iterator->hasNext() ||
         !dataset.stereo_iterator->getNext(current_frame))
     {
@@ -83,25 +84,8 @@ void EBVO::PerformEdgeBasedVO()
 
         const cv::Mat &curr_left_img = current_frame.left_image;
         const cv::Mat &curr_right_img = current_frame.right_image;
-        // const cv::Mat &next_left_img = next_frame.left_image;
-        // const cv::Mat &next_right_img = next_frame.right_image;
 
         const cv::Mat &left_ref_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
-
-        // std::vector<cv::Mat> curr_left_pyramid, curr_right_pyramid;
-        // std::vector<cv::Mat> next_left_pyramid, next_right_pyramid;
-        // int pyramid_levels = 4;
-
-        // BuildImagePyramids(
-        //     curr_left_img,
-        //     curr_right_img,
-        //     next_left_img,
-        //     next_right_img,
-        //     pyramid_levels,
-        //     curr_left_pyramid,
-        //     curr_right_pyramid,
-        //     next_left_pyramid,
-        //     next_right_pyramid);
 
         dataset.ncc_one_vs_err.clear();
         dataset.ncc_two_vs_err.clear();
@@ -160,101 +144,15 @@ void EBVO::PerformEdgeBasedVO()
         }
 
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
-        // CalculateGTLeftEdge(right_third_order_edges_locations, right_third_order_edges_orientation, right_ref_map, left_edge_map, right_edge_map);
-        // if (dataset.has_gt())
-        // {
-        //     int indices[9] = {657, 10000, 10350, 20300, 30200, 35006, 40000, 46741};
-        //     std::vector<Edge> gt_edges;
-        //     std::vector<std::pair<Edge, Edge>> left_edges_GT_pair;
-        //     for (int i = 0; i < 9; ++i)
-        //     {
-        //         int index = indices[i];
-        //         std::cout << "Index: " << index << std::endl;
-        //         // Get the ground truth edge for the left image
-        //         Edge GTEdge = GetGTEdge(true, current_frame, next_frame,
-        //                                 left_ref_map, left_calib_inv, left_calib,
-        //                                 dataset.left_edges[index]);
-        //         if ( GTEdge.b_isEmpty )
-        //             continue;
-        //         else 
-        //         {
-        //             left_edges_GT_pair.push_back(std::make_pair(dataset.left_edges[index], GTEdge));
-        //             gt_edges.push_back(GTEdge);
-        //         }
-        //     }
 
-        //     for (int i = 0; i < left_edges_GT_pair.size(); i++)
-        //     {
-        //         cv::Point2d left_edge_t0 = left_edges_GT_pair[i].first.location;
-        //         cv::Point2d left_edge_t1 = left_edges_GT_pair[i].second.location;
-        //         // std::cout << "[" << left_edge_t0.x << ", " << left_edge_t0.y << "] - [" << left_edge_t1.x << ", " << left_edge_t1.y << "]" << std::endl;
-        //     }
-
-        //     cv::Mat current_frame_vis;
-        //     cv::cvtColor(curr_left_img, current_frame_vis, cv::COLOR_GRAY2BGR);
-
-        //     // Different colors for different selected points
-        //     std::vector<cv::Scalar> colors = {
-        //         cv::Scalar(0, 0, 255),   // Red
-        //         cv::Scalar(0, 255, 0),   // Green
-        //         cv::Scalar(255, 0, 0),   // Blue
-        //         cv::Scalar(0, 255, 255), // Yellow
-        //         cv::Scalar(255, 0, 255), // Magenta
-        //         cv::Scalar(255, 255, 0), // Cyan
-        //         cv::Scalar(128, 0, 128), // Purple
-        //         cv::Scalar(255, 165, 0), // Orange
-        //         cv::Scalar(255, 20, 147) // Deep Pink
-        //     };
-
-        //     for (int i = 0; i < 9; ++i)
-        //     {
-        //         int index = indices[i];
-        //         if (index < dataset.left_edges.size())
-        //         {
-        //             cv::Point2d pt = dataset.left_edges[index].location;
-        //             cv::circle(current_frame_vis, pt, 8, colors[i], -1);
-        //             cv::putText(current_frame_vis, std::to_string(i),
-        //                         cv::Point(pt.x + 10, pt.y - 10),
-        //                         cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
-        //         }
-        //     }
-
-        //     // Draw GT edges on next frame
-        //     cv::Mat next_frame_vis;
-        //     cv::cvtColor(next_left_img, next_frame_vis, cv::COLOR_GRAY2BGR);
-
-        //     for (int i = 0; i < gt_edges.size(); ++i)
-        //     {
-        //         cv::Point2d gt_pt = gt_edges[i].location;
-        //         // Check if point is within image bounds
-        //         if (gt_pt.x >= 0 && gt_pt.x < next_frame_vis.cols &&
-        //             gt_pt.y >= 0 && gt_pt.y < next_frame_vis.rows)
-        //         {
-        //             cv::circle(next_frame_vis, gt_pt, 8, colors[i], -1);
-        //             cv::putText(next_frame_vis, std::to_string(i),
-        //                         cv::Point(gt_pt.x + 10, gt_pt.y - 10),
-        //                         cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
-        //         }
-        //     }
-
-        //     // Save visualization images
-        //     std::string output_dir = dataset.get_output_path();
-        //     cv::imwrite(output_dir + "/current_frame_selected_edges_" + std::to_string(frame_idx) + ".png",
-        //                 current_frame_vis);
-        //     cv::imwrite(output_dir + "/next_frame_gt_edges_" + std::to_string(frame_idx) + ".png",
-        //                 next_frame_vis);
-
-        //     std::cout << "Saved edge tracking visualization for frame " << frame_idx << std::endl;
-        // }
-
-        StereoMatchResult match_result = DisplayMatches(
+        StereoMatchResult match_result = GetStereoEdgePairs(
             left_undistorted,
             right_undistorted,
             dataset);
 
         all_edge_to_epi_distances.push_back(match_result.forward_match.edge_to_epi_distances);
 
-        // Print recall and precision for each stage using metrics from match_result
+        // CH: Print recall and precision for each stage using metrics from match_result
         const RecallMetrics& recall = match_result.forward_match.recall_metrics;
         const BidirectionalMetrics& bct = match_result.bidirectional_metrics;
         std::cout << std::fixed << std::setprecision(4);
@@ -375,6 +273,9 @@ void EBVO::PerformEdgeBasedVO()
     WriteEpiDistancesToCSV(all_edge_to_epi_distances);
 }
 
+/*
+   Write the epipolar distances to a CSV file.
+*/
 void EBVO::WriteEpiDistancesToCSV(const std::vector<std::vector<double>> &all_edge_to_epi_distances)
 {
     std::string output_dir = dataset.get_output_path() + "/figure_stats";
@@ -387,7 +288,6 @@ void EBVO::WriteEpiDistancesToCSV(const std::vector<std::vector<double>> &all_ed
         return;
     }
 
-    csv << "veridical_edge_to_epi_distance\n";
     for (const auto &distances : all_edge_to_epi_distances) {
         for (const auto &distance : distances) {
             csv << distance << "\n";
@@ -402,6 +302,9 @@ void EBVO::WriteEpiDistancesToCSV(const std::vector<std::vector<double>> &all_ed
     csv.close();
 }
 
+/*
+   Process the edges for a given image.
+*/
 void EBVO::ProcessEdges(const cv::Mat &image,
                         const std::string &filepath,
                         std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
@@ -423,7 +326,7 @@ void EBVO::ProcessEdges(const cv::Mat &image,
 }
 
 /*
-    Pick a random edge
+   Pick random edges from the valid edges.
 */
 std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> EBVO::PickRandomEdges(const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height)
 {
@@ -473,11 +376,13 @@ std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2
     return {selected_points, selected_orientations, selected_ground_truth_points};
 }
 
+/*
+   Calculate the ground truth right edge for each edge in the left image.
+*/
 void EBVO::CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
 {
     dataset.forward_gt_data.clear();
 
-    // Collect valid disparities
     std::vector<double> valid_disparities;
     for (const Edge &e : edges)
     {
@@ -494,7 +399,9 @@ void EBVO::CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &d
     StoreValidDisparitiesToCSV(valid_disparities);
 }
 
-// Store valid disparity values in CSV files inside the 'figure_stats' directory, splitting files if needed
+/*
+   Store valid disparity values in CSV files inside the 'figure_stats' directory, splitting files if needed
+*/
 void EBVO::StoreValidDisparitiesToCSV(const std::vector<double>& disparities)
 {
     static size_t total_rows_written = 0;
@@ -527,6 +434,9 @@ void EBVO::StoreValidDisparitiesToCSV(const std::vector<double>& disparities)
     csv_file.flush();
 }
 
+/*
+   Read edges from a binary file.
+*/
 void EBVO::ReadEdgesFromBinary(const std::string &filepath,
                                std::vector<Edge> &edges)
 {
@@ -544,6 +454,9 @@ void EBVO::ReadEdgesFromBinary(const std::string &filepath,
     ifs.read(reinterpret_cast<char *>(edges.data()), sizeof(Edge) * size);
 }
 
+/*
+   Write edges to a binary file.
+*/
 void EBVO::WriteEdgesToBinary(const std::string &filepath,
                               const std::vector<Edge> &edges)
 {
@@ -559,6 +472,9 @@ void EBVO::WriteEdgesToBinary(const std::string &filepath,
     ofs.write(reinterpret_cast<const char *>(edges.data()), sizeof(Edge) * size);
 }
 
+/*
+   Write the edge match result to a CSV file.
+*/
 void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
                                 std::vector<double> &max_disparity_values,
                                 std::vector<double> &per_image_avg_before_epi,
@@ -986,6 +902,9 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
                   << std::fixed << std::setprecision(4) << avg_bct_precision * 100 << "\n";
 }
 
+/*
+   Get the ground truth edge for a given edge.
+*/
 Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_frame,
                      const cv::Mat &disparity_map, const cv::Mat &K_inverse, const cv::Mat &K,
                      const Edge &edge)
@@ -994,13 +913,12 @@ Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_fr
     if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
     {
         std::cout << "Invalid disparity value: " << disparity << " for edge at location: " << edge.location << std::endl;
-        return Edge(); // Return an empty edge if disparity is invalid
+        return Edge(); 
     }
 
     double rho = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
     double rho_1 = (rho < 0.0) ? (-rho) : (rho);
 
-    // Convert cv::Mat to Eigen::Matrix3d
     Eigen::Matrix3d K_inverse_eigen, K_eigen;
     cv::cv2eigen(K_inverse, K_inverse_eigen);
     cv::cv2eigen(K, K_eigen);

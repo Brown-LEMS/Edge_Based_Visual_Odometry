@@ -10,7 +10,7 @@
 #endif
 
 //> TOED settings
-#define EDGE_IMAGE_MARGIN (15)            //> in pixels
+#define EDGE_IMAGE_MARGIN (15)             //> in pixels
 
 //> Stereo edge matching settings
 #define EPIP_TANGENCY_ORIENT_THRESH (12.0) //> in degrees

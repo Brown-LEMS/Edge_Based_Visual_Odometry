@@ -1,9 +1,9 @@
 #ifndef EBVO_H
 #define EBVO_H
 
+#include <yaml-cpp/yaml.h>
 #include "Dataset.h"
 #include "utility.h"
-#include <yaml-cpp/yaml.h>
 
 // =======================================================================================================
 // EBVO: Main structure of LEMS Edge-Based Visual Odometry
@@ -21,7 +21,6 @@ class EBVO
 public:
     EBVO(YAML::Node config_map, bool use_GCC_filter = false);
 
-    // Main function to perform edge-based visual odometry
     void PerformEdgeBasedVO();
 
     void WriteEpiDistancesToCSV(const std::vector<std::vector<double>> &all_edge_to_epi_distances);
