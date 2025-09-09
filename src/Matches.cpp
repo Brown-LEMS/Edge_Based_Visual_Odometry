@@ -1,7 +1,6 @@
 #include <iomanip>
 #include "Matches.h"
 
-
 /*
     Calculate the epipolar line for each edge point using the fundamental matrix.
 */
@@ -56,72 +55,64 @@ double GetTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eige
 /*
    Perform epipolar shift for a pair of edges.
 */
-std::vector<Eigen::Vector3d> PerformEpipolarShift(
-    const Eigen::Vector3d& edge1,
-    const Eigen::MatrixXd& edge2,
-    const Eigen::Vector3d& epip_coeffs)
+Edge PerformEpipolarShift(
+    Edge original_edge,
+    const Eigen::Vector3d epipolar_line_coeffs, bool &b_pass_epipolar_tengency_check, Utility util)
 {
-    std::vector<Eigen::Vector3d> corrected_edges;
-
-for (int i = 0; i < edge2.rows(); i++)
-{
-    Eigen::Vector3d xy1_H2(edge2(i, 0), edge2(i, 1), 1.0);
-
+    Eigen::Vector3d xy1_edge( original_edge.location.x, original_edge.location.y, 1.0 );
     double corrected_x, corrected_y, corrected_theta;
     double epiline_x, epiline_y;
 
-    double normal_distance_epiline = GetNormalDistance2EpipolarLine(epip_coeffs, xy1_H2, epiline_x, epiline_y);
-
-    if (normal_distance_epiline < LOCATION_PERTURBATION)
+    if ( util.getNormalDistance2EpipolarLine( epipolar_line_coeffs, xy1_edge, epiline_x, epiline_y ) < LOCATION_PERTURBATION )
     {
-        corrected_x = epiline_x;
-        corrected_y = epiline_y;
-        corrected_theta = edge2(i, 2);
+        //> If normal distance is small, move directly to the epipolar line
+        cv::Point2d corrected_edge_loc(epiline_x, epiline_y);
+        b_pass_epipolar_tengency_check = true;
+        return Edge{corrected_edge_loc, original_edge.orientation, false};
     }
     else
     {
         double x_intersection, y_intersection;
-        Eigen::Vector3d isolated_H2(edge2(i, 0), edge2(i, 1), edge2(i, 2));
-        double dist_diff_edg2 = GetTangentialDistance2EpipolarLine(epip_coeffs, isolated_H2, x_intersection, y_intersection);
+        Eigen::Vector3d isolated_edge( original_edge.location.x, original_edge.location.y, original_edge.orientation );
 
-        double theta = edge2(i, 2);
-
-        if (dist_diff_edg2 < EPIP_TANGENCY_DISPL_THRESH)
+        //> Inner two cases: 
+        if ( util.getTangentialDistance2EpipolarLine( epipolar_line_coeffs, isolated_edge, x_intersection, y_intersection ) < EPIP_TANGENCY_DISPL_THRESH ) 
         {
-            corrected_x = x_intersection;
-            corrected_y = y_intersection;
-            corrected_theta = theta;
+            //> (i) if the displacement after epipolar shift is less than EPIP_TANGENCY_DISPL_THRESH, then feel free to shift it along its direction vector
+            cv::Point2d corrected_edge_loc(x_intersection, y_intersection);
+            b_pass_epipolar_tengency_check = true;
+            return Edge{corrected_edge_loc, original_edge.orientation, false};
         }
         else
         {
-            double p_theta = epip_coeffs(0) * cos(theta) + epip_coeffs(1) * sin(theta);
-            double derivative_p_theta = -epip_coeffs(0) * sin(theta) + epip_coeffs(1) * cos(theta);
+            //> (ii) if not, then perturb the edge orientation first before shifting the edge along its direction vector
+            // double p_theta = a1_line * cos(theta) + b1_line * sin(theta);
+            // double derivative_p_theta = -a1_line * sin(theta) + b1_line * cos(theta);
+            double theta = original_edge.orientation;
+            double p_theta = epipolar_line_coeffs(0) * cos(theta) + epipolar_line_coeffs(1) * sin(theta);
+            double derivative_p_theta = -epipolar_line_coeffs(0) * sin(theta) + epipolar_line_coeffs(1) * cos(theta);
 
+            //> Decide how theta should be perturbed by observing the signs of p_theta and derivative_p_theta
             if (p_theta > 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
-		    else if (p_theta < 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
-		    else if (p_theta > 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
-		    else if (p_theta < 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
+            else if (p_theta < 0 && derivative_p_theta < 0) theta -= ORIENT_PERTURBATION;
+            else if (p_theta > 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
+            else if (p_theta < 0 && derivative_p_theta > 0) theta += ORIENT_PERTURBATION;
 
-            Eigen::Vector3d isolated_H2_(edge2(i, 0), edge2(i, 1), theta);
-            dist_diff_edg2 = GetTangentialDistance2EpipolarLine(epip_coeffs, isolated_H2_, x_intersection, y_intersection);
-
-            if (dist_diff_edg2 < EPIP_TANGENCY_DISPL_THRESH)
+            //> Calculate the intersection between the tangent and epipolar line
+            Eigen::Vector3d isolated_edge_( original_edge.location.x, original_edge.location.y, theta );
+            if ( util.getTangentialDistance2EpipolarLine( epipolar_line_coeffs, isolated_edge_, x_intersection, y_intersection ) < EPIP_TANGENCY_DISPL_THRESH ) 
             {
-                corrected_x = x_intersection;
-                corrected_y = y_intersection;
-                corrected_theta = theta;
-            }
-            else
+                cv::Point2d corrected_edge_loc(x_intersection, y_intersection);
+                b_pass_epipolar_tengency_check = true;
+                return Edge{corrected_edge_loc, theta, false};
+            } 
+            else 
             {
-                continue;
+                b_pass_epipolar_tengency_check = false;
+                return Edge{original_edge.location, original_edge.orientation, false};
             }
         }
     }
-
-            corrected_edges.emplace_back(corrected_x, corrected_y, corrected_theta);
-}
-
-    return corrected_edges;
 }
 
 /*
@@ -155,47 +146,53 @@ std::vector<std::pair<Edge, double>> ExtractEpipolarEdges(const Eigen::Vector3d 
     one for the edge points and one for their corresponding orientations.
     The clustering is based on a distance threshold and an orientation difference threshold.
 */
-std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges)
+std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges)
 {
-    std::vector<std::vector<Edge>> clusters;
+    EdgeClusterer edge_cluster_engine( valid_shifted_edges );
+    edge_cluster_engine.performClustering( );
 
-    if (valid_shifted_edges.empty())
-    {
-        return clusters;
-    }
+    std::vector<Edge> clustered_edges = edge_cluster_engine.Epip_Correct_Edges;
+    const int Num_Of_Clusters = edge_cluster_engine.Num_Of_Clusters;
+    std::vector<int> cluster_labels = edge_cluster_engine.cluster_labels;
 
-    std::sort(valid_shifted_edges.begin(), valid_shifted_edges.end(),
-              [](const Edge &a, const Edge &b)
-              {
-                  return a.location.x < b.location.x;
-              });
-
-    std::vector<Edge> current_cluster;
-    current_cluster.push_back(valid_shifted_edges[0]);
-
-    for (size_t i = 1; i < valid_shifted_edges.size(); ++i)
-    {
-        double distance = cv::norm(valid_shifted_edges[i].location - valid_shifted_edges[i - 1].location);
-        double orientation_difference = std::abs(valid_shifted_edges[i].orientation - valid_shifted_edges[i - 1].orientation);
-
-        if (distance <= EDGE_CLUSTER_THRESH && orientation_difference < 5.0)
-        {
-            current_cluster.push_back(valid_shifted_edges[i]);
-        }
-        else
-        {
-            clusters.emplace_back(current_cluster);
-            current_cluster.clear();
-            current_cluster.push_back(valid_shifted_edges[i]);
+    //> Renumbering the cluster labels into 0, 1, 2, etc for each epipolar shifted edge
+    std::vector<int> renumbered_cluster_labels = cluster_labels;
+    std::vector<int> unique_cluster_labels = find_Unique_Sorted_Numbers( cluster_labels );
+    for (int i = 0; i < unique_cluster_labels.size(); i++) {
+        for (int j = 0; j < cluster_labels.size(); j++) {
+            if (cluster_labels[j] == unique_cluster_labels[i]) {
+                renumbered_cluster_labels[j] = i;
+            }
         }
     }
 
-    if (!current_cluster.empty())
+    //> Construct contributing edges for each cluster
+    std::vector<std::vector<Edge>> edges_in_clusters;
+    edges_in_clusters.resize(Num_Of_Clusters);
+    for (int i = 0; i < renumbered_cluster_labels.size(); i++)
     {
-        clusters.emplace_back(current_cluster);
+        edges_in_clusters[ renumbered_cluster_labels[i] ].push_back(valid_shifted_edges[i]);
     }
 
-    return clusters;
+    //> Construct cluster structure
+    std::vector<EdgeCluster> cluster_centers;
+    cluster_centers.resize(Num_Of_Clusters);
+    for (int i = 0; i < Num_Of_Clusters; i++) 
+    {
+        for (int j = 0; j < renumbered_cluster_labels.size(); j++)
+        {
+            if (renumbered_cluster_labels[j] == i)
+            {
+                EdgeCluster cluster;
+                cluster.center_edge = clustered_edges[j];
+                cluster.contributing_edges = edges_in_clusters[renumbered_cluster_labels[j]];
+                cluster_centers[i] = cluster;
+                break;
+            }
+        }
+    }
+
+    return cluster_centers;
 }
 
 /*
@@ -326,6 +323,8 @@ static BidirectionalMetrics PerformBCT(
 */
 StereoMatchResult GetStereoEdgePairs(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset)
 {
+    Utility util{};
+
     cv::Mat left_image_64f = Ensure64F(left_image);
     cv::Mat right_image_64f = Ensure64F(right_image);
     size_t image_pair_index = GetImagePairIndex(dataset);
@@ -517,6 +516,8 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges, int image_pair_index, bool forward_direction)
 {
+    Utility util{};
+
     //> CH: Start timing
     auto total_start = std::chrono::high_resolution_clock::now();
 
@@ -597,6 +598,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     double per_edge_disp_precision = 0.0;
     double per_edge_shift_precision = 0.0;
     double per_edge_clust_precision = 0.0;
+    double per_edge_patch_precision = 0.0;
     double per_edge_ncc_precision = 0.0;
     double per_edge_lowe_precision = 0.0;
     int epi_true_positive = 0;
@@ -609,6 +611,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     int cluster_true_positive = 0;
     int cluster_false_negative = 0;
     int cluster_true_negative = 0;
+    int patch_true_positive = 0;
+    int patch_false_negative = 0;
+    int patch_edges_evaluated = 0;
     int ncc_true_positive = 0;
     int ncc_false_negative = 0;
     int lowe_true_positive = 0;
@@ -617,6 +622,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     int disp_edges_evaluated = 0;
     int shift_edges_evaluated = 0;
     int clust_edges_evaluated = 0;
+    int patch_edges_evaluated_local = 0;
     int ncc_edges_evaluated = 0;
     int lowe_edges_evaluated = 0;
 
@@ -752,28 +758,8 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
             local_disp_output_counts[thread_id].push_back(filtered_secondary_edges.size());
 
-            Eigen::Vector3d eigen_primary_edge(primary_edge.location.x, primary_edge.location.y, primary_edge.orientation);
-
-            Eigen::MatrixXd eigen_secondary_edges(filtered_secondary_edges.size(), 3);
-            for (size_t i = 0; i < filtered_secondary_edges.size(); ++i)
-            {
-                eigen_secondary_edges(i, 0) = filtered_secondary_edges[i].location.x;
-                eigen_secondary_edges(i, 1) = filtered_secondary_edges[i].location.y;
-                eigen_secondary_edges(i, 2) = filtered_secondary_edges[i].orientation;
-            }
-
-            Eigen::Vector3d epip_coeffs(epipolar_line(0), epipolar_line(1), epipolar_line(2));
-
-            std::vector<Eigen::Vector3d> shifted_edges = PerformEpipolarShift(eigen_primary_edge, eigen_secondary_edges, epip_coeffs);
-
             std::vector<Edge> shifted_secondary_edges;
-            for (const auto& shifted_edge : shifted_edges) {
-                Edge e;
-                e.location = cv::Point2d(shifted_edge(0), shifted_edge(1));
-                e.orientation = shifted_edge(2);
-                e.b_isEmpty = false;
-                shifted_secondary_edges.push_back(e);
-            }
+            EpipolarShiftFilter(filtered_secondary_edges, shifted_secondary_edges, epipolar_line, util);
 
             local_shift_input_counts[thread_id].push_back(filtered_secondary_edges.size());
 
@@ -798,9 +784,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 
             local_shift_output_counts[thread_id].push_back(shifted_secondary_edges.size());
 
-            std::vector<std::vector<Edge>> clusters = ClusterEpipolarShiftedEdges(shifted_secondary_edges); 
-            std::vector<EdgeCluster> cluster_centers;
-            FormClusterCenters(cluster_centers, clusters);
+            std::vector<EdgeCluster> cluster_centers = ClusterEpipolarShiftedEdges(shifted_secondary_edges);
 
             local_clust_input_counts[thread_id].push_back(shifted_secondary_edges.size());
 
@@ -818,11 +802,24 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                              GT_SPATIAL_TOL);
             }
 
+
             ///////////////////////////////EXTRACT PATCHES THRESHOLD////////////////////////////////////////////
 #if MEASURE_TIMINGS
             auto start_patch = std::chrono::high_resolution_clock::now();
 #endif
             local_clust_output_counts[thread_id].push_back(cluster_centers.size());
+
+            if (!selected_ground_truth_edges.empty()) {
+                RecallUpdate(
+                    patch_true_positive,
+                    patch_false_negative,
+                    patch_edges_evaluated,
+                    per_edge_patch_precision,
+                    cluster_centers,
+                    ground_truth_edge,
+                    GT_SPATIAL_TOL
+                );
+            }
 
             std::vector<EdgeCluster> filtered_cluster_centers;
             std::vector<cv::Mat> secondary_patch_set_one;
@@ -955,6 +952,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     total_time = std::chrono::duration<double, std::milli>(total_end - total_start).count();
 #endif
 
+
     RecallPrecision epi_metrics = ComputeRecallAndPrecision(epi_true_positive, epi_false_negative, epi_edges_evaluated, per_edge_epi_precision);
     double epi_distance_recall = epi_metrics.recall;
     double per_image_epi_precision = epi_metrics.precision;
@@ -970,6 +968,10 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
     RecallPrecision clust_metrics = ComputeRecallAndPrecision(cluster_true_positive, cluster_false_negative, clust_edges_evaluated, per_edge_clust_precision);
     double epi_cluster_recall = clust_metrics.recall;
     double per_image_clust_precision = clust_metrics.precision;
+
+    RecallPrecision patch_metrics = ComputeRecallAndPrecision(patch_true_positive, patch_false_negative, patch_edges_evaluated, per_edge_patch_precision);
+    double patch_recall = patch_metrics.recall;
+    double per_image_patch_precision_metric = patch_metrics.precision;
 
     RecallPrecision ncc_metrics = ComputeRecallAndPrecision(ncc_true_positive, ncc_false_negative, ncc_edges_evaluated, per_edge_ncc_precision);
     double ncc_recall = ncc_metrics.recall;
@@ -1035,6 +1037,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             max_disparity_recall,
             epi_shift_recall,
             epi_cluster_recall,
+            patch_recall,
             ncc_recall,
             lowe_recall,
             epi_input_counts,
@@ -1055,6 +1058,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             per_image_disp_precision,
             per_image_shift_precision,
             per_image_clust_precision,
+            per_image_patch_precision_metric,
             per_image_ncc_precision,
             per_image_lowe_precision,
             lowe_true_positive,
@@ -1070,6 +1074,28 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
         edge_to_epi_distances,
         final_matches
     };
+}
+
+/*
+    Apply epipolar shift filtering to the given edges.
+*/
+void EpipolarShiftFilter(
+    const std::vector<Edge> &filtered_edges,
+    std::vector<Edge> &shifted_edges,
+    const Eigen::Vector3d &epipolar_line,
+    Utility util)
+{
+
+    for (size_t j = 0; j < filtered_edges.size(); j++)
+    {
+        bool b_secondary_passes_tangency = false;
+
+        Edge shifted_edge = PerformEpipolarShift(filtered_edges[j], epipolar_line, b_secondary_passes_tangency, util);
+        if (b_secondary_passes_tangency)
+        {
+            shifted_edges.push_back(shifted_edge);
+        }
+    }
 }
 
 /*
@@ -1329,21 +1355,126 @@ void FilterByNCC(
 {
     int ncc_precision_numerator = 0;
     bool ncc_match_found = false;
+    int rotated_ncc_fail_count = 0;
     
+
     if (!primary_patch_one.empty() && !primary_patch_two.empty() &&
         !secondary_patch_set_one.empty() && !secondary_patch_set_two.empty())
     {
-
         for (size_t i = 0; i < filtered_cluster_centers.size(); ++i)
         {
-            double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[i]);
-            double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[i]);
-            double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[i]);
-            double ncc_four = ComputeNCC(primary_patch_two, secondary_patch_set_one[i]);
+            std::cout << filtered_cluster_centers.size() << std::endl;
+            const Edge& secondary_edge = filtered_cluster_centers[i].center_edge;
+
+            cv::Mat sec_patch_one = secondary_patch_set_one[i];
+            cv::Mat sec_patch_two = secondary_patch_set_two[i];
+
+            double orientation = secondary_edge.orientation;
+            double deg = orientation * 180.0 / M_PI;
+
+            // Save original patches before rotation
+            cv::Mat sec_patch_one_original = sec_patch_one.clone();
+            cv::Mat sec_patch_two_original = sec_patch_two.clone();
+
+            bool rotated = false;
+            if (std::abs(deg - 90.0) < 10.0) {
+                cv::rotate(sec_patch_one, sec_patch_one, cv::ROTATE_180);
+                cv::rotate(sec_patch_two, sec_patch_two, cv::ROTATE_180);
+                rotated = true;
+            }
+
+            double ncc_one   = ComputeNCC(primary_patch_one, sec_patch_one);
+            double ncc_two   = ComputeNCC(primary_patch_two, sec_patch_two);
+            double ncc_three = ComputeNCC(primary_patch_one, sec_patch_two);
+            double ncc_four  = ComputeNCC(primary_patch_two, sec_patch_one);
 
             double score_one = std::min(ncc_one, ncc_two);
             double score_two = std::min(ncc_three, ncc_four);
             double final_score = std::max(score_one, score_two);
+            // double final_score = std::max({ncc_one, ncc_two, ncc_three, ncc_four});
+
+            // Count rotated edges that fail NCC threshold
+            if (rotated && final_score <= threshold) {
+                rotated_ncc_fail_count++;
+            }
+
+            if (gt && cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge) <= GT_SPATIAL_TOL && final_score <= threshold && forward_direction)
+            {
+                std::filesystem::path ncc_dir = std::filesystem::path("ncc_stats");
+                std::filesystem::create_directories(ncc_dir);
+                std::string patch_csv_name = "image_pair_" + std::to_string(image_pair_index) + "_failpatch_" + std::to_string(i) + ".csv";
+                std::filesystem::path patch_csv_path = ncc_dir / patch_csv_name;
+                std::ofstream patch_csv(patch_csv_path.string());
+                if (patch_csv)
+                {
+                    patch_csv << "# primary_patch_one\n";
+                    for (int r = 0; r < primary_patch_one.rows; ++r) {
+                        for (int c = 0; c < primary_patch_one.cols; ++c) {
+                            patch_csv << primary_patch_one.at<float>(r, c);
+                            if (c < primary_patch_one.cols - 1) patch_csv << ",";
+                        }
+                        patch_csv << "\n";
+                    }
+                    patch_csv << "# primary_patch_two\n";
+                    for (int r = 0; r < primary_patch_two.rows; ++r) {
+                        for (int c = 0; c < primary_patch_two.cols; ++c) {
+                            patch_csv << primary_patch_two.at<float>(r, c);
+                            if (c < primary_patch_two.cols - 1) patch_csv << ",";
+                        }
+                        patch_csv << "\n";
+                    }
+                    // Export original secondary patches
+                    patch_csv << "# secondary_patch_set_one_original\n";
+                    for (int r = 0; r < sec_patch_one_original.rows; ++r) {
+                        for (int c = 0; c < sec_patch_one_original.cols; ++c) {
+                            patch_csv << sec_patch_one_original.at<float>(r, c);
+                            if (c < sec_patch_one_original.cols - 1) patch_csv << ",";
+                        }
+                        patch_csv << "\n";
+                    }
+                    patch_csv << "# secondary_patch_set_two_original\n";
+                    for (int r = 0; r < sec_patch_two_original.rows; ++r) {
+                        for (int c = 0; c < sec_patch_two_original.cols; ++c) {
+                            patch_csv << sec_patch_two_original.at<float>(r, c);
+                            if (c < sec_patch_two_original.cols - 1) patch_csv << ",";
+                        }
+                        patch_csv << "\n";
+                    }
+                    // Export rotated secondary patches (if rotated)
+                    patch_csv << "# secondary_patch_set_one_rotated\n";
+                    for (int r = 0; r < sec_patch_one.rows; ++r) {
+                        for (int c = 0; c < sec_patch_one.cols; ++c) {
+                            patch_csv << sec_patch_one.at<float>(r, c);
+                            if (c < sec_patch_one.cols - 1) patch_csv << ",";
+                        }
+                        patch_csv << "\n";
+                    }
+                    patch_csv << "# secondary_patch_set_two_rotated\n";
+                    for (int r = 0; r < sec_patch_two.rows; ++r) {
+                        for (int c = 0; c < sec_patch_two.cols; ++c) {
+                            patch_csv << sec_patch_two.at<float>(r, c);
+                            if (c < sec_patch_two.cols - 1) patch_csv << ",";
+                        }
+                        patch_csv << "\n";
+                    }
+                    patch_csv << "# meta\n";
+                    patch_csv << "primary_x," << primary_edge.location.x << "\n";
+                    patch_csv << "primary_y," << primary_edge.location.y << "\n";
+                    patch_csv << "primary_theta," << primary_edge.orientation << "\n";
+                    patch_csv << "secondary_x," << filtered_cluster_centers[i].center_edge.location.x << "\n";
+                    patch_csv << "secondary_y," << filtered_cluster_centers[i].center_edge.location.y << "\n";
+                    patch_csv << "secondary_theta," << filtered_cluster_centers[i].center_edge.orientation << "\n";
+                    patch_csv << "secondary_rotated," << rotated << "\n";
+                    patch_csv << "ncc_one," << ncc_one << "\n";
+                    patch_csv << "ncc_two," << ncc_two << "\n";
+                    patch_csv << "ncc_three," << ncc_three << "\n";
+                    patch_csv << "ncc_four," << ncc_four << "\n";
+                    patch_csv << "score_one," << score_one << "\n";
+                    patch_csv << "score_two," << score_two << "\n";
+                    patch_csv << "final_score," << final_score << "\n";
+                    patch_csv << "threshold," << threshold << "\n";
+                }
+            }
 
 #if DEBUG_COLLECT_NCC_AND_ERR
                double err_to_gt = cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge);   
@@ -1384,6 +1515,30 @@ void FilterByNCC(
             }
         }
 
+        // if (!ncc_match_found) {
+        //     for (size_t i = 0; i < filtered_cluster_centers.size(); ++i) {
+        //         double dist = cv::norm(filtered_cluster_centers[i].center_edge.location - ground_truth_edge);
+        //         if (dist <= GT_SPATIAL_TOL) {
+        //             double ncc_one = ComputeNCC(primary_patch_one, secondary_patch_set_one[i]);
+        //             double ncc_two = ComputeNCC(primary_patch_two, secondary_patch_set_two[i]);
+        //             double ncc_three = ComputeNCC(primary_patch_one, secondary_patch_set_two[i]);
+        //             double ncc_four = ComputeNCC(primary_patch_two, secondary_patch_set_one[i]);
+        //             double score_one = std::min(ncc_one, ncc_two);
+        //             double score_two = std::min(ncc_three, ncc_four);
+        //             double final_score = std::max(score_one, score_two);
+        //             std::cout << "[NCC FAIL] Missed veridical match for primary edge at ("
+        //                       << primary_edge.location.x << ", " << primary_edge.location.y << ", theta=" << primary_edge.orientation << ") "
+        //                       << "and secondary edge at ("
+        //                       << filtered_cluster_centers[i].center_edge.location.x << ", "
+        //                       << filtered_cluster_centers[i].center_edge.location.y << ", theta=" << filtered_cluster_centers[i].center_edge.orientation << ")\n"
+        //                       << "  Distance to GT: " << dist << "\n"
+        //                       << "  NCC scores: " << ncc_one << ", " << ncc_two << ", " << ncc_three << ", " << ncc_four << "\n"
+        //                       << "  score_one: " << score_one << ", score_two: " << score_two << ", final_score: " << final_score << "\n"
+        //                       << "  NCC threshold: " << threshold << std::endl;
+        //         }
+        //     }
+        // }
+
         if (ncc_match_found) {
             ncc_true_positive++;
         } else {
@@ -1395,6 +1550,9 @@ void FilterByNCC(
         per_edge_ncc_precision += static_cast<double>(ncc_precision_numerator) / passed_ncc_matches.size();
         ncc_edges_evaluated++;
     }
+
+    // Print the number of rotated edges that failed NCC threshold
+    std::cout << "[FilterByNCC] Rotated edges that failed NCC threshold: " << rotated_ncc_fail_count << std::endl;
 }
 
 /*

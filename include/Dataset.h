@@ -90,6 +90,7 @@ struct RecallMetrics
     double max_disparity_recall;
     double epi_shift_recall;
     double epi_cluster_recall;
+    double patch_recall;
     double ncc_recall;
     double lowe_recall;
 
@@ -112,6 +113,7 @@ struct RecallMetrics
     double per_image_disp_precision;
     double per_image_shift_precision;
     double per_image_clust_precision;
+    double per_image_patch_precision;
     double per_image_ncc_precision;
     double per_image_lowe_precision;
 

@@ -4,6 +4,7 @@
 #include "definitions.h"
 #include "utility.h"
 #include "Dataset.h"
+#include "EdgeClusterer.h"
 
 class Dataset;
 
@@ -49,7 +50,13 @@ std::vector<Eigen::Vector3d> PerformEpipolarShift(
                                                 const Eigen::MatrixXd& edge2,
                                                 const Eigen::Vector3d& epip_coeffs);
 
-std::vector<std::vector<Edge>> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
+void EpipolarShiftFilter(
+    const std::vector<Edge> &filtered_edges,
+    std::vector<Edge> &shifted_edges,
+    const Eigen::Vector3d &epipolar_line,
+    Utility util = Utility());
+
+std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
 
 std::vector<std::pair<Edge, double>> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold);
 

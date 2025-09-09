@@ -145,6 +145,93 @@ void EBVO::PerformEdgeBasedVO()
 
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
 
+#if DEBUG_EDGE_MATCHES_BETWEEN_LEFT_IMGS
+        if (dataset.has_gt())
+        {
+            int indices[9] = {657, 10000, 10350, 20300, 30200, 35006, 40000, 46741};
+            std::vector<Edge> gt_edges;
+            std::vector<std::pair<Edge, Edge>> left_edges_GT_pair;
+            for (int i = 0; i < 9; ++i)
+            {
+                int index = indices[i];
+                // Get the ground truth edge for the left image
+                Edge GTEdge = GetGTEdge(true, current_frame, next_frame,
+                                        left_ref_map, left_calib_inv, left_calib,
+                                        dataset.left_edges[index]);
+                if ( GTEdge.b_isEmpty )
+                    continue;
+                else 
+                {
+                    left_edges_GT_pair.push_back(std::make_pair(dataset.left_edges[index], GTEdge));
+                    gt_edges.push_back(GTEdge);
+                }
+            }
+
+            for (int i = 0; i < left_edges_GT_pair.size(); i++)
+            {
+                cv::Point2d left_edge_t0 = left_edges_GT_pair[i].first.location;
+                cv::Point2d left_edge_t1 = left_edges_GT_pair[i].second.location;
+                // std::cout << "[" << left_edge_t0.x << ", " << left_edge_t0.y << "] - [" << left_edge_t1.x << ", " << left_edge_t1.y << "]" << std::endl;
+            }
+
+            cv::Mat current_frame_vis;
+            cv::cvtColor(curr_left_img, current_frame_vis, cv::COLOR_GRAY2BGR);
+
+            // Different colors for different selected points
+            std::vector<cv::Scalar> colors = {
+                cv::Scalar(0, 0, 255),   // Red
+                cv::Scalar(0, 255, 0),   // Green
+                cv::Scalar(255, 0, 0),   // Blue
+                cv::Scalar(0, 255, 255), // Yellow
+                cv::Scalar(255, 0, 255), // Magenta
+                cv::Scalar(255, 255, 0), // Cyan
+                cv::Scalar(128, 0, 128), // Purple
+                cv::Scalar(255, 165, 0), // Orange
+                cv::Scalar(255, 20, 147) // Deep Pink
+            };
+
+            for (int i = 0; i < 9; ++i)
+            {
+                int index = indices[i];
+                if (index < dataset.left_edges.size())
+                {
+                    cv::Point2d pt = dataset.left_edges[index].location;
+                    cv::circle(current_frame_vis, pt, 8, colors[i], -1);
+                    cv::putText(current_frame_vis, std::to_string(i),
+                                cv::Point(pt.x + 10, pt.y - 10),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
+                }
+            }
+
+            // Draw GT edges on next frame
+            cv::Mat next_frame_vis;
+            cv::cvtColor(next_left_img, next_frame_vis, cv::COLOR_GRAY2BGR);
+
+            for (int i = 0; i < gt_edges.size(); ++i)
+            {
+                cv::Point2d gt_pt = gt_edges[i].location;
+                // Check if point is within image bounds
+                if (gt_pt.x >= 0 && gt_pt.x < next_frame_vis.cols &&
+                    gt_pt.y >= 0 && gt_pt.y < next_frame_vis.rows)
+                {
+                    cv::circle(next_frame_vis, gt_pt, 8, colors[i], -1);
+                    cv::putText(next_frame_vis, std::to_string(i),
+                                cv::Point(gt_pt.x + 10, gt_pt.y - 10),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.7, colors[i], 2);
+                }
+            }
+
+            // Save visualization images
+            std::string output_dir = dataset.get_output_path();
+            cv::imwrite(output_dir + "/current_frame_selected_edges_" + std::to_string(frame_idx) + ".png",
+                        current_frame_vis);
+            cv::imwrite(output_dir + "/next_frame_gt_edges_" + std::to_string(frame_idx) + ".png",
+                        next_frame_vis);
+
+            std::cout << "Saved edge tracking visualization for frame " << frame_idx << std::endl;
+        }
+#endif
+
         StereoMatchResult match_result = GetStereoEdgePairs(
             left_undistorted,
             right_undistorted,
@@ -164,6 +251,8 @@ void EBVO::PerformEdgeBasedVO()
                   << " | Precision: " << recall.per_image_shift_precision << std::endl;
         std::cout << "[Cluster] Recall: " << recall.epi_cluster_recall
                   << " | Precision: " << recall.per_image_clust_precision << std::endl;
+        std::cout << "[Patch] Recall: " << recall.patch_recall
+                  << " | Precision: " << recall.per_image_patch_precision << std::endl;
         std::cout << "[NCC] Recall: " << recall.ncc_recall
                   << " | Precision: " << recall.per_image_ncc_precision << std::endl;
         std::cout << "[Lowe's Ratio] Recall: " << recall.lowe_recall
@@ -270,36 +359,48 @@ void EBVO::PerformEdgeBasedVO()
         current_frame = next_frame;
     }
 
-    WriteEpiDistancesToCSV(all_edge_to_epi_distances);
+    StoreEpiDistancesToCSV(all_edge_to_epi_distances);
 }
 
 /*
    Write the epipolar distances to a CSV file.
 */
-void EBVO::WriteEpiDistancesToCSV(const std::vector<std::vector<double>> &all_edge_to_epi_distances)
+void EBVO::StoreEpiDistancesToCSV(const std::vector<std::vector<double>> &all_edge_to_epi_distances)
 {
+    static size_t total_rows_written = 0;
+    static int file_index = 1;
+    static std::ofstream csv_file;
+    static const size_t max_rows_per_file = 1'000'000;
+
     std::string output_dir = dataset.get_output_path() + "/figure_stats";
     std::filesystem::create_directories(output_dir);
-    std::string full_path = output_dir + "/edge_to_epi_distances.csv";
-    std::ofstream csv(full_path);
-    
-    if (!csv.is_open()) {
-        std::cerr << "[WARNING] Failed to open CSV file for writing: " << full_path << std::endl;
-        return;
+
+    if (!csv_file.is_open())
+    {
+        std::string filename = output_dir + "/edge_to_epi_distances_" + std::to_string(file_index) + ".csv";
+        csv_file.open(filename, std::ios::out);
     }
 
     for (const auto &distances : all_edge_to_epi_distances) {
         for (const auto &distance : distances) {
-            csv << distance << "\n";
-            if (!csv) {
+            if (total_rows_written >= max_rows_per_file)
+            {
+                csv_file.close();
+                ++file_index;
+                total_rows_written = 0;
+                std::string next_filename = output_dir + "/edge_to_epi_distances_" + std::to_string(file_index) + ".csv";
+                csv_file.open(next_filename, std::ios::out);
+            }
+            csv_file << distance << "\n";
+            ++total_rows_written;
+            if (!csv_file) {
                 std::cerr << "[WARNING] Error occurred while writing to CSV file." << std::endl;
-                csv.close();
+                csv_file.close();
                 return;
             }
         }
     }
-
-    csv.close();
+    csv_file.flush();
 }
 
 /*
@@ -551,6 +652,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
     double total_disp_recall = 0.0;
     double total_shift_recall = 0.0;
     double total_cluster_recall = 0.0;
+    double total_patch_recall = 0.0;
     double total_ncc_recall = 0.0;
     double total_lowe_recall = 0.0;
     double total_bct_recall = 0.0;
@@ -559,6 +661,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
     double total_disp_precision = 0.0;
     double total_shift_precision = 0.0;
     double total_cluster_precision = 0.0;
+    double total_patch_precision = 0.0;
     double total_ncc_precision = 0.0;
     double total_lowe_precision = 0.0;
     double total_bct_precision = 0.0;
@@ -579,6 +682,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
         total_disp_recall += m.max_disparity_recall;
         total_shift_recall += m.epi_shift_recall;
         total_cluster_recall += m.epi_cluster_recall;
+        total_patch_recall += m.patch_recall;
         total_ncc_recall += m.ncc_recall;
         total_lowe_recall += m.lowe_recall;
 
@@ -586,6 +690,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
         total_disp_precision += m.per_image_disp_precision;
         total_shift_precision += m.per_image_shift_precision;
         total_cluster_precision += m.per_image_clust_precision;
+        total_patch_precision += m.per_image_patch_precision;
         total_ncc_precision += m.per_image_ncc_precision;
         total_lowe_precision += m.per_image_lowe_precision;
 
@@ -612,6 +717,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
     double avg_disp_recall = (total_images > 0) ? total_disp_recall / total_images : 0.0;
     double avg_shift_recall = (total_images > 0) ? total_shift_recall / total_images : 0.0;
     double avg_cluster_recall = (total_images > 0) ? total_cluster_recall / total_images : 0.0;
+    double avg_patch_recall = (total_images > 0) ? total_patch_recall / total_images : 0.0;
     double avg_ncc_recall = (total_images > 0) ? total_ncc_recall / total_images : 0.0;
     double avg_lowe_recall = (total_images > 0) ? total_lowe_recall / total_images : 0.0;
     double avg_bct_recall = (total_images > 0) ? total_bct_recall / total_images : 0.0;
@@ -620,6 +726,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
     double avg_disp_precision = (total_images > 0) ? total_disp_precision / total_images : 0.0;
     double avg_shift_precision = (total_images > 0) ? total_shift_precision / total_images : 0.0;
     double avg_cluster_precision = (total_images > 0) ? total_cluster_precision / total_images : 0.0;
+    double avg_patch_precision = (total_images > 0) ? total_patch_precision / total_images : 0.0;
     double avg_ncc_precision = (total_images > 0) ? total_ncc_precision / total_images : 0.0;
     double avg_lowe_precision = (total_images > 0) ? total_lowe_precision / total_images : 0.0;
     double avg_bct_precision = (total_images > 0) ? total_bct_precision / total_images : 0.0;
@@ -638,7 +745,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
     std::filesystem::create_directories(edge_stat_dir);
 
     std::ofstream recall_csv(edge_stat_dir + "/recall_metrics.csv");
-    recall_csv << "ImageIndex,EpiDistanceRecall,MaxDisparityRecall,EpiShiftRecall,EpiClusterRecall,NCCRecall,LoweRecall,BidirectionalRecall\n";
+    recall_csv << "ImageIndex,EpiDistanceRecall,MaxDisparityRecall,EpiShiftRecall,EpiClusterRecall,PatchRecall,NCCRecall,LoweRecall,BidirectionalRecall\n";
 
     std::ofstream time_elapsed_csv(edge_stat_dir + "/time_elapsed_metrics.csv");
     time_elapsed_csv << "ImageIndex,EpiDistanceTime,MaxDisparityTime,EpiShiftTime,EpiClusterTime,PatchTime,NCCTime,LoweTime,TotalLoopTime,BidirectionalTime\n";
@@ -652,6 +759,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
                    << std::fixed << std::setprecision(4) << m.max_disparity_recall * 100 << ","
                    << std::fixed << std::setprecision(4) << m.epi_shift_recall * 100 << ","
                    << std::fixed << std::setprecision(4) << m.epi_cluster_recall * 100 << ","
+                   << std::fixed << std::setprecision(4) << m.patch_recall * 100 << ","
                    << std::fixed << std::setprecision(4) << m.ncc_recall * 100 << ","
                    << std::fixed << std::setprecision(4) << m.lowe_recall * 100 << ","
                    << std::fixed << std::setprecision(4) << bct.per_image_bct_recall * 100 << "\n";
@@ -662,6 +770,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
                << std::fixed << std::setprecision(4) << avg_disp_recall * 100 << ","
                << std::fixed << std::setprecision(4) << avg_shift_recall * 100 << ","
                << std::fixed << std::setprecision(4) << avg_cluster_recall * 100 << ","
+               << std::fixed << std::setprecision(4) << avg_patch_recall * 100 << ","
                << std::fixed << std::setprecision(4) << avg_ncc_recall * 100 << ","
                << std::fixed << std::setprecision(4) << avg_lowe_recall * 100 << ","
                << std::fixed << std::setprecision(4) << avg_bct_recall * 100 << "\n";
@@ -887,6 +996,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
                       << std::fixed << std::setprecision(4) << m.per_image_disp_precision * 100 << ","
                       << std::fixed << std::setprecision(4) << m.per_image_shift_precision * 100 << ","
                       << std::fixed << std::setprecision(4) << m.per_image_clust_precision * 100 << ","
+                      << std::fixed << std::setprecision(4) << m.per_image_patch_precision * 100 << ","
                       << std::fixed << std::setprecision(4) << m.per_image_ncc_precision * 100 << ","
                       << std::fixed << std::setprecision(4) << m.per_image_lowe_precision * 100 << ","
                       << std::fixed << std::setprecision(4) << bct.per_image_bct_precision * 100 << "\n";
@@ -897,6 +1007,7 @@ void EBVO::WriteEdgeMatchResultToCSV(StereoMatchResult &match_result,
                   << std::fixed << std::setprecision(4) << avg_disp_precision * 100 << ","
                   << std::fixed << std::setprecision(4) << avg_shift_precision * 100 << ","
                   << std::fixed << std::setprecision(4) << avg_cluster_precision * 100 << ","
+                  << std::fixed << std::setprecision(4) << avg_patch_precision * 100 << ","
                   << std::fixed << std::setprecision(4) << avg_ncc_precision * 100 << ","
                   << std::fixed << std::setprecision(4) << avg_lowe_precision * 100 << ","
                   << std::fixed << std::setprecision(4) << avg_bct_precision * 100 << "\n";

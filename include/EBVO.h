@@ -23,7 +23,7 @@ public:
 
     void PerformEdgeBasedVO();
 
-    void WriteEpiDistancesToCSV(const std::vector<std::vector<double>> &all_edge_to_epi_distances);
+    void StoreEpiDistancesToCSV(const std::vector<std::vector<double>> &all_edge_to_epi_distances);
 
     void ProcessEdges(const cv::Mat &image,
                       const std::string &filepath,

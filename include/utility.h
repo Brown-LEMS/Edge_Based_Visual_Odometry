@@ -37,6 +37,11 @@ public:
     typedef std::shared_ptr<Utility> Ptr;
 
     Utility();
+    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y );
+    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y );
+    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection );
+    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection );
+
     double get_Interpolated_Depth(Frame::Ptr Frame, cv::Point2d P);
     double get_Interpolated_Gradient_Depth(Frame::Ptr Frame, cv::Point2d P, std::string grad_Direction);
     void get_dG_2D(cv::Mat &Gx_2d, cv::Mat &Gy_2d, int w, double sigma);
@@ -216,6 +221,18 @@ T rad_to_deg( T theta ) {
 template< typename T >
 T deg_to_rad( T theta ) {
     return theta * (M_PI / 180.0);
+}
+
+inline std::vector<int> find_Unique_Sorted_Numbers( std::vector<int> vec ) 
+{
+    std::vector<int> unique_sorted_vec = vec;
+    std::sort(unique_sorted_vec.begin(), unique_sorted_vec.end());
+
+    auto last = std::unique(unique_sorted_vec.begin(), unique_sorted_vec.end());
+
+    unique_sorted_vec.erase(last, unique_sorted_vec.end());
+
+    return unique_sorted_vec;
 }
 
 // wasn't used in the original code, but kept for reference
