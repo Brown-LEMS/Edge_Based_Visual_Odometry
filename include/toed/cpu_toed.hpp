@@ -28,11 +28,44 @@ struct Edge
   cv::Point2d location; //> x, y location of the edge point
   double orientation;   //> orientation of the edge point
 
-  bool b_isEmpty;         //> check if this struct is value-assigned
-  int frame_source;       //> which frame this edge comes from
+  bool b_isEmpty;   //> check if this struct is value-assigned
+  int frame_source; //> which frame this edge comes from
+  int index;        //> index of the edge in the original edge list
   Edge() : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true), frame_source(-1) {}
-  Edge(cv::Point2d location, double orientation, bool b_isEmpty, int frame_source) : location(cv::Point2d(-1.0, -1.0)), orientation(-100), b_isEmpty(true), frame_source(-1) {}
+  Edge(cv::Point2d location, double orientation, bool b_isEmpty, int frame_source) : location(location), orientation(orientation), b_isEmpty(b_isEmpty), frame_source(frame_source) {}
+
+  bool operator==(const Edge &other) const
+  {
+    // return location.x == other.location.x &&
+    //        location.y == other.location.y &&
+    //        orientation == other.orientation &&
+    //        b_isEmpty == other.b_isEmpty &&
+    //        frame_source == other.frame_source &&
+    //        index == other.index;
+    return frame_source == other.frame_source &&
+           index == other.index;
+  }
 };
+
+namespace std
+{
+  template <>
+  struct hash<Edge>
+  {
+    size_t operator()(const Edge &edge) const
+    {
+      // Combine hash values of all members
+      size_t h1 = hash<double>()(edge.location.x);
+      size_t h2 = hash<double>()(edge.location.y);
+      size_t h3 = hash<double>()(edge.orientation);
+      size_t h4 = hash<bool>()(edge.b_isEmpty);
+      size_t h5 = hash<int>()(edge.frame_source);
+
+      // Simple hash combination
+      return h1 ^ (h2 << 1) ^ (h3 << 2) ^ (h4 << 3) ^ (h5 << 4);
+    }
+  };
+}
 
 class ThirdOrderEdgeDetectionCPU
 {

@@ -82,3 +82,4 @@
                                       "  -h, --help         show this help message and exit\n" \
                                       "  -c, --config_file  path to the the configuration file\n");
 #define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
+#define GRID_SIZE (40)     //> Size of the spatial grid cells in pixels

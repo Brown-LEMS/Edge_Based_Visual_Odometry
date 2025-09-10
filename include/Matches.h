@@ -9,6 +9,12 @@ struct EdgeMatchResult;
 #include "utility.h"
 #include "Dataset.h"
 
+std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel);
+void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
+                                cv::Mat &patch_coord_x, cv::Mat &patch_coord_y,
+                                cv::Mat &patch_val, const cv::Mat img);
+double get_similarity(const cv::Mat patch_one, const cv::Mat patch_two);
+double edge_patch_similarity(const Edge target_edge_H1, const Edge target_edge_H2, const cv::Mat gray_img_H1, const cv::Mat gray_img_H2);
 StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image,
                                  Dataset &dataset, int idx);
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
@@ -110,6 +116,8 @@ void FilterByLowe(
     std::vector<std::vector<int>> &local_lowe_input_counts,
     std::vector<std::vector<int>> &local_lowe_output_counts,
     std::vector<std::vector<cv::Point2d>> &local_GT_right_edges_after_lowe,
+    std::vector<std::unordered_map<Edge, std::vector<Edge>>> &local_final_lowe_matches,
+    std::vector<std::unordered_map<Edge, std::vector<Edge>>> &local_final_reverse_lowe_matches,
     int thread_id,
     const std::vector<EdgeMatch> &passed_ncc_matches,
     bool gt,
