@@ -196,9 +196,12 @@ void EdgeClusterer::performClustering( )
         double gaussian_average_y = std::get<1>(result);
         double gaussian_average_orientation = std::get<2>(result);
         
-        // Create the Gaussian-weighted average edge
+        //> Create the Gaussian-weighted average edge
         cv::Point2d gaussian_edge(gaussian_average_x, gaussian_average_y);
-        Edge gaussian_weighted_avg{gaussian_edge, gaussian_average_orientation, false};
+
+        //> CH TODO: Pass the frame ID to the last input argument
+        Edge gaussian_weighted_avg{gaussian_edge, gaussian_average_orientation, false, 0};
+
         // gaussian_weighted_avg << gaussian_average_x, gaussian_average_y, gaussian_average_orientation;
         
         // Find the edge closest to the Gaussian-weighted average to use as the representative

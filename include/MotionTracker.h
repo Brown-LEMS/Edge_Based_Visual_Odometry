@@ -38,7 +38,7 @@ public:
      * Estimate relative poses in a RANSAC scheme
      * @return None
      */
-    void get_Relative_Pose_from_RANSAC( Frame::Ptr Curr_Frame, Frame::Ptr Prev_Frame, int Num_Of_Good_Feature_Matches, bool use_GCC_filter = false );
+    void get_Relative_Pose_from_RANSAC( Frame::Ptr Curr_Frame, Frame::Ptr Prev_Frame, int Num_Of_Good_Feature_Matches );
 
     /**
      * Estimate relative rotation and translation from 3 points

@@ -123,35 +123,6 @@ int Pipeline::get_Feature_Correspondences() {
         Eigen::Vector3d Previous_Match_Location = {previous_pt.x, previous_pt.y, 1.0};
         Eigen::Vector3d Current_Match_Location = {current_pt.x, current_pt.y, 1.0};
 
-        //> Calculate gradient depth at corresponding feature locations, if required
-        if (Current_Frame->need_depth_grad) {
-
-            //> Check if the depth value is valid or not
-            if ( Previous_Frame->Depth.at<double>( round(previous_pt.y), round(previous_pt.x) ) - 0.0 < EPSILON ) 
-                continue;
-            
-            if ( Current_Frame->Depth.at<double>( round(current_pt.y), round(current_pt.x) ) - 0.0 < EPSILON ) 
-                continue;
-
-            double previous_depth = utility_tool->get_Interpolated_Depth(Previous_Frame, previous_pt);
-            double current_depth  = utility_tool->get_Interpolated_Depth(Current_Frame,  current_pt );
-
-            Eigen::Vector3d Previous_Match_gamma = Previous_Frame->inv_K * Previous_Match_Location;
-            Eigen::Vector3d Current_Match_gamma = Current_Frame->inv_K * Current_Match_Location;
-
-            //> Current frame features
-            double grad_x = utility_tool->get_Interpolated_Gradient_Depth( Current_Frame, current_pt, "xi" );
-            double grad_y = utility_tool->get_Interpolated_Gradient_Depth( Current_Frame, current_pt, "eta" );
-            Current_Frame->gradient_Depth_at_Features.push_back( std::make_pair(grad_x, grad_y) );
-            //> Previous frame features
-            grad_x = utility_tool->get_Interpolated_Gradient_Depth( Previous_Frame, previous_pt, "xi" );
-            grad_y = utility_tool->get_Interpolated_Gradient_Depth( Previous_Frame, previous_pt, "eta" );
-            Previous_Frame->gradient_Depth_at_Features.push_back( std::make_pair(grad_x, grad_y) );
-
-            Previous_Frame->Gamma.push_back(previous_depth * Previous_Match_gamma);
-            Current_Frame->Gamma.push_back(current_depth * Current_Match_gamma);
-        }
-
         //> 2D-3D matches of the previous and current frames
         Previous_Frame->SIFT_Match_Locations_Pixels.push_back(Previous_Match_Location);
         Current_Frame->SIFT_Match_Locations_Pixels.push_back(Current_Match_Location);
@@ -179,21 +150,6 @@ int Pipeline::get_Feature_Correspondences() {
 
 bool Pipeline::track_Camera_Motion() {
 
-    // std::cout << "Need depth gradient? " << Current_Frame->need_depth_grad << std::endl;
-    Camera_Motion_Estimate = std::shared_ptr<MotionTracker>(new MotionTracker());
-    if (Current_Frame->need_depth_grad) {
-
-        //> Estimate camera relative pose with depth prior
-        Camera_Motion_Estimate->get_Relative_Pose_from_RANSAC(Current_Frame, Previous_Frame, Num_Of_Good_Feature_Matches, true);
-
-        std::cout << "RANSAC Estimation:" << std::endl;
-        std::cout << "- Rotation:" << std::endl;
-        std::cout << Camera_Motion_Estimate->Final_Rel_Rot << std::endl;
-        std::cout << "- Translation:" << std::endl;
-        std::cout << Camera_Motion_Estimate->Final_Rel_Transl << std::endl;
-        double inlier_ratio = (double)(Camera_Motion_Estimate->Final_Num_Of_Inlier_Support) / (double)(Num_Of_Good_Feature_Matches);
-        std::cout << "Number of Supporting Inliers:" << Camera_Motion_Estimate->Final_Num_Of_Inlier_Support << "(" << inlier_ratio << "%)" << std::endl;
-    }
     return true;
 }
 

@@ -170,7 +170,8 @@ Edge PerformEpipolarShift(
         //> If normal distance is small, move directly to the epipolar line
         cv::Point2d corrected_edge_loc(epiline_x, epiline_y);
         b_pass_epipolar_tengency_check = true;
-        return Edge{corrected_edge_loc, original_edge.orientation, false};
+        //> CH TODO: Pass the frame ID to the last input argument
+        return Edge{corrected_edge_loc, original_edge.orientation, false, 0};
     }
     else
     {
@@ -183,7 +184,8 @@ Edge PerformEpipolarShift(
             //> (i) if the displacement after epipolar shift is less than EPIP_TANGENCY_DISPL_THRESH, then feel free to shift it along its direction vector
             cv::Point2d corrected_edge_loc(x_intersection, y_intersection);
             b_pass_epipolar_tengency_check = true;
-            return Edge{corrected_edge_loc, original_edge.orientation, false};
+            //> CH TODO: Pass the frame ID to the last input argument
+            return Edge{corrected_edge_loc, original_edge.orientation, false, 0};
         }
         else
         {
@@ -206,12 +208,15 @@ Edge PerformEpipolarShift(
             {
                 cv::Point2d corrected_edge_loc(x_intersection, y_intersection);
                 b_pass_epipolar_tengency_check = true;
-                return Edge{corrected_edge_loc, theta, false};
+                //> CH TODO: Pass the frame ID to the last input argument
+                return Edge{corrected_edge_loc, theta, false, 0};
             } 
             else 
             {
                 b_pass_epipolar_tengency_check = false;
-                return Edge{original_edge.location, original_edge.orientation, false};
+
+                //> CH TODO: Pass the frame ID to the last input argument
+                return Edge{original_edge.location, original_edge.orientation, false, 0};
             }
         }
     }
@@ -474,7 +479,7 @@ std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogona
     return {shifted_points_one, shifted_points_two};
 }
 
-StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset)
+StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset, int idx)
 {
     Utility util{};
 

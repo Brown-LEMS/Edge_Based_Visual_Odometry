@@ -59,69 +59,6 @@ double Utility::getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Co
   return getTangentialDistance2EpipolarLine( Epip_Line_Coeffs, edge, x_intersection, y_intersection );
 }
 
-void Utility::get_dG_2D(cv::Mat &Gx_2d, cv::Mat &Gy_2d, int w, double sigma)
-{
-
-  cv::Mat G = cv::Mat::ones(Gx_2d.cols, Gx_2d.rows, CV_64F);
-  cv::Mat dG = cv::Mat::ones(Gx_2d.cols, Gx_2d.rows, CV_64F);
-
-  //> get zero mean Gaussian
-  unsigned Index_Row = 0, Index_Col = 0;
-  for (int iy = -w; iy <= w; iy++)
-  {
-    Index_Col = 0;
-    for (int ix = -w; ix <= w; ix++)
-    {
-      G.at<double>(Index_Row, Index_Col) = (exp(-(ix * ix) / (2 * sigma * sigma)) / std::sqrt(2 * M_PI)) / sigma;
-      Index_Col++;
-    }
-    Index_Row++;
-  }
-
-  //> get zero mean Gaussian derivative
-  Index_Row = 0, Index_Col = 0;
-  for (int iy = -w; iy <= w; iy++)
-  {
-    Index_Col = 0;
-    for (int ix = -w; ix <= w; ix++)
-    {
-      dG.at<double>(Index_Row, Index_Col) = -(ix) * (exp(-(ix * ix) / (2 * sigma * sigma)) / std::sqrt(2 * M_PI)) / (sigma * sigma * sigma);
-      Index_Col++;
-    }
-    Index_Row++;
-  }
-
-  // get_Zero_Mean_Gaussian(G, w, sigma);
-  // get_Zero_Mean_Gaussian_Derivative(dG, w, sigma);
-
-  for (int ri = 0; ri < Gx_2d.rows; ri++)
-  {
-    for (int ci = 0; ci < Gx_2d.cols; ci++)
-    {
-      Gx_2d.at<double>(ri, ci) = dG.at<double>(ri, ci) * G.at<double>(ci, ri); //> G_y.*dG_x
-      Gy_2d.at<double>(ri, ci) = dG.at<double>(ci, ri) * G.at<double>(ri, ci); //> dG_y.*G_x
-    }
-  }
-}
-
-double Utility::get_Interpolated_Depth(Frame::Ptr Frame, cv::Point2d P)
-{
-  return Bilinear_Interpolation<double>(Frame->Depth, P);
-}
-
-double Utility::get_Interpolated_Gradient_Depth(Frame::Ptr Frame, cv::Point2d P, std::string grad_Direction)
-{
-  if (grad_Direction == "xi")
-    return Bilinear_Interpolation<double>(Frame->grad_Depth_xi, P);
-  else if (grad_Direction == "eta")
-    return Bilinear_Interpolation<double>(Frame->grad_Depth_eta, P);
-  else
-  {
-    LOG_ERROR("Invalid gradient direction tag at uitlity::get_Interpolated_Gradient_Depth function!");
-    return 0.0;
-  }
-}
-
 //> Display images and features via OpenCV
 void Utility::Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
                                               std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2,

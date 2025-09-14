@@ -157,7 +157,7 @@ class Dataset
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
     typedef std::shared_ptr<Dataset> Ptr;
-    Dataset(YAML::Node, bool);
+    Dataset(YAML::Node);
     std::unique_ptr<StereoIterator> stereo_iterator;
 
     static void onMouse(int event, int x, int y, int, void *);
@@ -239,15 +239,12 @@ private:
 
     cv::Mat LoadDisparityFromCSV(const std::string &path);
 
-    void VisualizeGTRightEdge(const cv::Mat &left_image, const cv::Mat &right_image, const std::vector<std::pair<cv::Point2d, cv::Point2d>> &edge_pairs);
-
     void CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image);
 
     void Load_GT_Poses(std::string GT_Poses_File_Path);
 
     void Align_Images_and_GT_Poses();
 
-    bool compute_grad_depth = false;
     cv::Mat Gx_2d, Gy_2d;
     cv::Mat Small_Patch_Radius_Map;
     Utility::Ptr utility_tool = nullptr;

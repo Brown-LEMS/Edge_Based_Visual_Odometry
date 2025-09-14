@@ -63,9 +63,6 @@
 #define OPENCV_DISPLAY_FEATURES (false)
 #define OPENCV_DISPLAY_CORRESPONDENCES (false)
 
-#define ACTIVATE_GCC (true)
-#define GCC_PATCH_HALF_SIZE (3)
-
 //> Third-Order Edge Detection Parameters
 #define TOED_KERNEL_SIZE (17)
 #define TOED_SIGMA (2)
