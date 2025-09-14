@@ -28,7 +28,7 @@ MotionTracker::MotionTracker() {
 }
 
 void MotionTracker::get_Relative_Pose_from_RANSAC( 
-    Frame::Ptr Curr_Frame, Frame::Ptr Prev_Frame, int Num_Of_Good_Feature_Matches, bool use_GCC_filter ) 
+    Frame::Ptr Curr_Frame, Frame::Ptr Prev_Frame, int Num_Of_Good_Feature_Matches ) 
 {
     //> Reset
     int Max_Num_of_Inlier_Support = 0;

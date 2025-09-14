@@ -44,9 +44,6 @@ public:
     double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection );
     double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection );
 
-    double get_Interpolated_Depth(Frame::Ptr Frame, cv::Point2d P);
-    double get_Interpolated_Gradient_Depth(Frame::Ptr Frame, cv::Point2d P, std::string grad_Direction);
-    void get_dG_2D(cv::Mat &Gx_2d, cv::Mat &Gy_2d, int w, double sigma);
     void Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
                                          std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2,
                                          std::vector<cv::DMatch> Good_Matches);

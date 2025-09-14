@@ -59,12 +59,6 @@ public:
     std::vector<Eigen::Vector3d> SIFT_Match_Locations_Pixels;    //> a list of SIFT homogeneous locations in pixels. Indices are aligned with the 3D-2D correspondences.
     std::vector<bool> is_SIFT_Outlier;              //> whether the corresponding SIFT list index is an outlier or not
     std::vector<Eigen::Vector3d> Gamma;             //> 3D points arise from the depth map
-
-    //> Used in GCC filter
-    bool need_depth_grad = false;
-    cv::Mat grad_Depth_xi;
-    cv::Mat grad_Depth_eta;
-    std::vector< std::pair<double, double>> gradient_Depth_at_Features;
     
 private:
     
