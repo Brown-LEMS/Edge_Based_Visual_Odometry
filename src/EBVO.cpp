@@ -137,21 +137,21 @@ void EBVO::PerformEdgeBasedVO()
         cv::Mat left_edge_map = cv::Mat::zeros(left_cur_undistorted.size(), CV_8UC1);
         cv::Mat right_edge_map = cv::Mat::zeros(right_cur_undistorted.size(), CV_8UC1);
 
-        for (const auto &edge : dataset.left_edges)
-        {
-            if (edge.location.x >= 0 && edge.location.x < left_edge_map.cols && edge.location.y >= 0 && edge.location.y < left_edge_map.rows)
-            {
-                left_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
-            }
-        }
+        // for (const auto &edge : dataset.left_edges)
+        // {
+        //     if (edge.location.x >= 0 && edge.location.x < left_edge_map.cols && edge.location.y >= 0 && edge.location.y < left_edge_map.rows)
+        //     {
+        //         left_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
+        //     }
+        // }
 
-        for (const auto &edge : dataset.right_edges)
-        {
-            if (edge.location.x >= 0 && edge.location.x < right_edge_map.cols && edge.location.y >= 0 && edge.location.y < right_edge_map.rows)
-            {
-                right_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
-            }
-        }
+        // for (const auto &edge : dataset.right_edges)
+        // {
+        //     if (edge.location.x >= 0 && edge.location.x < right_edge_map.cols && edge.location.y >= 0 && edge.location.y < right_edge_map.rows)
+        //     {
+        //         right_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
+        //     }
+        // }
 
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
 

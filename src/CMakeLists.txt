@@ -8,6 +8,7 @@ set (control_sources
         Matches.cpp
         EBVO.cpp
         Stereo_Iterator.cpp
+        EdgeClusterer.cpp
 )
 
 add_library( lems_vo_slam ${control_sources} )

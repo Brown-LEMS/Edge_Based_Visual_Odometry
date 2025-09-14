@@ -1,23 +1,20 @@
-# ETH3D Low-Resolution, Multi-View Delivery Area Dataset
+# ETH3D Low-Resolution, Multi-View Electro Dataset
 
 # Dataset Details
-# dataset_dir: "/Users/saulll./Desktop/Independent Study/datasets"
-# output_dir: "/Users/saulll./Desktop/Independent Study/outputs"
-dataset_dir: "/oscar/data/bkimia/Datasets"
-# output_dir: "/oscar/data/bkimia/jhan192/jue_dev_ebvo/Edge_Based_Visual_Odometry/outputs"
-output_dir: "/oscar/data/bkimia/cchien3/Edge_Based_Visual_Odometry/outputs"
-sequence_name: "ETH3D/stereo/delivery_area"
+dataset_dir: "/gpfs/data/bkimia/Datasets/"
+output_dir: "/gpfs/data/bkimia/cchien3/Edge_Based_Visual_Odometry/outputs"
+sequence_name: "ETH3D/stereo/electro"
 dataset_type: "ETH3D"
 
 # Stereo Intrinsic Parameters
 left_camera:
-  resolution: [942, 489]
-  intrinsics: [541.764, 541.764, 553.869, 232.396]
+  resolution: [927, 489]
+  intrinsics: [543.757, 543.757, 520.987, 293.208]
   distortion_coefficients: [0, 0, 0, 0]
 
 right_camera:
-  resolution: [942, 489]
-  intrinsics: [541.764, 541.764, 553.869, 232.396]
+  resolution: [927, 489]
+  intrinsics: [543.757, 543.757, 520.987, 293.208]
   distortion_coefficients: [0, 0, 0, 0]
 
 # Stereo Extrinsic Parameters
@@ -48,5 +45,5 @@ stereo:
   - [0.000000000000000,  0.000000000000000,  -0.000110548689097]
   - [0.000000000000000,   0.000110548689097,  0.000000000000000]
 
-  focal_length: 541.764
-  baseline: 0.0599101
+  focal_length: 543.757
+  baseline: 0.0598296
