@@ -16,8 +16,7 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
                                 cv::Mat &patch_val, const cv::Mat img);
 double get_similarity(const cv::Mat patch_one, const cv::Mat patch_two);
 double edge_patch_similarity(const Edge target_edge_H1, const Edge target_edge_H2, const cv::Mat gray_img_H1, const cv::Mat gray_img_H2);
-StereoMatchResult DisplayMatches(const cv::Mat &left_image, const cv::Mat &right_image,
-                                 Dataset &dataset, int idx);
+StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset, int idx);
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges = std::vector<cv::Point2d>());

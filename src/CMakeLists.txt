@@ -12,7 +12,7 @@ set (control_sources
 )
 
 add_library( lems_vo_slam ${control_sources} )
-include_directories(/gpfs/data/bkimia/cchien3/opencv-4.7.0/opencv_install/include/opencv4)
+include_directories(/gpfs/data/bkimia/opencv-4.x/build_install/include/opencv4)
 
 #> Linking third-party libraries
 target_link_libraries(lems_vo_slam

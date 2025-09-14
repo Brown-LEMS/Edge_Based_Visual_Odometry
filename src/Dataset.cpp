@@ -55,7 +55,7 @@ auto load_matrix = [](const YAML::Node &node) -> Eigen::Matrix3d
     return mat;
 };
 
-Dataset::Dataset(YAML::Node config_map, bool use_GCC_filter) : config_file(config_map), compute_grad_depth(use_GCC_filter)
+Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
 {
 
 #if USE_DEFINED_NUM_OF_CORES
@@ -236,52 +236,6 @@ std::vector<cv::Mat> Dataset::LoadETH3DLeftReferenceMaps(const std::string &ster
     }
 
     return disparity_maps;
-}
-
-void Dataset::VisualizeGTRightEdge(const cv::Mat &left_image, const cv::Mat &right_image, const std::vector<std::pair<cv::Point2d, cv::Point2d>> &left_right_edges)
-{
-    cv::Mat left_visualization, right_visualization;
-    cv::cvtColor(left_image, left_visualization, cv::COLOR_GRAY2BGR);
-    cv::cvtColor(right_image, right_visualization, cv::COLOR_GRAY2BGR);
-
-    std::vector<cv::Scalar> vibrant_colors = {
-        cv::Scalar(255, 0, 0),
-        cv::Scalar(0, 255, 0),
-        cv::Scalar(0, 0, 255),
-        cv::Scalar(255, 255, 0),
-        cv::Scalar(255, 0, 255),
-        cv::Scalar(0, 255, 255),
-        cv::Scalar(255, 165, 0),
-        cv::Scalar(128, 0, 128),
-        cv::Scalar(0, 128, 255),
-        cv::Scalar(255, 20, 147)};
-
-    std::vector<std::pair<cv::Point2d, cv::Point2d>> sampled_pairs;
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distr(0, left_right_edges.size() - 1);
-
-    int num_samples = std::min(10, static_cast<int>(left_right_edges.size()));
-    for (int i = 0; i < num_samples; ++i)
-    {
-        sampled_pairs.push_back(left_right_edges[distr(gen)]);
-    }
-
-    for (size_t i = 0; i < sampled_pairs.size(); ++i)
-    {
-        const auto &[left_edge, right_edge] = sampled_pairs[i];
-
-        cv::Scalar color = vibrant_colors[i % vibrant_colors.size()];
-
-        cv::circle(left_visualization, left_edge, 5, color, cv::FILLED);
-        cv::circle(right_visualization, right_edge, 5, color, cv::FILLED);
-    }
-
-    cv::Mat merged_visualization;
-    cv::hconcat(left_visualization, right_visualization, merged_visualization);
-
-    cv::imshow("Ground Truth Disparity Edges Visualization", merged_visualization);
-    cv::waitKey(0);
 }
 
 void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image)

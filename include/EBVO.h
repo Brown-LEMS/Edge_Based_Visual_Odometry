@@ -6,6 +6,8 @@
 #include <yaml-cpp/yaml.h>
 #include <unordered_map>
 #include <opencv2/opencv.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
 // =======================================================================================================
 // EBVO: Main structure of LEMS Edge-Based Visual Odometry
 //
@@ -85,7 +87,7 @@ struct EdgeGTMatchInfo
 class EBVO
 {
 public:
-    EBVO(YAML::Node config_map, bool use_GCC_filter = false);
+    EBVO(YAML::Node config_map);
 
     // Main function to perform edge-based visual odometry
     void PerformEdgeBasedVO();

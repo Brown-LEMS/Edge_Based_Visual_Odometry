@@ -8,7 +8,7 @@
 #include "Matches.h"
 #include <opencv2/core/eigen.hpp>
 
-EBVO::EBVO(YAML::Node config_map, bool use_GCC_filter) : dataset(config_map, use_GCC_filter) {}
+EBVO::EBVO(YAML::Node config_map) : dataset(config_map) {}
 
 void EBVO::PerformEdgeBasedVO()
 {
@@ -154,6 +154,7 @@ void EBVO::PerformEdgeBasedVO()
         // }
 
         CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
+        std::cout << "Complete calculating GT right edges..." << std::endl;
 
         // Declare variables at proper scope level
         std::vector<cv::DMatch> SIFT_matches;
@@ -392,40 +393,11 @@ void EBVO::PerformEdgeBasedVO()
             previous_frame_edges = dataset.left_edges; // Store first frame edges
         }
 
-        // StereoMatchResult match_result = DisplayMatches(
+        // StereoMatchResult match_result = get_Stereo_Edge_Pairs(
         //     left_undistorted,
         //     right_undistorted,
         //     dataset, frame_idx);
 
-#if DISPLAY_STERO_EDGE_MATCHES
-        cv::Mat left_visualization, right_visualization;
-        cv::cvtColor(left_edge_map, left_visualization, cv::COLOR_GRAY2BGR);
-        cv::cvtColor(right_edge_map, right_visualization, cv::COLOR_GRAY2BGR);
-
-        cv::Mat merged_visualization;
-        cv::hconcat(left_visualization, right_visualization, merged_visualization);
-
-        int total_matches = static_cast<int>(match_result.confirmed_matches.size());
-        int index = 0;
-
-        for (const auto &[left_edge, right_edge] : match_result.confirmed_matches)
-        {
-            cv::Scalar color = PickUniqueColor(index, total_matches);
-
-            cv::Point2d left_position = left_edge.position;
-            cv::Point2d right_position = right_edge.position;
-
-            cv::circle(merged_visualization, left_position, 4, color, cv::FILLED);
-            cv::Point2d right_shifted(right_position.x + left_visualization.cols, right_position.y);
-            cv::circle(merged_visualization, right_shifted, 4, color, cv::FILLED);
-            cv::line(merged_visualization, left_position, right_shifted, color, 1);
-
-            ++index;
-        }
-
-        std::string save_path = output_path + "/edge_matches_image" + std::to_string(i) + ".png";
-        cv::imwrite(save_path, merged_visualization);
-#endif
         frame_idx++;
         if (frame_idx >= 3)
         {
@@ -1173,250 +1145,251 @@ void EBVO::DebugNCCScoresWithGT(const std::unordered_map<Edge, EdgeGTMatchInfo> 
         {
             total_gt_with_high_ncc++;
         }
-        if (edges_visualized < num_edges_to_visualize)
-        {
-            std::string edge_dir = vis_dir + "/edge_" + std::to_string(prev_edge_idx);
-            std::filesystem::create_directories(edge_dir);
+        //> CH TODO: Avoid using OpenCV to visualize. Use Python or MATLAB instead.
+        // if (edges_visualized < num_edges_to_visualize)
+        // {
+        //     std::string edge_dir = vis_dir + "/edge_" + std::to_string(prev_edge_idx);
+        //     std::filesystem::create_directories(edge_dir);
 
-            // 1. Create visualization of previous frame with the edge
-            cv::Mat prev_frame_vis = previous_frame.left_image.clone();
-            cv::cvtColor(prev_frame_vis, prev_frame_vis, cv::COLOR_GRAY2BGR);
+        //     // 1. Create visualization of previous frame with the edge
+        //     cv::Mat prev_frame_vis = previous_frame.left_image.clone();
+        //     // cv::cvtColor(prev_frame_vis, prev_frame_vis, cv::COLOR_GRAY2BGR);
 
-            // Draw the previous edge point
-            cv::circle(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y), 5, cv::Scalar(0, 0, 255), -1);
+        //     // Draw the previous edge point
+        //     // cv::circle(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y), 5, cv::Scalar(0, 0, 255), -1);
 
-            // Get orthogonal shifted points for patch visualization
-            std::pair<cv::Point2d, cv::Point2d> shifted_points_prev = get_Orthogonal_Shifted_Points(prev_edge);
+        //     // Get orthogonal shifted points for patch visualization
+        //     std::pair<cv::Point2d, cv::Point2d> shifted_points_prev = get_Orthogonal_Shifted_Points(prev_edge);
 
-            // Draw orthogonal direction lines
-            cv::line(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y),
-                     cv::Point(prev_edge.location.x + 20 * cos(prev_edge.orientation),
-                               prev_edge.location.y + 20 * sin(prev_edge.orientation)),
-                     cv::Scalar(255, 0, 0), 2);
+        //     // Draw orthogonal direction lines
+        //     // cv::line(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y),
+        //     //          cv::Point(prev_edge.location.x + 20 * cos(prev_edge.orientation),
+        //     //                    prev_edge.location.y + 20 * sin(prev_edge.orientation)),
+        //     //          cv::Scalar(255, 0, 0), 2);
 
-            // Draw perpendicular direction
-            cv::line(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y),
-                     cv::Point(prev_edge.location.x + 20 * cos(prev_edge.orientation + M_PI / 2),
-                               prev_edge.location.y + 20 * sin(prev_edge.orientation + M_PI / 2)),
-                     cv::Scalar(0, 255, 0), 2);
+        //     // Draw perpendicular direction
+        //     // cv::line(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y),
+        //     //          cv::Point(prev_edge.location.x + 20 * cos(prev_edge.orientation + M_PI / 2),
+        //     //                    prev_edge.location.y + 20 * sin(prev_edge.orientation + M_PI / 2)),
+        //     //          cv::Scalar(0, 255, 0), 2);
 
-            // Draw patch boundaries
-            int half_patch = PATCH_SIZE / 2;
-            cv::rectangle(prev_frame_vis,
-                          cv::Point(shifted_points_prev.first.x - half_patch, shifted_points_prev.first.y - half_patch),
-                          cv::Point(shifted_points_prev.first.x + half_patch, shifted_points_prev.first.y + half_patch),
-                          cv::Scalar(0, 255, 0), 2);
-            cv::rectangle(prev_frame_vis,
-                          cv::Point(shifted_points_prev.second.x - half_patch, shifted_points_prev.second.y - half_patch),
-                          cv::Point(shifted_points_prev.second.x + half_patch, shifted_points_prev.second.y + half_patch),
-                          cv::Scalar(255, 0, 0), 2);
+        //     // Draw patch boundaries
+        //     int half_patch = PATCH_SIZE / 2;
+        //     // cv::rectangle(prev_frame_vis,
+        //     //               cv::Point(shifted_points_prev.first.x - half_patch, shifted_points_prev.first.y - half_patch),
+        //     //               cv::Point(shifted_points_prev.first.x + half_patch, shifted_points_prev.first.y + half_patch),
+        //     //               cv::Scalar(0, 255, 0), 2);
+        //     // cv::rectangle(prev_frame_vis,
+        //     //               cv::Point(shifted_points_prev.second.x - half_patch, shifted_points_prev.second.y - half_patch),
+        //     //               cv::Point(shifted_points_prev.second.x + half_patch, shifted_points_prev.second.y + half_patch),
+        //     //               cv::Scalar(255, 0, 0), 2);
 
-            // Add text labels
-            std::string edge_info = "Edge " + std::to_string(prev_edge_idx) + " (" +
-                                    std::to_string(int(prev_edge.location.x)) + "," +
-                                    std::to_string(int(prev_edge.location.y)) + ")";
-            cv::putText(prev_frame_vis, edge_info, cv::Point(20, 30),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        //     // Add text labels
+        //     // std::string edge_info = "Edge " + std::to_string(prev_edge_idx) + " (" +
+        //     //                         std::to_string(int(prev_edge.location.x)) + "," +
+        //     //                         std::to_string(int(prev_edge.location.y)) + ")";
+        //     // cv::putText(prev_frame_vis, edge_info, cv::Point(20, 30),
+        //     //             cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
 
-            cv::imwrite(edge_dir + "/1_previous_frame_edge.png", prev_frame_vis);
+        //     // cv::imwrite(edge_dir + "/1_previous_frame_edge.png", prev_frame_vis);
 
-            // 2. Create visualization of current frame with the GT edge
-            cv::Mat curr_frame_gt_vis = current_frame.left_image.clone();
-            cv::cvtColor(curr_frame_gt_vis, curr_frame_gt_vis, cv::COLOR_GRAY2BGR);
+        //     // 2. Create visualization of current frame with the GT edge
+        //     // cv::Mat curr_frame_gt_vis = current_frame.left_image.clone();
+        //     // cv::cvtColor(curr_frame_gt_vis, curr_frame_gt_vis, cv::COLOR_GRAY2BGR);
 
-            // Draw the GT edge point
-            cv::circle(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 5, cv::Scalar(0, 0, 255), -1);
+        //     // Draw the GT edge point
+        //     // cv::circle(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 5, cv::Scalar(0, 0, 255), -1);
 
-            // Draw orthogonal direction lines for GT
-            cv::line(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y),
-                     cv::Point(gt_edge.location.x + 20 * cos(gt_edge.orientation),
-                               gt_edge.location.y + 20 * sin(gt_edge.orientation)),
-                     cv::Scalar(255, 0, 0), 2);
+        //     // Draw orthogonal direction lines for GT
+        //     // cv::line(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y),
+        //     //          cv::Point(gt_edge.location.x + 20 * cos(gt_edge.orientation),
+        //     //                    gt_edge.location.y + 20 * sin(gt_edge.orientation)),
+        //     //          cv::Scalar(255, 0, 0), 2);
 
-            // Draw perpendicular direction
-            cv::line(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y),
-                     cv::Point(gt_edge.location.x + 20 * cos(gt_edge.orientation + M_PI / 2),
-                               gt_edge.location.y + 20 * sin(gt_edge.orientation + M_PI / 2)),
-                     cv::Scalar(0, 255, 0), 2);
+        //     // Draw perpendicular direction
+        //     // cv::line(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y),
+        //     //          cv::Point(gt_edge.location.x + 20 * cos(gt_edge.orientation + M_PI / 2),
+        //     //                    gt_edge.location.y + 20 * sin(gt_edge.orientation + M_PI / 2)),
+        //     //          cv::Scalar(0, 255, 0), 2);
 
-            // Add text labels
-            std::string gt_info = "GT Edge (" +
-                                  std::to_string(int(gt_edge.location.x)) + "," +
-                                  std::to_string(int(gt_edge.location.y)) + ")";
-            cv::putText(curr_frame_gt_vis, gt_info, cv::Point(20, 30),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-            std::string ncc_info = "NCC Score: " + std::to_string(gt_ncc_score);
-            cv::putText(curr_frame_gt_vis, ncc_info, cv::Point(20, 60),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        //     // Add text labels
+        //     // std::string gt_info = "GT Edge (" +
+        //     //                       std::to_string(int(gt_edge.location.x)) + "," +
+        //     //                       std::to_string(int(gt_edge.location.y)) + ")";
+        //     // cv::putText(curr_frame_gt_vis, gt_info, cv::Point(20, 30),
+        //     //             cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        //     // std::string ncc_info = "NCC Score: " + std::to_string(gt_ncc_score);
+        //     // cv::putText(curr_frame_gt_vis, ncc_info, cv::Point(20, 60),
+        //     //             cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
 
-            cv::imwrite(edge_dir + "/2_current_frame_gt_edge.png", curr_frame_gt_vis);
+        //     // cv::imwrite(edge_dir + "/2_current_frame_gt_edge.png", curr_frame_gt_vis);
 
-            // 3. Create combined visualization with GT and all vertical edges
-            cv::Mat combined_vis = current_frame.left_image.clone();
-            cv::cvtColor(combined_vis, combined_vis, cv::COLOR_GRAY2BGR);
+        //     // 3. Create combined visualization with GT and all vertical edges
+        //     // cv::Mat combined_vis = current_frame.left_image.clone();
+        //     // cv::cvtColor(combined_vis, combined_vis, cv::COLOR_GRAY2BGR);
 
-            // Draw the GT edge in magenta
-            cv::circle(combined_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 5, cv::Scalar(255, 0, 255), -1);
+        //     // Draw the GT edge in magenta
+        //     // cv::circle(combined_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 5, cv::Scalar(255, 0, 255), -1);
 
-            // Add information about number of vertical edges
-            std::string vert_count = "Vertical edges: " + std::to_string(vertical_edges.size());
-            cv::putText(combined_vis, vert_count, cv::Point(20, 30),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-            for (size_t i = 0; i < vertical_edges.size(); i++)
-            {
-                const Edge &vert_edge = vertical_edges[i];
-                double distance = cv::norm(vert_edge.location - gt_edge.location);
-                double ncc = edge_patch_similarity(prev_edge, vert_edge,
-                                                   previous_frame.left_image,
-                                                   current_frame.left_image);
+        //     // Add information about number of vertical edges
+        //     // std::string vert_count = "Vertical edges: " + std::to_string(vertical_edges.size());
+        //     // cv::putText(combined_vis, vert_count, cv::Point(20, 30),
+        //                 // cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        //     for (size_t i = 0; i < vertical_edges.size(); i++)
+        //     {
+        //         const Edge &vert_edge = vertical_edges[i];
+        //         double distance = cv::norm(vert_edge.location - gt_edge.location);
+        //         double ncc = edge_patch_similarity(prev_edge, vert_edge,
+        //                                            previous_frame.left_image,
+        //                                            current_frame.left_image);
 
-                // Color based on NCC score (green for high, red for low)
-                cv::Scalar color;
-                if (!std::isnan(ncc) && ncc >= NCC_THRESH_WEAK_BOTH_SIDES)
-                {
-                    color = cv::Scalar(0, 255, 0); // Green for good match
-                }
-                else
-                {
-                    color = cv::Scalar(0, 0, 255); // Red for poor match
-                }
+        //         // Color based on NCC score (green for high, red for low)
+        //         cv::Scalar color;
+        //         if (!std::isnan(ncc) && ncc >= NCC_THRESH_WEAK_BOTH_SIDES)
+        //         {
+        //             color = cv::Scalar(0, 255, 0); // Green for good match
+        //         }
+        //         else
+        //         {
+        //             color = cv::Scalar(0, 0, 255); // Red for poor match
+        //         }
 
-                cv::circle(combined_vis, cv::Point(vert_edge.location.x, vert_edge.location.y), 3, color, -1);
+        //         cv::circle(combined_vis, cv::Point(vert_edge.location.x, vert_edge.location.y), 3, color, -1);
 
-                // Add index number next to each edge
-                cv::putText(combined_vis, std::to_string(i),
-                            cv::Point(vert_edge.location.x + 5, vert_edge.location.y),
-                            cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+        //         // Add index number next to each edge
+        //         cv::putText(combined_vis, std::to_string(i),
+        //                     cv::Point(vert_edge.location.x + 5, vert_edge.location.y),
+        //                     cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
 
-                // Create individual visualization for each vertical edge
-                if (i < 5)
-                { // Limit to first 5 vertical edges to avoid too many images
-                    cv::Mat vert_vis = current_frame.left_image.clone();
-                    cv::cvtColor(vert_vis, vert_vis, cv::COLOR_GRAY2BGR);
+        //         // Create individual visualization for each vertical edge
+        //         if (i < 5)
+        //         { // Limit to first 5 vertical edges to avoid too many images
+        //             cv::Mat vert_vis = current_frame.left_image.clone();
+        //             cv::cvtColor(vert_vis, vert_vis, cv::COLOR_GRAY2BGR);
 
-                    // Draw the vertical edge
-                    cv::circle(vert_vis, cv::Point(vert_edge.location.x, vert_edge.location.y), 5, color, -1);
+        //             // Draw the vertical edge
+        //             cv::circle(vert_vis, cv::Point(vert_edge.location.x, vert_edge.location.y), 5, color, -1);
 
-                    // Draw GT edge as reference (smaller, semi-transparent)
-                    cv::circle(vert_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 3,
-                               cv::Scalar(255, 0, 255), 1);
+        //             // Draw GT edge as reference (smaller, semi-transparent)
+        //             cv::circle(vert_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 3,
+        //                        cv::Scalar(255, 0, 255), 1);
 
-                    // Add information text
-                    std::string vert_info = "Vertical Edge " + std::to_string(i) + " (" +
-                                            std::to_string(int(vert_edge.location.x)) + "," +
-                                            std::to_string(int(vert_edge.location.y)) + ")";
-                    cv::putText(vert_vis, vert_info, cv::Point(20, 30),
-                                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-                    std::string dist_info = "Distance to GT: " + std::to_string(distance);
-                    cv::putText(vert_vis, dist_info, cv::Point(20, 60),
-                                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        //             // Add information text
+        //             std::string vert_info = "Vertical Edge " + std::to_string(i) + " (" +
+        //                                     std::to_string(int(vert_edge.location.x)) + "," +
+        //                                     std::to_string(int(vert_edge.location.y)) + ")";
+        //             cv::putText(vert_vis, vert_info, cv::Point(20, 30),
+        //                         cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        //             std::string dist_info = "Distance to GT: " + std::to_string(distance);
+        //             cv::putText(vert_vis, dist_info, cv::Point(20, 60),
+        //                         cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
 
-                    std::string ncc_text = "NCC: " + (std::isnan(ncc) ? "NaN" : std::to_string(ncc));
-                    cv::putText(vert_vis, ncc_text, cv::Point(20, 90),
-                                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+        //             std::string ncc_text = "NCC: " + (std::isnan(ncc) ? "NaN" : std::to_string(ncc));
+        //             cv::putText(vert_vis, ncc_text, cv::Point(20, 90),
+        //                         cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
 
-                    cv::imwrite(edge_dir + "/3_vertical_edge_" + std::to_string(i) + ".png", vert_vis);
-                }
-            }
-            cv::imwrite(edge_dir + "/4_all_vertical_edges.png", combined_vis);
+        //             cv::imwrite(edge_dir + "/3_vertical_edge_" + std::to_string(i) + ".png", vert_vis);
+        //         }
+        //     }
+        //     cv::imwrite(edge_dir + "/4_all_vertical_edges.png", combined_vis);
 
-            // Save patch images and statistics
-            std::ofstream stats_file(edge_dir + "/patch_statistics.txt");
-            stats_file << "PATCH STATISTICS FOR EDGE " << prev_edge_idx << std::endl;
-            stats_file << "--------------------------------------" << std::endl;
-            stats_file << "Previous Edge Location: (" << prev_edge.location.x << ", "
-                       << prev_edge.location.y << ")" << std::endl;
-            stats_file << "Previous Edge Orientation: " << prev_edge.orientation << std::endl;
-            stats_file << "GT Edge Location: (" << gt_edge.location.x << ", "
-                       << gt_edge.location.y << ")" << std::endl;
-            stats_file << "GT Edge Orientation: " << gt_edge.orientation << std::endl;
-            stats_file << "GT NCC Score: " << gt_ncc_score << std::endl
-                       << std::endl;
+        //     // Save patch images and statistics
+        //     std::ofstream stats_file(edge_dir + "/patch_statistics.txt");
+        //     stats_file << "PATCH STATISTICS FOR EDGE " << prev_edge_idx << std::endl;
+        //     stats_file << "--------------------------------------" << std::endl;
+        //     stats_file << "Previous Edge Location: (" << prev_edge.location.x << ", "
+        //                << prev_edge.location.y << ")" << std::endl;
+        //     stats_file << "Previous Edge Orientation: " << prev_edge.orientation << std::endl;
+        //     stats_file << "GT Edge Location: (" << gt_edge.location.x << ", "
+        //                << gt_edge.location.y << ")" << std::endl;
+        //     stats_file << "GT Edge Orientation: " << gt_edge.orientation << std::endl;
+        //     stats_file << "GT NCC Score: " << gt_ncc_score << std::endl
+        //                << std::endl;
 
-            // Extract and save patches for both previous and GT edges
-            std::pair<cv::Point2d, cv::Point2d> shifted_points_gt = get_Orthogonal_Shifted_Points(gt_edge);
+        //     // Extract and save patches for both previous and GT edges
+        //     std::pair<cv::Point2d, cv::Point2d> shifted_points_gt = get_Orthogonal_Shifted_Points(gt_edge);
 
-            cv::Mat patch_coord_x_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-            cv::Mat patch_coord_y_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-            cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-            cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        //     cv::Mat patch_coord_x_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        //     cv::Mat patch_coord_y_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        //     cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        //     cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
-            cv::Mat prev_patch_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-            cv::Mat prev_patch_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-            cv::Mat gt_patch_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-            cv::Mat gt_patch_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        //     cv::Mat prev_patch_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        //     cv::Mat prev_patch_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        //     cv::Mat gt_patch_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+        //     cv::Mat gt_patch_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
 
-            // Extract patches
-            get_patch_on_one_edge_side(shifted_points_prev.first, prev_edge.orientation,
-                                       patch_coord_x_plus, patch_coord_y_plus,
-                                       prev_patch_plus, previous_frame.left_image);
+        //     // Extract patches
+        //     get_patch_on_one_edge_side(shifted_points_prev.first, prev_edge.orientation,
+        //                                patch_coord_x_plus, patch_coord_y_plus,
+        //                                prev_patch_plus, previous_frame.left_image);
 
-            get_patch_on_one_edge_side(shifted_points_prev.second, prev_edge.orientation,
-                                       patch_coord_x_minus, patch_coord_y_minus,
-                                       prev_patch_minus, previous_frame.left_image);
+        //     get_patch_on_one_edge_side(shifted_points_prev.second, prev_edge.orientation,
+        //                                patch_coord_x_minus, patch_coord_y_minus,
+        //                                prev_patch_minus, previous_frame.left_image);
 
-            get_patch_on_one_edge_side(shifted_points_gt.first, gt_edge.orientation,
-                                       patch_coord_x_plus, patch_coord_y_plus,
-                                       gt_patch_plus, current_frame.left_image);
+        //     get_patch_on_one_edge_side(shifted_points_gt.first, gt_edge.orientation,
+        //                                patch_coord_x_plus, patch_coord_y_plus,
+        //                                gt_patch_plus, current_frame.left_image);
 
-            get_patch_on_one_edge_side(shifted_points_gt.second, gt_edge.orientation,
-                                       patch_coord_x_minus, patch_coord_y_minus,
-                                       gt_patch_minus, current_frame.left_image);
+        //     get_patch_on_one_edge_side(shifted_points_gt.second, gt_edge.orientation,
+        //                                patch_coord_x_minus, patch_coord_y_minus,
+        //                                gt_patch_minus, current_frame.left_image);
 
-            // Save normalized patch images
-            cv::Mat norm_patch;
+        //     // Save normalized patch images
+        //     cv::Mat norm_patch;
 
-            cv::normalize(prev_patch_plus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
-            cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
-            cv::imwrite(edge_dir + "/patch_prev_plus.png", norm_patch);
+        //     cv::normalize(prev_patch_plus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
+        //     cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
+        //     cv::imwrite(edge_dir + "/patch_prev_plus.png", norm_patch);
 
-            cv::normalize(prev_patch_minus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
-            cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
-            cv::imwrite(edge_dir + "/patch_prev_minus.png", norm_patch);
+        //     cv::normalize(prev_patch_minus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
+        //     cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
+        //     cv::imwrite(edge_dir + "/patch_prev_minus.png", norm_patch);
 
-            cv::normalize(gt_patch_plus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
-            cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
-            cv::imwrite(edge_dir + "/patch_gt_plus.png", norm_patch);
+        //     cv::normalize(gt_patch_plus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
+        //     cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
+        //     cv::imwrite(edge_dir + "/patch_gt_plus.png", norm_patch);
 
-            cv::normalize(gt_patch_minus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
-            cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
-            cv::imwrite(edge_dir + "/patch_gt_minus.png", norm_patch);
+        //     cv::normalize(gt_patch_minus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
+        //     cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
+        //     cv::imwrite(edge_dir + "/patch_gt_minus.png", norm_patch);
 
-            // Calculate and save patch statistics
-            double mean_prev_plus = cv::mean(prev_patch_plus)[0];
-            double mean_prev_minus = cv::mean(prev_patch_minus)[0];
-            double mean_gt_plus = cv::mean(gt_patch_plus)[0];
-            double mean_gt_minus = cv::mean(gt_patch_minus)[0];
+        //     // Calculate and save patch statistics
+        //     double mean_prev_plus = cv::mean(prev_patch_plus)[0];
+        //     double mean_prev_minus = cv::mean(prev_patch_minus)[0];
+        //     double mean_gt_plus = cv::mean(gt_patch_plus)[0];
+        //     double mean_gt_minus = cv::mean(gt_patch_minus)[0];
 
-            double var_prev_plus = cv::mean((prev_patch_plus - mean_prev_plus).mul(prev_patch_plus - mean_prev_plus))[0];
-            double var_prev_minus = cv::mean((prev_patch_minus - mean_prev_minus).mul(prev_patch_minus - mean_prev_minus))[0];
-            double var_gt_plus = cv::mean((gt_patch_plus - mean_gt_plus).mul(gt_patch_plus - mean_gt_plus))[0];
-            double var_gt_minus = cv::mean((gt_patch_minus - mean_gt_minus).mul(gt_patch_minus - mean_gt_minus))[0];
+        //     double var_prev_plus = cv::mean((prev_patch_plus - mean_prev_plus).mul(prev_patch_plus - mean_prev_plus))[0];
+        //     double var_prev_minus = cv::mean((prev_patch_minus - mean_prev_minus).mul(prev_patch_minus - mean_prev_minus))[0];
+        //     double var_gt_plus = cv::mean((gt_patch_plus - mean_gt_plus).mul(gt_patch_plus - mean_gt_plus))[0];
+        //     double var_gt_minus = cv::mean((gt_patch_minus - mean_gt_minus).mul(gt_patch_minus - mean_gt_minus))[0];
 
-            stats_file << "Patch Statistics:" << std::endl;
-            stats_file << "  Prev Plus  - Mean: " << mean_prev_plus << ", Variance: " << var_prev_plus << std::endl;
-            stats_file << "  Prev Minus - Mean: " << mean_prev_minus << ", Variance: " << var_prev_minus << std::endl;
-            stats_file << "  GT Plus    - Mean: " << mean_gt_plus << ", Variance: " << var_gt_plus << std::endl;
-            stats_file << "  GT Minus   - Mean: " << mean_gt_minus << ", Variance: " << var_gt_minus << std::endl;
-            stats_file << std::endl;
+        //     stats_file << "Patch Statistics:" << std::endl;
+        //     stats_file << "  Prev Plus  - Mean: " << mean_prev_plus << ", Variance: " << var_prev_plus << std::endl;
+        //     stats_file << "  Prev Minus - Mean: " << mean_prev_minus << ", Variance: " << var_prev_minus << std::endl;
+        //     stats_file << "  GT Plus    - Mean: " << mean_gt_plus << ", Variance: " << var_gt_plus << std::endl;
+        //     stats_file << "  GT Minus   - Mean: " << mean_gt_minus << ", Variance: " << var_gt_minus << std::endl;
+        //     stats_file << std::endl;
 
-            // Add vertical edge statistics
-            stats_file << "Vertical Edges:" << std::endl;
-            for (size_t i = 0; i < vertical_edges.size(); i++)
-            {
-                const Edge &vert_edge = vertical_edges[i];
-                double ncc = edge_patch_similarity(prev_edge, vert_edge,
-                                                   previous_frame.left_image,
-                                                   current_frame.left_image);
+        //     // Add vertical edge statistics
+        //     stats_file << "Vertical Edges:" << std::endl;
+        //     for (size_t i = 0; i < vertical_edges.size(); i++)
+        //     {
+        //         const Edge &vert_edge = vertical_edges[i];
+        //         double ncc = edge_patch_similarity(prev_edge, vert_edge,
+        //                                            previous_frame.left_image,
+        //                                            current_frame.left_image);
 
-                stats_file << "  Edge " << i << " - Location: ("
-                           << vert_edge.location.x << ", " << vert_edge.location.y
-                           << "), NCC: " << ncc << std::endl;
-            }
+        //         stats_file << "  Edge " << i << " - Location: ("
+        //                    << vert_edge.location.x << ", " << vert_edge.location.y
+        //                    << "), NCC: " << ncc << std::endl;
+        //     }
 
-            stats_file.close();
-            edges_visualized++;
-        }
+        //     stats_file.close();
+        //     edges_visualized++;
+        // }
 
         // Now check all vertical edges
         int candidate_idx = 0;
