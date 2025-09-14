@@ -226,8 +226,8 @@ void ThirdOrderEdgeDetectionCPU::convolve_img()
                 TO_conv_mag = std::sqrt(TO_conv_Ix * TO_conv_Ix + TO_conv_Iy * TO_conv_Iy);
                 TO_conv_Ix /= TO_conv_mag;
                 TO_conv_Iy /= TO_conv_mag;
-                // I_orient(si, sj) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
-                I_orient(si, sj) = std::atan(TO_conv_Ix / -TO_conv_Iy);
+                I_orient(si, sj) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                // I_orient(si, sj) = std::atan(TO_conv_Ix / -TO_conv_Iy);
                 // ---------------------------------------------------------
 
                 fx = 0;
@@ -270,8 +270,8 @@ void ThirdOrderEdgeDetectionCPU::convolve_img()
                 TO_conv_mag = std::sqrt(TO_conv_Ix * TO_conv_Ix + TO_conv_Iy * TO_conv_Iy);
                 TO_conv_Ix /= TO_conv_mag;
                 TO_conv_Iy /= TO_conv_mag;
-                // I_orient(si, sj + 1) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
-                I_orient(si, sj + 1) = std::atan(TO_conv_Ix / -TO_conv_Iy);
+                I_orient(si, sj + 1) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                // I_orient(si, sj + 1) = std::atan(TO_conv_Ix / -TO_conv_Iy);
                 // ----------------------------------------------------------------
 
                 fx = 0;
@@ -314,8 +314,8 @@ void ThirdOrderEdgeDetectionCPU::convolve_img()
                 TO_conv_mag = std::sqrt(TO_conv_Ix * TO_conv_Ix + TO_conv_Iy * TO_conv_Iy);
                 TO_conv_Ix /= TO_conv_mag;
                 TO_conv_Iy /= TO_conv_mag;
-                // I_orient(si + 1, sj) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
-                I_orient(si + 1, sj) = std::atan(TO_conv_Ix / -TO_conv_Iy);
+                I_orient(si + 1, sj) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                // I_orient(si + 1, sj) = std::atan(TO_conv_Ix / -TO_conv_Iy);
                 // ----------------------------------------------------------------
 
                 fx = 0;
@@ -358,8 +358,8 @@ void ThirdOrderEdgeDetectionCPU::convolve_img()
                 TO_conv_mag = std::sqrt(TO_conv_Ix * TO_conv_Ix + TO_conv_Iy * TO_conv_Iy);
                 TO_conv_Ix /= TO_conv_mag;
                 TO_conv_Iy /= TO_conv_mag;
-                // I_orient(si + 1, sj + 1) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
-                I_orient(si + 1, sj + 1) = std::atan(TO_conv_Ix / -TO_conv_Iy);
+                I_orient(si + 1, sj + 1) = std::atan2(TO_conv_Ix, -TO_conv_Iy);
+                // I_orient(si + 1, sj + 1) = std::atan(TO_conv_Ix / -TO_conv_Iy);
             }
         }
     }
@@ -526,9 +526,9 @@ int ThirdOrderEdgeDetectionCPU::non_maximum_suppresion()
     cv::Point2d edge_location;
     Edge edge;
     edge_pt_list_idx = 0;
-    for (int i = 10; i < interp_img_height-10; i++)
+    for (int i = 10; i < interp_img_height - 10; i++)
     {
-        for (int j = 10; j < interp_img_width-10; j++)
+        for (int j = 10; j < interp_img_width - 10; j++)
         {
             if (subpix_pos_x_map(i, j) != 0)
             {
@@ -555,7 +555,7 @@ int ThirdOrderEdgeDetectionCPU::non_maximum_suppresion()
 
                 edge.location = edge_location;
                 edge.orientation = subpix_edge_pts_final(edge_pt_list_idx, 2);
-
+                edge.index = edge_pt_list_idx;
                 toed_edges.push_back(edge);
 
                 // -- 5) add up the edge point list index --

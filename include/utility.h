@@ -211,11 +211,6 @@ inline Eigen::Matrix3d ConvertToEigenMatrix(const std::vector<std::vector<double
     return eigen_matrix;
 }
 
-// void create_square_meshGrid( unsigned square_size, cv::Mat &meshGrid ) 
-// {
-
-// }
-
 template< typename T >
 T rad_to_deg( T theta ) {
     return theta * (180.0 / M_PI);
