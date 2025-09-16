@@ -30,8 +30,10 @@
 #define MAX_CLUSTER_SIZE                (10)        //> max number of edges per cluster
 #define CLUSTER_ORIENT_GAUSS_SIGMA      (2.0)
 
+#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
+#define GRID_SIZE (20)     //> Size of the spatial grid cells in pixels
+
 #define MEASURE_TIMINGS (false)
-#define DISPLAY_STERO_EDGE_MATCHES (false)
 
 //> Define output file folder
 #define OUTPUT_WRITE_PATH std::string("../output_files/")
@@ -40,9 +42,6 @@
 //> For quick processing
 #define WRITE_TOED_EDGES (true)
 #define READ_TOED_EDGES_FROM_FILES (false)
-
-//> Use for the TUM type dataset
-#define ASSOCIATION_FILE_NAME std::string("associate.txt")
 
 //> Generic definitions
 #define RANSAC_NUM_OF_ITERATIONS (500)
@@ -87,5 +86,3 @@
                                       "options:\n"                                             \
                                       "  -h, --help         show this help message and exit\n" \
                                       "  -c, --config_file  path to the the configuration file\n");
-#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
-#define GRID_SIZE (40)     //> Size of the spatial grid cells in pixels

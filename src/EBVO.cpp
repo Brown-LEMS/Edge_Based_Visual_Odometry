@@ -10,6 +10,7 @@
 
 EBVO::EBVO(YAML::Node config_map) : dataset(config_map) {}
 
+//> MARK: MAIN CODE OF EDGE VO
 void EBVO::PerformEdgeBasedVO()
 {
     // The main processing function that performs edge-based visual odometry on a sequence of stereo image pairs.
@@ -47,6 +48,7 @@ void EBVO::PerformEdgeBasedVO()
     std::vector<RecallMetrics> all_forward_recall_metrics;
     std::vector<BidirectionalMetrics> all_bct_metrics;
 
+    //> load stereo iterator and read disparity
     dataset.load_dataset(dataset.get_dataset_type(), left_ref_disparity_maps, num_pairs);
 
     std::vector<double> left_intr = dataset.left_intr();
@@ -66,20 +68,15 @@ void EBVO::PerformEdgeBasedVO()
     std::vector<cv::KeyPoint> previous_edge_loc, current_edge_loc; // store the edge locations for the previous and current frames
     std::vector<Edge> previous_frame_edges;                        // Store previous frame edges for spatial grid evaluation
 
+    //> Initialize
+    StereoEdgeCorrespondencesGT prev_stereo_frame, curr_stereo_frame;
+    PrevCurrEdgeCorrespondencesGT consecutive_frame;
+
     cv::Mat left_calib_inv = left_calib.inv();
     cv::Mat right_calib_inv = right_calib.inv();
 
     cv::Mat descriptors_t0, descriptors_t1;
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
-
-    // Get the first frame from the dataset
-
-    // if (!dataset.stereo_iterator->hasNext() ||
-    //     !dataset.stereo_iterator->getNext(current_frame))
-    // {
-    //     LOG_ERROR("Failed to get first frame from dataset");
-    //     return;
-    // }
 
     size_t frame_idx = 0;
     while (dataset.stereo_iterator->hasNext() && num_pairs - frame_idx >= 0)
@@ -93,10 +90,8 @@ void EBVO::PerformEdgeBasedVO()
         const cv::Mat &curr_right_img = current_frame.right_image;
 
         // If the current frame has ground truth, we can use it
-        if (dataset.has_gt())
-        {
-        }
-        const cv::Mat &left_ref_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
+        if (dataset.has_gt()) { }
+        const cv::Mat &left_disparity_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
 
         dataset.ncc_one_vs_err.clear();
         dataset.ncc_two_vs_err.clear();
@@ -134,27 +129,24 @@ void EBVO::PerformEdgeBasedVO()
 
         dataset.increment_num_imgs();
 
-        cv::Mat left_edge_map = cv::Mat::zeros(left_cur_undistorted.size(), CV_8UC1);
-        cv::Mat right_edge_map = cv::Mat::zeros(right_cur_undistorted.size(), CV_8UC1);
+        //> For each left edge, get the corresponding GT location (not right edge) on the right image
+        Find_GT_Locations(dataset.left_edges, left_disparity_map, prev_stereo_frame);
+        std::cout << "Complete calculating GT locations for left edges..." << std::endl;
+        std::cout << "Size of the prev_stereo_fram.left_edges = " << prev_stereo_frame.left_edges.size() << std::endl;
 
-        // for (const auto &edge : dataset.left_edges)
-        // {
-        //     if (edge.location.x >= 0 && edge.location.x < left_edge_map.cols && edge.location.y >= 0 && edge.location.y < left_edge_map.rows)
-        //     {
-        //         left_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
-        //     }
-        // }
+        // //> construct stereo edge correspondences
+        // StereoMatchResult match_result = get_Stereo_Edge_Pairs(
+        //     left_undistorted,
+        //     right_undistorted,
+        //     prev_stereo_frame,
+        //     dataset, frame_idx
+        // );
 
-        // for (const auto &edge : dataset.right_edges)
-        // {
-        //     if (edge.location.x >= 0 && edge.location.x < right_edge_map.cols && edge.location.y >= 0 && edge.location.y < right_edge_map.rows)
-        //     {
-        //         right_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
-        //     }
-        // }
+        //> Construct a GT stereo edge pool
+        get_Stereo_Edge_GT_Pairs(dataset, prev_stereo_frame, dataset.right_edges);
 
-        CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
-        std::cout << "Complete calculating GT right edges..." << std::endl;
+        std::cout << "Size of the prev_stereo_fram.left_edges = " << prev_stereo_frame.left_edges.size() << std::endl;
+        break;
 
         // Declare variables at proper scope level
         std::vector<cv::DMatch> SIFT_matches;
@@ -165,17 +157,17 @@ void EBVO::PerformEdgeBasedVO()
             current_edge_loc.clear();
 
             std::unordered_map<Edge, std::vector<Edge>> Edge_match;
-#pragma omp parallel for schedule(dynamic)
+            #pragma omp parallel for schedule(dynamic)
             for (int current_idx = 0; current_idx < dataset.left_edges.size(); ++current_idx)
             {
-#pragma omp critical(spatial_grid)
+                #pragma omp critical(spatial_grid)
                 {
                     spatial_grid.addEdge(current_idx, dataset.left_edges[current_idx].location);
                 }
 
                 Edge &current_edge = dataset.left_edges[current_idx];
                 cv::KeyPoint current_kp(current_edge.location, 1, 180 / M_PI * current_edge.orientation);
-#pragma omp critical(edge_loc)
+                #pragma omp critical(edge_loc)
                 {
                     current_edge_loc.push_back(current_kp);
                 }
@@ -185,7 +177,7 @@ void EBVO::PerformEdgeBasedVO()
 
                 if (!edge_desc.empty())
                 {
-#pragma omp critical(descriptor_cache)
+                    #pragma omp critical(descriptor_cache)
                     {
                         current_descriptors_cache[current_idx] = edge_desc.clone();
                     }
@@ -194,10 +186,10 @@ void EBVO::PerformEdgeBasedVO()
             std::vector<Edge> gt_edges;
             std::unordered_map<Edge, EdgeGTMatchInfo> left_edges_GT_Info;
             GetGTEdges(frame_idx, previous_frame, current_frame, previous_frame_edges,
-                       left_ref_map, left_calib_inv, left_calib, gt_edges, left_edges_GT_Info);
+                       left_disparity_map, left_calib_inv, left_calib, gt_edges, left_edges_GT_Info);
 
             std::cout << "Stage 1: Populating Edge_match with spatial candidates..." << std::endl;
-#pragma omp parallel for schedule(dynamic)
+            #pragma omp parallel for schedule(dynamic)
             for (int i = 0; i < previous_frame_edges.size(); ++i)
             {
                 const Edge &prev_edge = previous_frame_edges[i];
@@ -229,7 +221,7 @@ void EBVO::PerformEdgeBasedVO()
                 for (int idx : indices)
                 {
                     const Edge &curr_edge = dataset.left_edges[idx];
-#pragma omp critical(edge_match)
+                    #pragma omp critical(edge_match)
                     {
                         Edge_match[prev_edge].push_back(curr_edge);
                     }
@@ -247,7 +239,7 @@ void EBVO::PerformEdgeBasedVO()
             // Create a vector to store matches from parallel threads
             std::vector<std::vector<cv::DMatch>> thread_matches(omp_get_max_threads());
 
-#pragma omp parallel for schedule(dynamic)
+            #pragma omp parallel for schedule(dynamic)
             for (int i = 0; i < previous_frame_edges.size(); ++i)
             {
                 int thread_id = omp_get_thread_num();
@@ -305,7 +297,7 @@ void EBVO::PerformEdgeBasedVO()
                 // Add filtered candidates to the new Edge_match
                 if (!filtered_candidates.empty())
                 {
-#pragma omp critical(filtered_edge_match)
+                    #pragma omp critical(filtered_edge_match)
                     {
                         Filtered_Edge_match[prev_edge] = filtered_candidates;
                     }
@@ -337,7 +329,7 @@ void EBVO::PerformEdgeBasedVO()
                 edge_match_vector.push_back({match.first, &match.second});
             }
 
-#pragma omp parallel for schedule(dynamic)
+            #pragma omp parallel for schedule(dynamic)
             for (int i = 0; i < edge_match_vector.size(); i++)
             {
                 const Edge &curr_edge = edge_match_vector[i].first;
@@ -373,30 +365,27 @@ void EBVO::PerformEdgeBasedVO()
         }
         else
         {
-            // Initialize for first frame
+            //> MARK: Initialize for the first frame
+            //> CH TODO: We should just loop over the left edges that "have" the corresponding right edges. This should save a lot of time.
             for (int i = 0; i < dataset.left_edges.size(); ++i)
             {
                 const Edge &edge = dataset.left_edges[i];
                 previous_edge_loc.push_back(cv::KeyPoint(edge.location, 1, 180 / M_PI * edge.orientation));
                 spatial_grid.addEdge(i, edge.location);
 
-                // Compute and cache descriptor for first frame
+                // Compute and cache descriptor for the first frame
                 std::vector<cv::KeyPoint> edge_kp = {cv::KeyPoint(edge.location, 1, 180 / M_PI * edge.orientation)};
                 cv::Mat edge_desc;
                 sift->compute(current_frame.left_image, edge_kp, edge_desc);
 
                 if (!edge_desc.empty())
                 {
+                    //> SHould cache only the left edges that "have" the corresponding right edges.
                     previous_frame_descriptors_cache[i] = edge_desc.clone();
                 }
             }
             previous_frame_edges = dataset.left_edges; // Store first frame edges
         }
-
-        // StereoMatchResult match_result = get_Stereo_Edge_Pairs(
-        //     left_undistorted,
-        //     right_undistorted,
-        //     dataset, frame_idx);
 
         frame_idx++;
         if (frame_idx >= 3)
@@ -484,47 +473,26 @@ std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2
     return {selected_points, selected_orientations, selected_ground_truth_points};
 }
 
-void EBVO::CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
+void EBVO::Find_GT_Locations(const std::vector<Edge> left_edges, const cv::Mat left_disparity_map, StereoEdgeCorrespondencesGT& prev_stereo_frame)
 {
     dataset.forward_gt_data.clear();
 
-    static size_t total_rows_written = 0;
-    static int file_index = 1;
-    static std::ofstream csv_file;
-    static const size_t max_rows_per_file = 1'000'000;
-
-    if (!csv_file.is_open())
+    for (const Edge &e : left_edges)
     {
-        std::string filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
-        csv_file.open(filename, std::ios::out);
-    }
-
-    for (const Edge &e : edges)
-    {
-        double disparity = Bilinear_Interpolation(disparity_map, e.location);
+        double disparity = Bilinear_Interpolation(left_disparity_map, e.location);
 
         if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
         {
             continue;
         }
 
-        cv::Point2d right_edge(e.location.x - disparity, e.location.y);
-        dataset.forward_gt_data.emplace_back(e.location, right_edge, e.orientation);
+        cv::Point2d GT_location(e.location.x - disparity, e.location.y);
+        dataset.forward_gt_data.emplace_back(e.location, GT_location, e.orientation);   //> This can be removed.
 
-        if (total_rows_written >= max_rows_per_file)
-        {
-            csv_file.close();
-            ++file_index;
-            total_rows_written = 0;
-            std::string next_filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
-            csv_file.open(next_filename, std::ios::out);
-        }
-
-        csv_file << disparity << "\n";
-        ++total_rows_written;
+        //> Insert the data to the structure
+        prev_stereo_frame.left_edges.push_back(e);
+        prev_stereo_frame.GT_locations_from_disparity.push_back(GT_location);
     }
-
-    csv_file.flush();
 }
 
 void EBVO::ReadEdgesFromBinary(const std::string &filepath,
@@ -1031,7 +999,7 @@ Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_fr
 
 void EBVO::GetGTEdges(size_t &frame_idx, StereoFrame &previous_frame, StereoFrame &current_frame,
                       const std::vector<Edge> &previous_frame_edges,
-                      const cv::Mat &left_ref_map, const cv::Mat &left_calib_inv,
+                      const cv::Mat &left_disparity_map, const cv::Mat &left_calib_inv,
                       const cv::Mat &left_calib, std::vector<Edge> &gt_edges,
                       std::unordered_map<Edge, EdgeGTMatchInfo> &left_edges_GT_Info)
 {
@@ -1047,7 +1015,7 @@ void EBVO::GetGTEdges(size_t &frame_idx, StereoFrame &previous_frame, StereoFram
     {
 
         Edge GTEdge = GetGTEdge(true, previous_frame, current_frame,
-                                left_ref_map, left_calib_inv, left_calib,
+                                left_disparity_map, left_calib_inv, left_calib,
                                 previous_frame_edges[i]);
         if (GTEdge.b_isEmpty)
             continue;

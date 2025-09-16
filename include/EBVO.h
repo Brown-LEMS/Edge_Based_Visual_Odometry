@@ -95,7 +95,7 @@ public:
                       const std::string &filepath,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
-    void CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image);
+    void Find_GT_Locations(const std::vector<Edge> left_edges, const cv::Mat left_disparity_map, StereoEdgeCorrespondencesGT& prev_stereo_frame);
     void ReadEdgesFromBinary(const std::string &filepath,
                              std::vector<Edge> &edges);
     void WriteEdgesToBinary(const std::string &filepath,

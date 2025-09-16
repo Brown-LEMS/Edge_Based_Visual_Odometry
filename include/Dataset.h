@@ -30,12 +30,6 @@
 //> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu), Jue Han (jhan192@brown.edu)
 // =======================================================================================================
 
-// struct Edge
-// {
-//     cv::Point2d location;
-//     double orientation;
-// };
-
 struct FileInfo
 {
     std::string dataset_type;
@@ -151,6 +145,21 @@ struct StereoMatchResult
     BidirectionalMetrics bidirectional_metrics;
 };
 
+//> This struct defines a pool of GT edge correspondences in a stereo image pair
+struct StereoEdgeCorrespondencesGT
+{
+    std::vector<Edge> left_edges;                           //> left edges
+    std::vector<cv::Point2d> GT_locations_from_disparity;   //> GT location on the right image from the left edge and the GT disparity
+    std::vector<std::vector<Edge>> GT_right_edges;          //> A set of right edges that are "very close" to the GT location from disparity
+};
+
+struct PrevCurrEdgeCorrespondencesGT
+{
+    std::vector<Edge> prev_left_edges;
+    std::vector<cv::Point2d> GT_locations_on_curr_img;
+    std::vector<std::vector<Edge>> GT_curr_edges;
+};
+
 extern cv::Mat merged_visualization_global;
 class Dataset
 {
@@ -160,7 +169,6 @@ public:
     Dataset(YAML::Node);
     std::unique_ptr<StereoIterator> stereo_iterator;
 
-    static void onMouse(int event, int x, int y, int, void *);
     void load_dataset(const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps, int num_pairs);
 
     std::vector<Edge> left_edges;

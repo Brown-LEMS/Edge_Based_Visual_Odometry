@@ -220,71 +220,42 @@ Edge PerformEpipolarShift(
             }
         }
     }
-
-    //> ============================= OLD STUFF BELOW =========================
-    // cv::Point2d corrected_edge_loc;
-    // assert(epipolar_line_coeffs.size() == 3);
-    // double EL_coeff_A = epipolar_line_coeffs[0];
-    // double EL_coeff_B = epipolar_line_coeffs[1];
-    // double EL_coeff_C = epipolar_line_coeffs[2];
-    // double a1_line = -epipolar_line_coeffs[0] / epipolar_line_coeffs[1];
-    // double b1_line = -1;
-    // double c1_line = -epipolar_line_coeffs[2] / epipolar_line_coeffs[1];
-
-    // //> Parameters of the line passing through the original edge along its direction (tangent) vector
-    // double a_edgeH2 = tan(original_edge.orientation); //> Slope of the edge line
-    // double b_edgeH2 = -1;
-    // double c_edgeH2 = -(a_edgeH2 * original_edge.location.x - original_edge.location.y); // −(a⋅x2−y2)
-
-    // //> Find the intersected point of the two lines
-    // corrected_edge_loc.x = (b1_line * c_edgeH2 - b_edgeH2 * c1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
-    // corrected_edge_loc.y = (c1_line * a_edgeH2 - c_edgeH2 * a1_line) / (a1_line * b_edgeH2 - a_edgeH2 * b1_line);
-
-    // //> Find (i) the displacement between the original edge and the corrected edge, and
-    // //       (ii) the intersection angle between the epipolar line and the line passing through the original edge along its direction vector
-    // double epipolar_shift_displacement = cv::norm(corrected_edge_loc - original_edge.location);
-    // double m_epipolar = -a1_line / b1_line; //> Slope of epipolar line
-    // double angle_diff_rad = abs(original_edge.orientation - atan(m_epipolar));
-    // double angle_diff_deg = angle_diff_rad * (180.0 / M_PI);
-    // if (angle_diff_deg > 180)
-    // {
-    //     angle_diff_deg -= 180;
-    // }
-
-    // //> check if the corrected edge passes the epoplar tengency test (intersection angle < 4 degrees and displacement < 6 pixels)
-    // b_pass_epipolar_tengency_check = (epipolar_shift_displacement < EPIP_TENGENCY_PROXIM_THRESH && abs(angle_diff_deg - 0) > EPIP_TENGENCY_ORIENT_THRESH && abs(angle_diff_deg - 180) > EPIP_TENGENCY_ORIENT_THRESH) ? (true) : (false);
-
-    // return Edge{corrected_edge_loc, original_edge.orientation, false}; //> Return the corrected edge with the same orientation as the original edge
 }
 
 /*
     Extract edges that are close to the epipolar line within a specified distance threshold.
     Returns a pair of vectors: one for the extracted edge locations and one for their orientations.
 */
-std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold)
+std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, const double dist_tol)
 {
     std::vector<Edge> extracted_edges;
 
-    // if (edges.size() != edge_orientations.size())
-    // {
-    //     throw std::runtime_error("Edge locations and orientations size mismatch.");
-    // }
-
-    for (size_t i = 0; i < edges.size(); ++i)
+    for (const auto& e: edges)
     {
-        const auto &edge = edges[i];
-        double x = edge.location.x;
-        double y = edge.location.y;
+        double x = e.location.x;
+        double y = e.location.y;
+        double dist_to_epip_line = std::abs(epipolar_line(0) * x + epipolar_line(1) * y + epipolar_line(2)) / std::sqrt((epipolar_line(0) * epipolar_line(0)) + (epipolar_line(1) * epipolar_line(1)));
 
-        double distance = std::abs(epipolar_line(0) * x + epipolar_line(1) * y + epipolar_line(2)) / std::sqrt((epipolar_line(0) * epipolar_line(0)) + (epipolar_line(1) * epipolar_line(1)));
-
-        if (distance < distance_threshold)
+        if (dist_to_epip_line < dist_tol) 
         {
-            extracted_edges.push_back(edge);
+            extracted_edges.push_back(e);
         }
     }
 
     return extracted_edges;
+}
+
+std::vector<Edge> get_right_edges_close_to_GT_location(Edge target_left_edge, const cv::Point2d GT_location, const std::vector<Edge> constrained_right_edges, const double dist_tol) 
+{
+    std::vector<Edge> right_edges_close_to_GT_location;
+    for (const auto& re : constrained_right_edges) 
+    {
+        if (cv::norm(GT_location - re.location) < dist_tol) 
+        {
+            right_edges_close_to_GT_location.push_back(re);
+        }
+    }
+    return right_edges_close_to_GT_location;
 }
 
 /*
@@ -479,11 +450,62 @@ std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogona
     return {shifted_points_one, shifted_points_two};
 }
 
-StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset, int idx)
+void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& stereo_frame, const std::vector<Edge> right_edges)
+{
+    std::vector<Eigen::Vector3d> epip_line_coeffs = CalculateEpipolarLine(dataset.get_fund_mat_21(), stereo_frame.left_edges);
+    std::vector<int> indices_to_remove;
+    
+    //> Pre-allocate the output vector to avoid race conditions
+    stereo_frame.GT_right_edges.resize(stereo_frame.left_edges.size());
+    
+    //> Pre-allocate thread-local storage based on number of threads
+    int num_threads = omp_get_max_threads();
+    std::vector<std::vector<int>> thread_local_indices_to_remove(num_threads);
+    
+    #pragma omp parallel
+    {
+        int thread_id = omp_get_thread_num();
+        
+        #pragma omp for schedule(dynamic)
+        for (int left_edge_index = 0; left_edge_index < static_cast<int>(stereo_frame.left_edges.size()); ++left_edge_index)
+        {
+            const auto e_coeffs = epip_line_coeffs[left_edge_index];
+            std::vector<Edge> right_candidate_edges = ExtractEpipolarEdges(e_coeffs, right_edges, 0.5);
+            right_candidate_edges = get_right_edges_close_to_GT_location(stereo_frame.left_edges[left_edge_index], stereo_frame.GT_locations_from_disparity[left_edge_index], right_candidate_edges, 1.0);
+
+            if (right_candidate_edges.empty()) {
+                thread_local_indices_to_remove[thread_id].push_back(left_edge_index);
+                continue;
+            }
+            
+            //> Direct assignment to pre-allocated vector to prevent race condition
+            stereo_frame.GT_right_edges[left_edge_index] = right_candidate_edges;
+        }
+    }
+    
+    //> Merge all thread-local indices_to_remove vectors
+    for (const auto& local_indices : thread_local_indices_to_remove) {
+        indices_to_remove.insert(indices_to_remove.end(), local_indices.begin(), local_indices.end());
+    }
+
+    //> Remove the left edges from the stereo_frame structure if there is no right edge correspondences close to the GT edge
+    if (!indices_to_remove.empty()) 
+    {
+        //> First sort the indices in an descending order
+        std::sort(indices_to_remove.rbegin(), indices_to_remove.rend());
+        for (size_t no_GT_index : indices_to_remove) {
+            stereo_frame.left_edges.erase(stereo_frame.left_edges.begin() + no_GT_index);
+        }
+    }
+}
+
+StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, StereoEdgeCorrespondencesGT prev_stereo_frame, Dataset &dataset, int idx)
 {
     Utility util{};
 
     ///////////////////////////////FORWARD DIRECTION///////////////////////////////
+
+    //> CH TODO: Why do we need this if we have prev_stereo_frame????
     std::vector<Edge> left_edges;
     std::vector<cv::Point2d> ground_truth_right_edges;
 
@@ -494,6 +516,7 @@ StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat
         left_edges.push_back(Edge{std::get<0>(data), std::get<2>(data), false, idx});
         ground_truth_right_edges.push_back(std::get<1>(data));
     }
+    //============================= END OF CH TODO =====================
 
     auto [left_orthogonal_one, left_orthogonal_two] = CalculateOrthogonalShifts(left_edges, ORTHOGONAL_SHIFT_MAG, dataset);
 
@@ -831,8 +854,9 @@ StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat
 // }
 
 //> MARK: Main Edge Pairing
-EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
-                                 const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
+EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges, \
+                                 const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, \
+                                 const std::vector<Eigen::Vector3d> &epipolar_lines_secondary, \
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges)
 {
     Utility util{};
@@ -941,9 +965,6 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
         int thread_id = omp_get_thread_num();
 
         cv::Point2d ground_truth_edge;
-
-        // MAKE SURE TO UPDATE THIS ACCORDINGLY
-        //  int skip = (!selected_ground_truth_edges.empty()) ? 100 : 1;
         const int skip = 1;
 
 //> Start looping over left edges
@@ -961,10 +982,10 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
             const auto &primary_patch_one = primary_patch_set_one[i];
             const auto &primary_patch_two = primary_patch_set_two[i];
 
-            if (!CheckEpipolarTangency(primary_edge, epipolar_line))
-            {
-                continue;
-            }
+            // if (!CheckEpipolarTangency(primary_edge, epipolar_line))
+            // {
+            //     continue;
+            // }
 
             ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD///////////////////////////////
 #if MEASURE_TIMINGS

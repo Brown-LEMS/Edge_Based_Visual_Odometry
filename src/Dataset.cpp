@@ -76,7 +76,6 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
 
     try
     {
-
         YAML::Node left_cam = config_file["left_camera"];
         YAML::Node right_cam = config_file["right_camera"];
         YAML::Node stereo = config_file["stereo"];
@@ -111,7 +110,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         }
         else
         {
-            std::cerr << "ERROR: Missing left-to-right stereo parameters R21/T21/F21" << std::endl;
+            LOG_ERROR("ERROR: Missing left-to-right stereo parameters R21/T21/F21");
         }
 
         // Stereo left-from-right (R12, T12, F12)
@@ -123,7 +122,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         }
         else
         {
-            std::cerr << "ERROR: Missing right-to-left stereo parameters R12/T12/F12" << std::endl;
+            LOG_ERROR("ERROR: Missing right-to-left stereo parameters R12/T12/F12");
         }
 
         // ETH3D stereo focal length and baseline
@@ -137,7 +136,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
             }
             else
             {
-                std::cerr << "ERROR: Missing stereo parameters (focal_length, baseline) in YAML file!" << std::endl;
+                LOG_ERROR("ERROR: Missing stereo parameters (focal_length, baseline) in YAML file!");
             }
         }
 
@@ -461,37 +460,7 @@ void Dataset::PrintDatasetInfo()
 
     std::cout << "\nStereo Camera Parameters: \n";
     std::cout << "Focal Length: " << camera_info.focal_length << " pixels" << std::endl;
-    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl;
-
-    std::cout << "\n"
-              << std::endl;
-}
-
-void Dataset::onMouse(int event, int x, int y, int, void *)
-{
-    if (event == cv::EVENT_MOUSEMOVE)
-    {
-        if (merged_visualization_global.empty())
-            return;
-
-        int left_width = merged_visualization_global.cols / 2;
-
-        std::string coord_text;
-        if (x < left_width)
-        {
-            coord_text = "Left Image: (" + std::to_string(x) + ", " + std::to_string(y) + ")";
-        }
-        else
-        {
-            int right_x = x - left_width;
-            coord_text = "Right Image: (" + std::to_string(right_x) + ", " + std::to_string(y) + ")";
-        }
-
-        cv::Mat display = merged_visualization_global.clone();
-        cv::putText(display, coord_text, cv::Point(x, y),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
-        cv::imshow("Edge Matching Using NCC & Bidirectional Consistency", display);
-    }
+    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl << std::endl;
 }
 
 #endif
