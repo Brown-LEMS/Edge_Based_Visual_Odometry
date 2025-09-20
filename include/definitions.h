@@ -1,5 +1,8 @@
 //> Macro definitions
+// USE_GLOGS is now defined by CMake based on glog/gflags availability
+#ifndef USE_GLOGS
 #define USE_GLOGS (false)
+#endif
 
 #define USE_CPP17 (true)
 

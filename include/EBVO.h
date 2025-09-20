@@ -5,9 +5,6 @@
 #include "utility.h"
 #include <yaml-cpp/yaml.h>
 #include <unordered_map>
-#include <opencv2/opencv.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/xfeatures2d.hpp>
 // =======================================================================================================
 // EBVO: Main structure of LEMS Edge-Based Visual Odometry
 //

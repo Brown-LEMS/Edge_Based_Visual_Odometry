@@ -499,6 +499,37 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& ste
     }
 }
 
+void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image) 
+{
+    //> Pre-allocate thread-local storage based on number of threads
+    int num_threads = omp_get_max_threads();
+    std::vector<std::vector<cv::KeyPoint>> thread_local_keypoints(num_threads);
+    std::vector<cv::KeyPoint> edge_keypoints;
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+
+    #pragma omp parallel
+    {
+        const int thread_id = omp_get_thread_num();
+        #pragma omp for schedule(dynamic)
+        for (const auto& le : stereo_frame.left_edges)
+        {
+            cv::KeyPoint left_edge_kp(le.location, 1, 180 / M_PI * le.orientation);
+            thread_local_keypoints[thread_id].push_back(left_edge_kp);
+        }
+    }
+    
+    //> Merge all thread-local keypoints
+    for (const auto& local_keypoints : thread_local_keypoints) {
+        edge_keypoints.insert(edge_keypoints.end(), local_keypoints.begin(), local_keypoints.end());
+    }
+
+    //> Compute SIFT descriptors for all left edges
+    cv::Mat edge_desc;
+    sift->compute(image, edge_keypoints, edge_desc);
+
+    std::cout << "Descriptors matrix size: " << edge_desc.rows << " x " << edge_desc.cols << std::endl;
+}
+
 StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, StereoEdgeCorrespondencesGT prev_stereo_frame, Dataset &dataset, int idx)
 {
     Utility util{};

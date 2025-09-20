@@ -146,6 +146,8 @@ void EBVO::PerformEdgeBasedVO()
         get_Stereo_Edge_GT_Pairs(dataset, prev_stereo_frame, dataset.right_edges);
 
         std::cout << "Size of the prev_stereo_fram.left_edges = " << prev_stereo_frame.left_edges.size() << std::endl;
+
+        augment_Edge_Data(prev_stereo_frame, current_frame.left_image);
         break;
 
         // Declare variables at proper scope level
@@ -367,6 +369,7 @@ void EBVO::PerformEdgeBasedVO()
         {
             //> MARK: Initialize for the first frame
             //> CH TODO: We should just loop over the left edges that "have" the corresponding right edges. This should save a lot of time.
+
             for (int i = 0; i < dataset.left_edges.size(); ++i)
             {
                 const Edge &edge = dataset.left_edges[i];

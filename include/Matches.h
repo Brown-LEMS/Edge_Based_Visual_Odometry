@@ -5,6 +5,10 @@ class Dataset;
 struct StereoMatchResult;
 struct EdgeMatchResult;
 
+#include <opencv2/opencv.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
+
 #include "definitions.h"
 #include "utility.h"
 #include "Dataset.h"
@@ -21,8 +25,10 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges = std::vector<cv::Point2d>());
 
+//> The following functions are newly added
 void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& stereo_frame, const std::vector<Edge> right_edges);
 std::vector<Edge> get_right_edges_close_to_GT_location(Edge target_left_edge, const cv::Point2d GT_location, const std::vector<Edge> constrained_right_edges, const double dist_tol = 1.0) ;
+void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image);
 
 void ExtractClusterPatches(
     int patch_size,

@@ -151,6 +151,8 @@ struct StereoEdgeCorrespondencesGT
     std::vector<Edge> left_edges;                           //> left edges
     std::vector<cv::Point2d> GT_locations_from_disparity;   //> GT location on the right image from the left edge and the GT disparity
     std::vector<std::vector<Edge>> GT_right_edges;          //> A set of right edges that are "very close" to the GT location from disparity
+    std::unordered_map<int, cv::Mat> edge_SIFT_descriptors; //> SIFT descriptors of all left edges
+    // std::vector<cv::KeyPoint> left_edge_keypoints;          //> cv::KeyPoint for all left edges
 };
 
 struct PrevCurrEdgeCorrespondencesGT
