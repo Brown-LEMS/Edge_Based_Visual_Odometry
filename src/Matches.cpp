@@ -311,51 +311,6 @@ std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_sh
     }
 
     return cluster_centers;
-
-    // EdgeCluster cluster;
-    //     cluster.center_edge = Edge{avg_point, avg_orientation, false};
-    //     cluster.contributing_edges = cluster_edges;
-
-    
-    // std::vector<std::vector<Edge>> clusters;
-
-    // if (valid_shifted_edges.empty())
-    // {
-    //     return clusters;
-    // }
-
-    // std::sort(valid_shifted_edges.begin(), valid_shifted_edges.end(),
-    //           [](const Edge &a, const Edge &b)
-    //           {
-    //               return a.location.x < b.location.x;
-    //           });
-
-    // std::vector<Edge> current_cluster;
-    // current_cluster.push_back(valid_shifted_edges[0]);
-
-    // for (size_t i = 1; i < valid_shifted_edges.size(); ++i)
-    // {
-    //     double distance = cv::norm(valid_shifted_edges[i].location - valid_shifted_edges[i - 1].location);
-    //     double orientation_difference = std::abs(valid_shifted_edges[i].orientation - valid_shifted_edges[i - 1].orientation);
-
-    //     if (distance <= EDGE_CLUSTER_THRESH && orientation_difference < 5.0)
-    //     {
-    //         current_cluster.push_back(valid_shifted_edges[i]);
-    //     }
-    //     else
-    //     {
-    //         clusters.emplace_back(current_cluster);
-    //         current_cluster.clear();
-    //         current_cluster.push_back(valid_shifted_edges[i]);
-    //     }
-    // }
-
-    // if (!current_cluster.empty())
-    // {
-    //     clusters.emplace_back(current_cluster);
-    // }
-
-    // return clusters;
 }
 
 /*
@@ -475,7 +430,6 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& ste
 
             if (right_candidate_edges.empty()) {
                 thread_local_indices_to_remove[thread_id].push_back(left_edge_index);
-                continue;
             }
             
             //> Direct assignment to pre-allocated vector to prevent race condition
@@ -495,39 +449,13 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& ste
         std::sort(indices_to_remove.rbegin(), indices_to_remove.rend());
         for (size_t no_GT_index : indices_to_remove) {
             stereo_frame.left_edges.erase(stereo_frame.left_edges.begin() + no_GT_index);
+
+            //> Also remove the corresponding 3D points and GT location from disparity to make the size of the vectors consistent
+            stereo_frame.Gamma_in_left_cam_coord.erase(stereo_frame.Gamma_in_left_cam_coord.begin() + no_GT_index);
+            stereo_frame.GT_locations_from_disparity.erase(stereo_frame.GT_locations_from_disparity.begin() + no_GT_index);
+            stereo_frame.GT_right_edges.erase(stereo_frame.GT_right_edges.begin() + no_GT_index);
         }
     }
-}
-
-void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image) 
-{
-    //> Pre-allocate thread-local storage based on number of threads
-    int num_threads = omp_get_max_threads();
-    std::vector<std::vector<cv::KeyPoint>> thread_local_keypoints(num_threads);
-    std::vector<cv::KeyPoint> edge_keypoints;
-    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
-
-    #pragma omp parallel
-    {
-        const int thread_id = omp_get_thread_num();
-        #pragma omp for schedule(dynamic)
-        for (const auto& le : stereo_frame.left_edges)
-        {
-            cv::KeyPoint left_edge_kp(le.location, 1, 180 / M_PI * le.orientation);
-            thread_local_keypoints[thread_id].push_back(left_edge_kp);
-        }
-    }
-    
-    //> Merge all thread-local keypoints
-    for (const auto& local_keypoints : thread_local_keypoints) {
-        edge_keypoints.insert(edge_keypoints.end(), local_keypoints.begin(), local_keypoints.end());
-    }
-
-    //> Compute SIFT descriptors for all left edges
-    cv::Mat edge_desc;
-    sift->compute(image, edge_keypoints, edge_desc);
-
-    std::cout << "Descriptors matrix size: " << edge_desc.rows << " x " << edge_desc.cols << std::endl;
 }
 
 StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, StereoEdgeCorrespondencesGT prev_stereo_frame, Dataset &dataset, int idx)

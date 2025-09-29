@@ -95,11 +95,23 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         camera_info.left.resolution = left_cam["resolution"].as<std::vector<int>>();
         camera_info.left.intrinsics = left_cam["intrinsics"].as<std::vector<double>>();
         camera_info.left.distortion = left_cam["distortion_coefficients"].as<std::vector<double>>();
+        Eigen::Matrix3d calib_left = Eigen::Matrix3d::Identity();
+        calib_left(0,0) = camera_info.left.intrinsics[0];
+        calib_left(0,2) = camera_info.left.intrinsics[2];
+        calib_left(1,1) = camera_info.left.intrinsics[1];
+        calib_left(1,2) = camera_info.left.intrinsics[3];
+        camera_info.left.K = calib_left;
 
         // Right camera
         camera_info.right.resolution = right_cam["resolution"].as<std::vector<int>>();
         camera_info.right.intrinsics = right_cam["intrinsics"].as<std::vector<double>>();
         camera_info.right.distortion = right_cam["distortion_coefficients"].as<std::vector<double>>();
+        Eigen::Matrix3d calib_right = Eigen::Matrix3d::Identity();
+        calib_right(0,0) = camera_info.right.intrinsics[0];
+        calib_right(0,2) = camera_info.right.intrinsics[2];
+        calib_right(1,1) = camera_info.right.intrinsics[1];
+        calib_right(1,2) = camera_info.right.intrinsics[3];
+        camera_info.right.K = calib_right;
 
         // Stereo right-from-left (R21, T21, F21)
         if (stereo["R21"] && stereo["T21"] && stereo["F21"])

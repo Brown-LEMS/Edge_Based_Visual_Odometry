@@ -38,13 +38,12 @@
 
 #define MEASURE_TIMINGS (false)
 
-//> Define output file folder
-#define OUTPUT_WRITE_PATH std::string("../output_files/")
-#define OUTPUT_DATA_TYPE std::string("TUM") //> Either TUM or KITTI
-
 //> For quick processing
 #define WRITE_TOED_EDGES (true)
 #define READ_TOED_EDGES_FROM_FILES (false)
+
+//> Writing some intermediate data for debugging
+#define WRITE_KF_CF_GT_PAIRS (true)
 
 //> Generic definitions
 #define RANSAC_NUM_OF_ITERATIONS (500)

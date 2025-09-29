@@ -47,6 +47,15 @@ public:
     void Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
                                          std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2,
                                          std::vector<cv::DMatch> Good_Matches);
+    
+    Eigen::Vector3d two_view_linear_triangulation(
+        const Eigen::Vector3d gamma1, const Eigen::Vector3d gamma2,
+        const Eigen::Matrix3d K1,     const Eigen::Matrix3d K2,
+        const Eigen::Matrix3d Rel_R,  const Eigen::Vector3d Rel_T);
+    Eigen::Vector3d multiview_linear_triangulation(
+        const int N, const std::vector<Eigen::Vector2d> pts,
+        const std::vector<Eigen::Matrix3d> & Rs, const std::vector<Eigen::Vector3d> & Ts, const Eigen::Matrix3d K);
+
     std::string cvMat_Type(int type);
 };
 
@@ -151,7 +160,7 @@ inline double ComputeNCC(const cv::Mat &patch_one, const cv::Mat &patch_two)
 inline void write_ncc_vals_to_files(int img_index, std::vector<std::pair<double, double>> &ncc_one_vs_err,
                                     std::vector<std::pair<double, double>> &ncc_two_vs_err)
 {
-    std::string file_path = OUTPUT_WRITE_PATH + "ncc_vs_err/img_" + std::to_string(img_index) + ".txt";
+    std::string file_path = "../output_files/ncc_vs_err/img_" + std::to_string(img_index) + ".txt";
     std::ofstream ncc_vs_err_file_out(file_path);
     for (unsigned i = 0; i < ncc_one_vs_err.size(); i++)
     {
@@ -231,6 +240,8 @@ inline std::vector<int> find_Unique_Sorted_Numbers( std::vector<int> vec )
 
     return unique_sorted_vec;
 }
+
+
 
 // wasn't used in the original code, but kept for reference
 

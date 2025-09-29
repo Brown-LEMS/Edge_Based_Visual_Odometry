@@ -5,6 +5,9 @@
 #include "utility.h"
 #include <yaml-cpp/yaml.h>
 #include <unordered_map>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 // =======================================================================================================
 // EBVO: Main structure of LEMS Edge-Based Visual Odometry
 //
@@ -42,6 +45,18 @@ struct SpatialGrid
         }
     }
 
+    //> Add edge to grids and return the grid index
+    int add_edge_to_grids(int edge_idx, cv::Point2f location)
+    {
+        int grid_x = static_cast<int>(location.x) / cell_size;
+        int grid_y = static_cast<int>(location.y) / cell_size;
+        if (grid_x >= 0 && grid_x < grid_width && grid_y >= 0 && grid_y < grid_height)
+        {
+            grid[grid_y * grid_width + grid_x].push_back(edge_idx);
+        }
+        return grid_y * grid_width + grid_x;
+    }
+
     void reset()
     {
         for (auto &cell : grid)
@@ -50,11 +65,95 @@ struct SpatialGrid
         }
     }
 
+    //> Parallel bulk insertion using per-thread cell buffers and merge
+    void addEdgesParallel(const std::vector<int> &edge_indices, const std::vector<cv::Point2f> &locations)
+    {
+        const int num_cells = static_cast<int>(grid.size());
+        if (edge_indices.size() != locations.size() || num_cells == 0)
+        {
+            return;
+        }
+
+        // Allocate per-thread buffers: [num_threads][num_cells]
+        int num_threads = 1;
+#ifdef _OPENMP
+        num_threads = omp_get_max_threads();
+#endif
+        std::vector<std::vector<std::vector<int>>> thread_local_cells(
+            static_cast<size_t>(num_threads), std::vector<std::vector<int>>(static_cast<size_t>(num_cells)));
+
+        // Fill thread-local buffers in parallel
+        #pragma omp parallel if(locations.size() > 1024)
+        {
+            int thread_id = 0;
+#ifdef _OPENMP
+            thread_id = omp_get_thread_num();
+#endif
+
+            #pragma omp for schedule(static)
+            for (int i = 0; i < static_cast<int>(locations.size()); ++i)
+            {
+                const cv::Point2f &location = locations[static_cast<size_t>(i)];
+                int grid_x = static_cast<int>(location.x) / cell_size;
+                int grid_y = static_cast<int>(location.y) / cell_size;
+                if (grid_x >= 0 && grid_x < grid_width && grid_y >= 0 && grid_y < grid_height)
+                {
+                    const int cell_index = grid_y * grid_width + grid_x;
+                    thread_local_cells[static_cast<size_t>(thread_id)][static_cast<size_t>(cell_index)].push_back(edge_indices[static_cast<size_t>(i)]);
+                }
+            }
+        }
+
+        //> Merge per-thread buffers into the shared grid (single-threaded merge per cell)
+        for (int cell_index = 0; cell_index < num_cells; ++cell_index)
+        {
+            auto &dst = grid[static_cast<size_t>(cell_index)];
+            // Reserve to reduce reallocations
+            size_t additional = 0;
+            for (int t = 0; t < num_threads; ++t)
+            {
+                additional += thread_local_cells[static_cast<size_t>(t)][static_cast<size_t>(cell_index)].size();
+            }
+            if (additional > 0)
+            {
+                dst.reserve(dst.size() + additional);
+                for (int t = 0; t < num_threads; ++t)
+                {
+                    auto &src = thread_local_cells[static_cast<size_t>(t)][static_cast<size_t>(cell_index)];
+                    dst.insert(dst.end(), src.begin(), src.end());
+                }
+            }
+        }
+    }
+
     std::vector<int> getCandidatesWithinRadius(Edge Edge, double radius)
     {
         std::vector<int> candidates;
         int grid_x = static_cast<int>(Edge.location.x) / cell_size;
         int grid_y = static_cast<int>(Edge.location.y) / cell_size;
+        int search_radius = static_cast<int>(std::ceil(radius / cell_size));
+        for (int dy = -search_radius; dy <= search_radius; ++dy)
+        {
+            for (int dx = -search_radius; dx <= search_radius; ++dx)
+            {
+                int neighbor_x = grid_x + dx;
+                int neighbor_y = grid_y + dy;
+                if (neighbor_x >= 0 && neighbor_x < grid_width &&
+                    neighbor_y >= 0 && neighbor_y < grid_height)
+                {
+                    const auto &cell = grid[neighbor_y * grid_width + neighbor_x];
+                    candidates.insert(candidates.end(), cell.begin(), cell.end());
+                }
+            }
+        }
+        return candidates;
+    }
+
+    std::vector<int> getCandidatesWithinRadius(cv::Point2d e_location, double radius)
+    {
+        std::vector<int> candidates;
+        int grid_x = static_cast<int>(e_location.x) / cell_size;
+        int grid_y = static_cast<int>(e_location.y) / cell_size;
         int search_radius = static_cast<int>(std::ceil(radius / cell_size));
         for (int dy = -search_radius; dy <= search_radius; ++dy)
         {
@@ -92,32 +191,16 @@ public:
                       const std::string &filepath,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
-    void Find_GT_Locations(const std::vector<Edge> left_edges, const cv::Mat left_disparity_map, StereoEdgeCorrespondencesGT& prev_stereo_frame);
-    void ReadEdgesFromBinary(const std::string &filepath,
-                             std::vector<Edge> &edges);
-    void WriteEdgesToBinary(const std::string &filepath,
-                            const std::vector<Edge> &edges);
-    void WriteEdgeMatchResult(StereoMatchResult &match_result,
-                              std::vector<double> &max_disparity_values,
-                              std::vector<double> &per_image_avg_before_epi,
-                              std::vector<double> &per_image_avg_after_epi,
-                              std::vector<double> &per_image_avg_before_disp,
-                              std::vector<double> &per_image_avg_after_disp,
-                              std::vector<double> &per_image_avg_before_shift,
-                              std::vector<double> &per_image_avg_after_shift,
-                              std::vector<double> &per_image_avg_before_clust,
-                              std::vector<double> &per_image_avg_after_clust,
-                              std::vector<double> &per_image_avg_before_patch,
-                              std::vector<double> &per_image_avg_after_patch,
-                              std::vector<double> &per_image_avg_before_ncc,
-                              std::vector<double> &per_image_avg_after_ncc,
-                              std::vector<double> &per_image_avg_before_lowe,
-                              std::vector<double> &per_image_avg_after_lowe,
-                              std::vector<double> &per_image_avg_before_bct,
-                              std::vector<double> &per_image_avg_after_bct,
-                              std::vector<RecallMetrics> &all_forward_recall_metrics,
-                              std::vector<BidirectionalMetrics> &all_bct_metrics);
+    void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image);
+    // void Find_Stereo_GT_Locations(const std::vector<Edge> left_edges, const cv::Mat left_disparity_map, StereoEdgeCorrespondencesGT& prev_stereo_frame);
+    void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, StereoEdgeCorrespondencesGT& prev_stereo_frame);
 
+    void add_edges_to_spatial_grid(StereoEdgeCorrespondencesGT& stereo_frame);
+    void get_KF_CF_Edge_GT_Pairs(Keyframe_CurrentFrame_EdgeCorrespondencesGT& KC_edge_correspondences, double gt_dist_threshold = 1.0);
+
+    //> last_keyframe and current frame
+    void Find_GT_Locations_on_Current_Image(Keyframe_CurrentFrame_EdgeCorrespondencesGT& KC_edge_correspondences, StereoFrame& last_keyframe, StereoFrame& current_frame);
+    
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
     std::vector<Eigen::Vector2f> LucasKanadeOpticalFlow(
         const cv::Mat &img1,

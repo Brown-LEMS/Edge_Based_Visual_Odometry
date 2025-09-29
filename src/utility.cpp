@@ -72,6 +72,119 @@ void Utility::Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
   cv::waitKey(0);
 }
 
+Eigen::Vector3d Utility::two_view_linear_triangulation(
+  const Eigen::Vector3d gamma1, const Eigen::Vector3d gamma2,
+  const Eigen::Matrix3d K1,     const Eigen::Matrix3d K2,
+  const Eigen::Matrix3d Rel_R,  const Eigen::Vector3d Rel_T)
+{
+  Eigen::MatrixXd A(4, 4);
+  Eigen::MatrixXd ATA(4, 4);
+  Eigen::Vector4d GAMMA;
+  Eigen::Vector3d pt3D;
+
+  //> Convert points in pixels to points in meters
+  Eigen::Vector3d gamma1_bar = K1.inverse() * gamma1;
+  Eigen::Vector3d gamma2_bar = K2.inverse() * gamma2;
+
+  //> The 3D point GAMMA is under the first camera coordinate,
+  //  so R1 is an identity matrix and T1 is all zeros
+  A(0,0) = 0.0; A(0,1) = -1.0; A(0,2) = gamma1_bar(1);  A(0,3) = 0.0;
+  A(1,0) = 1.0; A(1,1) = 0.0;  A(1,2) = -gamma1_bar(0); A(1,3) = 0.0;
+
+  double r1 = Rel_R(0,0), r2 = Rel_R(0,1), r3 = Rel_R(0,2), t1 = Rel_T(0);
+  double r4 = Rel_R(1,0), r5 = Rel_R(1,1), r6 = Rel_R(1,2), t2 = Rel_T(1);
+  double r7 = Rel_R(2,0), r8 = Rel_R(2,1), r9 = Rel_R(2,2), t3 = Rel_T(2);
+
+  A(2, 0) = gamma2_bar(1) * r7 - r4;
+  A(2, 1) = gamma2_bar(1) * r8 - r5; 
+  A(2, 2) = gamma2_bar(1) * r9 - r6; 
+  A(2, 3) = gamma2_bar(1) * t3 - t2;
+  A(3, 0) = r1 - gamma2_bar(0) * r7; 
+  A(3, 1) = r2 - gamma2_bar(0) * r8; 
+  A(3, 2) = r3 - gamma2_bar(0) * r9; 
+  A(3, 3) = t1 - gamma2_bar(0) * t3;
+
+  //> Solving the homogeneous linear system and divide the first three rows with the last element
+  ATA = A.transpose() * A;
+  GAMMA = ATA.jacobiSvd(Eigen::ComputeFullV).matrixV().col( ATA.rows() - 1 );
+  GAMMA[0] /= GAMMA[3];
+  GAMMA[1] /= GAMMA[3];
+  GAMMA[2] /= GAMMA[3];
+  
+  //> Assign GAMMA to the returned point
+  pt3D[0] = GAMMA[0];
+  pt3D[1] = GAMMA[1];
+  pt3D[2] = GAMMA[2];
+  
+  return pt3D;
+}
+
+Eigen::Vector3d Utility::multiview_linear_triangulation(
+  const int N,
+  const std::vector<Eigen::Vector2d> pts, 
+  const std::vector<Eigen::Matrix3d> & Rs,
+  const std::vector<Eigen::Vector3d> & Ts,
+  const Eigen::Matrix3d K )
+{
+  Eigen::MatrixXd A(2*N, 4);
+  Eigen::MatrixXd ATA(4, 4);
+  Eigen::Vector4d GAMMA;
+  Eigen::Vector3d pt3D; //> Returned variable
+
+  //> Convert points in pixels to points in meters
+  std::vector<Eigen::Vector2d> pts_meters;
+  for (int p = 0; p < N; p++) {
+      Eigen::Vector2d gamma;
+      Eigen::Vector3d homo_p{pts[p](0), pts[p](1), 1.0};
+      Eigen::Vector3d p_bar = K.inverse() * homo_p;
+      gamma(0) = p_bar(0);
+      gamma(1) = p_bar(1);
+      pts_meters.push_back(gamma);
+  }
+
+  //> We are computing GAMMA under the first camera coordinate,
+  //  so R1 is an identity matrix and T1 is all zeros
+  A(0,0) = 0.0; A(0,1) = -1.0; A(0,2) = pts_meters[0](1); A(0,3) = 0.0;
+  A(1,0) = 1.0; A(1,1) = 0.0; A(1,2) = -pts_meters[0](0); A(1,3) = 0.0;
+
+  int row_cnter = 2;
+  for (int p = 0; p < N-1; p++) {
+      Eigen::Matrix3d Rp = Rs[p];
+      Eigen::Vector3d Tp = Ts[p];
+      Eigen::Vector2d mp = pts_meters[p+1];
+
+      // std::cout << "Rp: " << Rp <<std::endl;
+      
+      double r1 = Rp(0,0), r2 = Rp(0,1), r3 = Rp(0,2), t1 = Tp(0);
+      double r4 = Rp(1,0), r5 = Rp(1,1), r6 = Rp(1,2), t2 = Tp(1);
+      double r7 = Rp(2,0), r8 = Rp(2,1), r9 = Rp(2,2), t3 = Tp(2);
+
+      A(row_cnter,   0) = mp(1) * r7 - r4;
+      A(row_cnter,   1) = mp(1) * r8 - r5; 
+      A(row_cnter,   2) = mp(1) * r9 - r6; 
+      A(row_cnter,   3) = mp(1) * t3 - t2;
+      A(row_cnter+1, 0) = r1 - mp(0) * r7; 
+      A(row_cnter+1, 1) = r2 - mp(0) * r8; 
+      A(row_cnter+1, 2) = r3 - mp(0) * r9; 
+      A(row_cnter+1, 3) = t1 - mp(0) * t3;
+      row_cnter += 2;
+  }
+
+  //> Solving the homogeneous linear system and divide the first three rows with the last element
+  ATA = A.transpose() * A;
+  GAMMA = ATA.jacobiSvd(Eigen::ComputeFullV).matrixV().col( ATA.rows() - 1 );
+  GAMMA[0] /= GAMMA[3];
+  GAMMA[1] /= GAMMA[3];
+  GAMMA[2] /= GAMMA[3];
+  
+  //> Assign GAMMA to the returned point
+  pt3D[0] = GAMMA[0];
+  pt3D[1] = GAMMA[1];
+  pt3D[2] = GAMMA[2];
+  
+  return pt3D;
+}
+
 std::string Utility::cvMat_Type(int type)
 {
   //> Credit: https://stackoverflow.com/questions/10167534/how-to-find-out-what-type-of-a-mat-object-is-with-mattype-in-opencv

@@ -52,6 +52,7 @@ struct Camera
     Eigen::Matrix3d R;              // rotation (to stereo)
     Eigen::Vector3d T;              // translation (to stereo)
     Eigen::Matrix3d F;              // fundamental matrix
+    Eigen::Matrix3d K;              //> Calibration matrix
 };
 
 struct CameraInfo
@@ -151,15 +152,32 @@ struct StereoEdgeCorrespondencesGT
     std::vector<Edge> left_edges;                           //> left edges
     std::vector<cv::Point2d> GT_locations_from_disparity;   //> GT location on the right image from the left edge and the GT disparity
     std::vector<std::vector<Edge>> GT_right_edges;          //> A set of right edges that are "very close" to the GT location from disparity
-    std::unordered_map<int, cv::Mat> edge_SIFT_descriptors; //> SIFT descriptors of all left edges
-    // std::vector<cv::KeyPoint> left_edge_keypoints;          //> cv::KeyPoint for all left edges
+    std::vector<Eigen::Vector3d> Gamma_in_left_cam_coord;   //> 3D points under the left camera coordinate
+    // std::unordered_map<int, cv::Mat> edge_SIFT_descriptors; //> SIFT descriptors of all left edges
+    cv::Mat left_edge_desc;
+    std::vector<int> grid_indices;
+
+    bool b_is_size_consistent() 
+    { 
+        return left_edges.size() == GT_locations_from_disparity.size() && left_edges.size() == GT_right_edges.size() && left_edges.size() == Gamma_in_left_cam_coord.size(); 
+    }
+
+    void print_size_consistency()
+    {
+        std::cout << "The sizes of the StereoEdgeCorrespondencesGT are not consistent!" << std::endl;
+        std::cout << "- Size of the left_edges = " << left_edges.size() << std::endl;
+        std::cout << "- Size of the GT_locations_from_disparity = " << GT_locations_from_disparity.size() << std::endl;
+        std::cout << "- Size of the GT_right_edges = " << GT_right_edges.size() << std::endl;
+        std::cout << "- Size of the Gamma_in_left_cam_coord = " << Gamma_in_left_cam_coord.size() << std::endl;
+    }
 };
 
-struct PrevCurrEdgeCorrespondencesGT
+struct Keyframe_CurrentFrame_EdgeCorrespondencesGT
 {
-    std::vector<Edge> prev_left_edges;
-    std::vector<cv::Point2d> GT_locations_on_curr_img;
-    std::vector<std::vector<Edge>> GT_curr_edges;
+    StereoEdgeCorrespondencesGT last_keyframe;
+    StereoEdgeCorrespondencesGT current_frame;
+    std::vector<cv::Point2d> GT_locations_on_current_image;
+    std::vector<std::vector<Edge>> GT_current_edges;
 };
 
 extern cv::Mat merged_visualization_global;
@@ -202,9 +220,15 @@ public:
     double get_focal_length() { return camera_info.focal_length; };
     double get_left_focal_length() { return camera_info.left.intrinsics[0]; };
     double get_right_focal_length() { return camera_info.right.intrinsics[0]; };
+    Eigen::Matrix3d get_left_calib_matrix() { return camera_info.left.K; }
+    Eigen::Matrix3d get_right_calib_matrix() { return camera_info.right.K; }
     double get_left_baseline() { return camera_info.left.T[0]; };
     double get_right_baseline() { return camera_info.right.T[0]; };
     double get_baseline() { return camera_info.baseline; };
+    Eigen::Matrix3d get_relative_rot_left_to_right() { return camera_info.left.R; }
+    Eigen::Vector3d get_relative_transl_left_to_right() { return camera_info.left.T; }
+    Eigen::Matrix3d get_relative_rot_right_to_left() { return camera_info.right.R; }
+    Eigen::Vector3d get_relative_transl_right_to_left() { return camera_info.right.T; }
 
     std::vector<double> left_intr() { return camera_info.left.intrinsics; };
     std::vector<double> right_intr() { return camera_info.right.intrinsics; };
@@ -255,7 +279,6 @@ private:
 
     void Align_Images_and_GT_Poses();
 
-    cv::Mat Gx_2d, Gy_2d;
     cv::Mat Small_Patch_Radius_Map;
     Utility::Ptr utility_tool = nullptr;
 };
