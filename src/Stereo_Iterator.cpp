@@ -113,8 +113,8 @@ bool ETH3DIterator::getNext(StereoFrame &frame)
         cv::Mat left = cv::imread(left_path, cv::IMREAD_GRAYSCALE);
         cv::Mat right = cv::imread(right_path, cv::IMREAD_GRAYSCALE);
 
-        std::cout << "Left image path = " << left_path << std::endl;
-        std::cout << "Right image path = " << right_path << std::endl;
+        // std::cout << "Left image path = " << left_path << std::endl;
+        // std::cout << "Right image path = " << right_path << std::endl;
 
         if (!left.empty() && !right.empty())
         {
