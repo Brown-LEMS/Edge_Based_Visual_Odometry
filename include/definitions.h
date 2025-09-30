@@ -43,7 +43,7 @@
 #define READ_TOED_EDGES_FROM_FILES (false)
 
 //> Writing some intermediate data for debugging
-#define WRITE_KF_CF_GT_PAIRS (true)
+#define WRITE_KF_CF_GT_EDGE_PAIRS (true)
 
 //> Generic definitions
 #define RANSAC_NUM_OF_ITERATIONS (500)

@@ -178,6 +178,8 @@ struct Keyframe_CurrentFrame_EdgeCorrespondencesGT
     StereoEdgeCorrespondencesGT current_frame;
     std::vector<cv::Point2d> GT_locations_on_current_image;
     std::vector<std::vector<Edge>> GT_current_edges;
+    
+    std::vector<int> GT_pair_indices_for_last_keyframe;
 };
 
 extern cv::Mat merged_visualization_global;
