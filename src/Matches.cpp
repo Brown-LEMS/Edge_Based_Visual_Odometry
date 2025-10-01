@@ -411,7 +411,7 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& ste
     std::vector<int> indices_to_remove;
     
     //> Pre-allocate the output vector to avoid race conditions
-    stereo_frame.GT_right_edges.resize(stereo_frame.left_edges.size());
+    stereo_frame.veridical_right_edges.resize(stereo_frame.left_edges.size());
     
     //> Pre-allocate thread-local storage based on number of threads
     int num_threads = omp_get_max_threads();
@@ -433,7 +433,7 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& ste
             }
             
             //> Direct assignment to pre-allocated vector to prevent race condition
-            stereo_frame.GT_right_edges[left_edge_index] = right_candidate_edges;
+            stereo_frame.veridical_right_edges[left_edge_index] = right_candidate_edges;
         }
     }
     
@@ -453,7 +453,7 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& ste
             //> Also remove the corresponding 3D points and GT location from disparity to make the size of the vectors consistent
             stereo_frame.Gamma_in_left_cam_coord.erase(stereo_frame.Gamma_in_left_cam_coord.begin() + no_GT_index);
             stereo_frame.GT_locations_from_disparity.erase(stereo_frame.GT_locations_from_disparity.begin() + no_GT_index);
-            stereo_frame.GT_right_edges.erase(stereo_frame.GT_right_edges.begin() + no_GT_index);
+            stereo_frame.veridical_right_edges.erase(stereo_frame.veridical_right_edges.begin() + no_GT_index);
         }
     }
 }

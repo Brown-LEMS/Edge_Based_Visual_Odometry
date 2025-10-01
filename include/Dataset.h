@@ -151,15 +151,14 @@ struct StereoEdgeCorrespondencesGT
 {
     std::vector<Edge> left_edges;                           //> left edges
     std::vector<cv::Point2d> GT_locations_from_disparity;   //> GT location on the right image from the left edge and the GT disparity
-    std::vector<std::vector<Edge>> GT_right_edges;          //> A set of right edges that are "very close" to the GT location from disparity
+    std::vector<std::vector<Edge>> veridical_right_edges;   //> A set of right edges that are "very close" to the GT location from disparity
     std::vector<Eigen::Vector3d> Gamma_in_left_cam_coord;   //> 3D points under the left camera coordinate
-    // std::unordered_map<int, cv::Mat> edge_SIFT_descriptors; //> SIFT descriptors of all left edges
-    std::vector<cv::Mat> left_edge_descriptors;
-    std::vector<int> grid_indices;
+    std::vector<cv::Mat> left_edge_descriptors;             //> SIFT descriptors of all left edges
+    std::vector<int> grid_indices;                          //> (NOT ACTIVELY USED) grid indices of all left edges
 
     bool b_is_size_consistent() 
     { 
-        return left_edges.size() == GT_locations_from_disparity.size() && left_edges.size() == GT_right_edges.size() && left_edges.size() == Gamma_in_left_cam_coord.size() && left_edges.size() == left_edge_descriptors.size(); 
+        return left_edges.size() == GT_locations_from_disparity.size() && left_edges.size() == veridical_right_edges.size() && left_edges.size() == Gamma_in_left_cam_coord.size() && left_edges.size() == left_edge_descriptors.size(); 
     }
 
     void print_size_consistency()
@@ -167,27 +166,10 @@ struct StereoEdgeCorrespondencesGT
         std::cout << "The sizes of the StereoEdgeCorrespondencesGT are not consistent!" << std::endl;
         std::cout << "- Size of the left_edges = " << left_edges.size() << std::endl;
         std::cout << "- Size of the GT_locations_from_disparity = " << GT_locations_from_disparity.size() << std::endl;
-        std::cout << "- Size of the GT_right_edges = " << GT_right_edges.size() << std::endl;
+        std::cout << "- Size of the veridical_right_edges = " << veridical_right_edges.size() << std::endl;
         std::cout << "- Size of the Gamma_in_left_cam_coord = " << Gamma_in_left_cam_coord.size() << std::endl;
         std::cout << "- Size of the left_edge_descriptors = " << left_edge_descriptors.size() << std::endl;
     }
-};
-
-struct Keyframe_CurrentFrame_EdgeCorrespondencesGT
-{
-    StereoEdgeCorrespondencesGT last_keyframe;
-    StereoEdgeCorrespondencesGT current_frame;
-
-    //>>>>>>>>>> This block is a pool of GT data >>>>>>>>>
-    std::vector<cv::Point2d> GT_locations_on_current_image;
-    std::vector<std::vector<Edge>> GT_current_edges;
-    // std::vector<std::vector<cv::Mat>> GT_current_edge_descriptors; //> currently not in use
-    std::vector<int> GT_pair_indices_for_last_keyframe;
-    //>>>>>>>>>> This block is a pool of GT data >>>>>>>>>
-
-    //>>>>>>>>>> This block is a pool of edge matching data >>>>>>>>>
-    std::vector<std::vector<Edge>> matching_current_edges;
-    //>>>>>>>>>> This block is a pool of edge matching data >>>>>>>>>
 };
 
 struct KF_CF_Edge_Correspondences

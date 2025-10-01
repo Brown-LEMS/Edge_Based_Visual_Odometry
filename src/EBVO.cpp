@@ -651,8 +651,8 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Corr
                 edge_pair.veridical_cf_edges_indices = CF_veridical_edges_indices;
 
                 //> FIXME: This should be obtained from the stereo edge matching result
-                // edge_pair.veridical_stereo_right_edges_for_cf.push_back(current_frame_stereo.GT_right_edges[curr_e_index]);
-                // edge_pair.veridical_stereo_right_edges_for_kf.push_back(last_keyframe_stereo.GT_right_edges[i]);
+                // edge_pair.veridical_stereo_right_edges_for_cf.push_back(current_frame_stereo.veridical_right_edges[curr_e_index]);
+                // edge_pair.veridical_stereo_right_edges_for_kf.push_back(last_keyframe_stereo.veridical_right_edges[i]);
                 KF_CF_edge_pairs.push_back(edge_pair);
             }
         }
