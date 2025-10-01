@@ -12,18 +12,7 @@
 #include <glog/logging.h>
 #endif
 
-// =======================================================================================================
-// main_VO: main function for LEMS VO pipeline
-//
-// ChangeLogs
-//    Lopez  25-01-26    Modified to perform Edge-Based Visual Odometry.
-//    Chien  24-01-16    Initially built on top of Hongyi's LEMS Visual Odometry framework.
-//
-//> (c) LEMS, Brown University
-//> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu)
-// =======================================================================================================
-
-//> usage: (Under the bin file) sudo ./main_VO --config_file=../config/tum.yaml
+//> usage: (Under the bin file) ./main_VO --config_file ../config/eth3d_delivery_area.yaml
 
 //> Define default values for the input argument
 #if USE_GLOGS

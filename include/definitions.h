@@ -1,5 +1,8 @@
 //> Macro definitions
+// USE_GLOGS is now defined by CMake based on glog/gflags availability
+#ifndef USE_GLOGS
 #define USE_GLOGS (false)
+#endif
 
 #define USE_CPP17 (true)
 
@@ -30,19 +33,17 @@
 #define MAX_CLUSTER_SIZE                (10)        //> max number of edges per cluster
 #define CLUSTER_ORIENT_GAUSS_SIGMA      (2.0)
 
-#define MEASURE_TIMINGS (false)
-#define DISPLAY_STERO_EDGE_MATCHES (false)
+#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
+#define GRID_SIZE (20)     //> Size of the spatial grid cells in pixels
 
-//> Define output file folder
-#define OUTPUT_WRITE_PATH std::string("../output_files/")
-#define OUTPUT_DATA_TYPE std::string("TUM") //> Either TUM or KITTI
+#define MEASURE_TIMINGS (false)
 
 //> For quick processing
 #define WRITE_TOED_EDGES (true)
 #define READ_TOED_EDGES_FROM_FILES (false)
 
-//> Use for the TUM type dataset
-#define ASSOCIATION_FILE_NAME std::string("associate.txt")
+//> Writing some intermediate data for debugging
+#define WRITE_KF_CF_GT_EDGE_PAIRS (true)
 
 //> Generic definitions
 #define RANSAC_NUM_OF_ITERATIONS (500)
@@ -87,5 +88,3 @@
                                       "options:\n"                                             \
                                       "  -h, --help         show this help message and exit\n" \
                                       "  -c, --config_file  path to the the configuration file\n");
-#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
-#define GRID_SIZE (40)     //> Size of the spatial grid cells in pixels

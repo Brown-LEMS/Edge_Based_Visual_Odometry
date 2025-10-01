@@ -76,7 +76,6 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
 
     try
     {
-
         YAML::Node left_cam = config_file["left_camera"];
         YAML::Node right_cam = config_file["right_camera"];
         YAML::Node stereo = config_file["stereo"];
@@ -96,11 +95,23 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         camera_info.left.resolution = left_cam["resolution"].as<std::vector<int>>();
         camera_info.left.intrinsics = left_cam["intrinsics"].as<std::vector<double>>();
         camera_info.left.distortion = left_cam["distortion_coefficients"].as<std::vector<double>>();
+        Eigen::Matrix3d calib_left = Eigen::Matrix3d::Identity();
+        calib_left(0,0) = camera_info.left.intrinsics[0];
+        calib_left(0,2) = camera_info.left.intrinsics[2];
+        calib_left(1,1) = camera_info.left.intrinsics[1];
+        calib_left(1,2) = camera_info.left.intrinsics[3];
+        camera_info.left.K = calib_left;
 
         // Right camera
         camera_info.right.resolution = right_cam["resolution"].as<std::vector<int>>();
         camera_info.right.intrinsics = right_cam["intrinsics"].as<std::vector<double>>();
         camera_info.right.distortion = right_cam["distortion_coefficients"].as<std::vector<double>>();
+        Eigen::Matrix3d calib_right = Eigen::Matrix3d::Identity();
+        calib_right(0,0) = camera_info.right.intrinsics[0];
+        calib_right(0,2) = camera_info.right.intrinsics[2];
+        calib_right(1,1) = camera_info.right.intrinsics[1];
+        calib_right(1,2) = camera_info.right.intrinsics[3];
+        camera_info.right.K = calib_right;
 
         // Stereo right-from-left (R21, T21, F21)
         if (stereo["R21"] && stereo["T21"] && stereo["F21"])
@@ -111,7 +122,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         }
         else
         {
-            std::cerr << "ERROR: Missing left-to-right stereo parameters R21/T21/F21" << std::endl;
+            LOG_ERROR("ERROR: Missing left-to-right stereo parameters R21/T21/F21");
         }
 
         // Stereo left-from-right (R12, T12, F12)
@@ -123,7 +134,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         }
         else
         {
-            std::cerr << "ERROR: Missing right-to-left stereo parameters R12/T12/F12" << std::endl;
+            LOG_ERROR("ERROR: Missing right-to-left stereo parameters R12/T12/F12");
         }
 
         // ETH3D stereo focal length and baseline
@@ -137,7 +148,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
             }
             else
             {
-                std::cerr << "ERROR: Missing stereo parameters (focal_length, baseline) in YAML file!" << std::endl;
+                LOG_ERROR("ERROR: Missing stereo parameters (focal_length, baseline) in YAML file!");
             }
         }
 
@@ -461,37 +472,7 @@ void Dataset::PrintDatasetInfo()
 
     std::cout << "\nStereo Camera Parameters: \n";
     std::cout << "Focal Length: " << camera_info.focal_length << " pixels" << std::endl;
-    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl;
-
-    std::cout << "\n"
-              << std::endl;
-}
-
-void Dataset::onMouse(int event, int x, int y, int, void *)
-{
-    if (event == cv::EVENT_MOUSEMOVE)
-    {
-        if (merged_visualization_global.empty())
-            return;
-
-        int left_width = merged_visualization_global.cols / 2;
-
-        std::string coord_text;
-        if (x < left_width)
-        {
-            coord_text = "Left Image: (" + std::to_string(x) + ", " + std::to_string(y) + ")";
-        }
-        else
-        {
-            int right_x = x - left_width;
-            coord_text = "Right Image: (" + std::to_string(right_x) + ", " + std::to_string(y) + ")";
-        }
-
-        cv::Mat display = merged_visualization_global.clone();
-        cv::putText(display, coord_text, cv::Point(x, y),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
-        cv::imshow("Edge Matching Using NCC & Bidirectional Consistency", display);
-    }
+    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl << std::endl;
 }
 
 #endif

@@ -21,3 +21,18 @@ target_link_libraries(lems_vo_slam
         -L/gpfs/rt/9.2/software/0.20-generic/0.20.1/opt/spack/linux-rhel9-x86_64_v3/gcc-11.3.1/boost-1.80.0-harukoycghoq6exyzhd3jonvup3gpqeo/lib boost_filesystem
         ${THIRD_PARTY_LIBS}
 )
+
+# Add optional glog and gflags linking if found and enabled
+if(USE_GLOGS AND GLOG_FOUND AND GLOG_LIBRARIES)
+    target_link_libraries(lems_vo_slam PUBLIC ${GLOG_LIBRARIES})
+    if(GLOG_INCLUDE_DIRS)
+        target_include_directories(lems_vo_slam PUBLIC ${GLOG_INCLUDE_DIRS})
+    endif()
+endif()
+
+if(USE_GLOGS AND GFLAGS_FOUND AND GFLAGS_LIBRARIES)
+    target_link_libraries(lems_vo_slam PUBLIC ${GFLAGS_LIBRARIES})
+    if(GFLAGS_INCLUDE_DIRS)
+        target_include_directories(lems_vo_slam PUBLIC ${GFLAGS_INCLUDE_DIRS})
+    endif()
+endif()
