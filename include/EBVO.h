@@ -135,14 +135,18 @@ public:
     void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, StereoEdgeCorrespondencesGT& prev_stereo_frame);
 
     void add_edges_to_spatial_grid(StereoEdgeCorrespondencesGT& stereo_frame);
-    // void get_KF_CF_Edge_GT_Pairs(Keyframe_CurrentFrame_EdgeCorrespondencesGT& KC_edge_correspondences, double gt_dist_threshold = 1.0);
 
     //> filtering methods
-    void apply_spatial_grid_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, double grid_radius = 1.0);
-    void apply_SIFT_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs);
+    void apply_spatial_grid_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT& keyframe_stereo, double grid_radius = 1.0);
+    void apply_SIFT_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT& keyframe_stereo, const StereoEdgeCorrespondencesGT& current_stereo, double sift_dist_threshold = 600.0);
 
     //> last_keyframe and current frame
     void Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, StereoEdgeCorrespondencesGT& last_keyframe_stereo, StereoEdgeCorrespondencesGT& current_frame_stereo, StereoFrame& last_keyframe, StereoFrame& current_frame, double gt_dist_threshold = 1.0);
+
+    //> Evaluations
+    void Evaluate_KF_CF_Edge_Correspondences(const std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, \
+                                             StereoEdgeCorrespondencesGT& keyframe_stereo, StereoEdgeCorrespondencesGT& current_stereo, \
+                                             size_t frame_idx, const std::string &stage_name);
     
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
     std::vector<Eigen::Vector2f> LucasKanadeOpticalFlow(

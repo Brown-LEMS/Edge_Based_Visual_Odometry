@@ -175,17 +175,18 @@ void EBVO::PerformEdgeBasedVO()
 
             //> Construct correspondences structure between last keyframe and the current frame
             std::vector<KF_CF_Edge_Correspondences> KF_CF_edge_pairs;
-
             Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs, last_keyframe_stereo, current_frame_stereo, last_keyframe, current_frame);
 
             std::cout << "Size of veridical edge pairs = " << KF_CF_edge_pairs.size() << std::endl;
             
             //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             //> Stage 1: Apply spatial grid to the current frame
-            
+            apply_spatial_grid_filtering(KF_CF_edge_pairs, last_keyframe_stereo, 1.0);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs, last_keyframe_stereo, current_frame_stereo, frame_idx, "Spatial Grid");
 
             //> Stage 2: Do SIFT descriptor comparison between the last keyframe and the current frame from the KC_edge_correspondences
-            
+            apply_SIFT_filtering(KF_CF_edge_pairs, last_keyframe_stereo, current_frame_stereo, 700.0);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs, last_keyframe_stereo, current_frame_stereo, frame_idx, "SIFT Filtering");
 
             //> Stage 3: Do NCC 
 
@@ -610,8 +611,8 @@ void EBVO::Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, StereoEdge
 }
 
 void EBVO::Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, \
-    StereoEdgeCorrespondencesGT& last_keyframe_stereo, StereoEdgeCorrespondencesGT& current_frame_stereo, \
-    StereoFrame& last_keyframe, StereoFrame& current_frame, double gt_dist_threshold)
+                                                     StereoEdgeCorrespondencesGT& last_keyframe_stereo, StereoEdgeCorrespondencesGT& current_frame_stereo, \
+                                                     StereoFrame& last_keyframe, StereoFrame& current_frame, double gt_dist_threshold)
 {
     //> Ground-truth relative pose of the current frame with respect to the keyframe
     Eigen::Matrix3d R1 = last_keyframe.gt_rotation;
@@ -644,9 +645,6 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Corr
             if (!CF_veridical_edges_indices.empty())
             {
                 KF_CF_Edge_Correspondences edge_pair;
-                // edge_pair.kf_edge = last_keyframe_stereo.left_edges[i];
-                // edge_pair.gt_location_on_cf = projected_point_cv;
-                // edge_pair.veridical_cf_edges = CF_veridical_edges;
 
                 edge_pair.kf_edge_index = i;
                 edge_pair.gt_location_on_cf = projected_point_cv;
@@ -695,14 +693,32 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Corr
 #endif
 }
 
-void EBVO::apply_spatial_grid_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, double grid_radius)
+void EBVO::apply_spatial_grid_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT& keyframe_stereo, double grid_radius)
 {
-    
+    #pragma omp parallel for schedule(dynamic)
+    for (auto& edge_pair : KF_CF_edge_pairs)
+    {
+        edge_pair.matching_cf_edges_indices = spatial_grid.getCandidatesWithinRadius(keyframe_stereo.left_edges[edge_pair.kf_edge_index].location, grid_radius);
+    }
 }
 
-void EBVO::apply_SIFT_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs)
+void EBVO::apply_SIFT_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT& keyframe_stereo, const StereoEdgeCorrespondencesGT& current_stereo, double sift_dist_threshold)
 {
-    
+    //> for each edge in the keyframe, compare its SIFT descriptor with the SIFT descriptors of the edges in the current frame
+    #pragma omp parallel for schedule(dynamic)
+    for (auto& edge_pair : KF_CF_edge_pairs)
+    {
+        std::vector<int> filtered_cf_edges_indices;
+        for (auto& m_edge_idx : edge_pair.matching_cf_edges_indices)
+        {   
+            double sift_desc_distance = cv::norm(keyframe_stereo.left_edge_descriptors[edge_pair.kf_edge_index], current_stereo.left_edge_descriptors[m_edge_idx], cv::NORM_L2);
+            if (sift_desc_distance < sift_dist_threshold)
+            {
+                filtered_cf_edges_indices.push_back(m_edge_idx);
+            }
+        }
+        edge_pair.matching_cf_edges_indices = filtered_cf_edges_indices;
+    }
 }
 
 Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_frame,
@@ -1173,6 +1189,47 @@ void EBVO::DebugNCCScoresWithGT(const std::unordered_map<Edge, EdgeGTMatchInfo> 
     std::cout << "NCC score analysis saved to: " << debug_filename << std::endl;
     std::cout << "========================================================\n"
               << std::endl;
+}
+
+void EBVO::Evaluate_KF_CF_Edge_Correspondences(const std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, \
+    StereoEdgeCorrespondencesGT& keyframe_stereo, StereoEdgeCorrespondencesGT& current_stereo, \
+    size_t frame_idx, const std::string &stage_name)
+{
+    //> FIXME: Write the results to a file
+    // std::string output_dir = dataset.get_output_path();
+    // std::string eval_filename = output_dir + "/edge_match_evaluation_" + stage_name + "_frame_" + std::to_string(frame_idx) + ".txt";
+    // std::ofstream eval_PR(eval_filename);
+
+    //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame 
+    int total_num_of_true_positives = 0;
+    std::vector<double> num_of_cf_edges_per_kf_edge;
+    std::vector<double> precision_per_edge;
+    num_of_cf_edges_per_kf_edge.reserve(KF_CF_edge_pairs.size());
+    precision_per_edge.reserve(KF_CF_edge_pairs.size());
+    for (const auto& edge_pair : KF_CF_edge_pairs)
+    {        
+        //> Find if there is at least one edge index in edge_pair.matching_cf_edges_indices is found in edge_pair.veridical_cf_edges_indices
+        for (const auto& v_edge_idx : edge_pair.veridical_cf_edges_indices)
+        {
+            if (std::find(edge_pair.matching_cf_edges_indices.begin(), edge_pair.matching_cf_edges_indices.end(), v_edge_idx) != edge_pair.matching_cf_edges_indices.end())
+            {
+                total_num_of_true_positives++;
+                precision_per_edge.push_back( static_cast<double>(edge_pair.veridical_cf_edges_indices.size()) / static_cast<double>(edge_pair.matching_cf_edges_indices.size()) );
+                break;
+            }
+        }
+        num_of_cf_edges_per_kf_edge.push_back( edge_pair.matching_cf_edges_indices.size() );
+    }
+
+    double recall_per_image = static_cast<double>(total_num_of_true_positives) / KF_CF_edge_pairs.size();
+    double precision_per_image = std::accumulate(precision_per_edge.begin(), precision_per_edge.end(), 0.0) / precision_per_edge.size();
+    double num_of_cf_edges_per_kf_edge_avg = std::accumulate(num_of_cf_edges_per_kf_edge.begin(), num_of_cf_edges_per_kf_edge.end(), 0.0) / num_of_cf_edges_per_kf_edge.size();
+
+    std::cout << "Stage: " << stage_name << " | Frame: " << frame_idx << std::endl;
+    std::cout << "- Recall rate:       " << std::fixed << std::setprecision(8) << recall_per_image << std::endl;
+    std::cout << "- Precision rate:    " << std::fixed << std::setprecision(8) << precision_per_image << std::endl;
+    std::cout << "- Average ambiguity: " << std::fixed << std::setprecision(8) << num_of_cf_edges_per_kf_edge_avg << std::endl;
+    std::cout << "========================================================\n" << std::endl;
 }
 
 void EBVO::EvaluateEdgeMatchPerformance(const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
