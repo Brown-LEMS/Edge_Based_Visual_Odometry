@@ -128,7 +128,9 @@ void EBVO::PerformEdgeBasedVO()
 
         ProcessEdges(left_cur_undistorted, left_edge_path, TOED, dataset.left_edges);
         std::cout << "Number of edges on the left image: " << dataset.left_edges.size() << std::endl;
-
+        std::string third_order_edges_file = dataset.get_output_path() + "/third_order_edges_frame_" + std::to_string(frame_idx + 1) + ".txt";
+        WriteThirdOrderEdgesToFile(frame_idx, third_order_edges_file);
+        std::cout << "Wrote third-order edges of frame " << frame_idx << " to: " << third_order_edges_file << std::endl;
         ProcessEdges(right_cur_undistorted, right_edge_path, TOED, dataset.right_edges);
         std::cout << "Number of edges on the right image: " << dataset.right_edges.size() << std::endl;
 
@@ -163,7 +165,6 @@ void EBVO::PerformEdgeBasedVO()
         {
             spatial_grid.reset();
             current_edge_loc.clear();
-
             std::unordered_map<Edge, std::vector<Edge>> Edge_match;
 #pragma omp parallel for schedule(dynamic)
             for (int current_idx = 0; current_idx < dataset.left_edges.size(); ++current_idx)
@@ -202,29 +203,6 @@ void EBVO::PerformEdgeBasedVO()
             {
                 const Edge &prev_edge = previous_frame_edges[i];
                 std::vector<int> indices = spatial_grid.getCandidatesWithinRadius(prev_edge, GRID_SIZE);
-
-                // Debug: Check if this is the problematic edge from your example
-                if (abs(prev_edge.location.x - 799.6) < 1.0 && abs(prev_edge.location.y - 132.9) < 1.0)
-                {
-                    std::cout << "=== DEBUGGING PROBLEMATIC EDGE ===" << std::endl;
-                    std::cout << "Prev edge: (" << prev_edge.location.x << "," << prev_edge.location.y << ")" << std::endl;
-                    std::cout << "GRID_SIZE: " << GRID_SIZE << std::endl;
-                    std::cout << "Found " << indices.size() << " candidates:" << std::endl;
-
-                    bool found_gt = false;
-                    for (int idx : indices)
-                    {
-                        const Edge &candidate = dataset.left_edges[idx];
-                        double dist = cv::norm(candidate.location - cv::Point2d(806.2, 135.4));
-                        // std::cout << "  Candidate " << idx << ": (" << candidate.location.x << "," << candidate.location.y << ") dist_to_GT=" << dist << std::endl;
-                        if (dist < 2.0)
-                            found_gt = true;
-                    }
-
-                    std::cout << "GT edge found in candidates: " << (found_gt ? "YES" : "NO") << std::endl;
-                    std::cout << "====================================" << std::endl;
-                }
-
                 // Add all spatial candidates to Edge_match
                 for (int idx : indices)
                 {
@@ -238,7 +216,7 @@ void EBVO::PerformEdgeBasedVO()
 
             // Evaluate Edge_match after spatial grid stage
             std::cout << "Evaluating Edge_match after spatial grid stage..." << std::endl;
-            EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "spatial_grid", 5.0);
+            EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "spatial_grid", 5.0, current_frame, previous_frame);
 
             // Stage 2: Filter Edge_match based on SIFT descriptors
             std::cout << "Stage 2: Filtering Edge_match with SIFT descriptors..." << std::endl;
@@ -317,7 +295,7 @@ void EBVO::PerformEdgeBasedVO()
 
             // Evaluate Edge_match after SIFT filtering
             std::cout << "Evaluating Edge_match after SIFT filtering..." << std::endl;
-            EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "sift_filtered", 5.0);
+            EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "sift_filtered", 5.0, current_frame, previous_frame);
 
             // Combine matches from all threads
             for (const auto &thread_match_vec : thread_matches)
@@ -360,8 +338,8 @@ void EBVO::PerformEdgeBasedVO()
             }
 
             std::cout << "Evaluating Edge_match after patch similarity filtering..." << std::endl;
-            DebugNCCScoresWithGT(left_edges_GT_Info, frame_idx, previous_frame, current_frame);
-            // EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "ncc_filtered", 5.0);
+            DebugNCCScoresWithGT(left_edges_GT_Info, Edge_match, frame_idx, previous_frame, current_frame);
+            EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "ncc_filtered", 5.0, current_frame, previous_frame);
 
             // Update caches for next iteration
             previous_frame_descriptors_cache.clear();
@@ -399,7 +377,7 @@ void EBVO::PerformEdgeBasedVO()
         //     dataset, frame_idx);
 
         frame_idx++;
-        if (frame_idx >= 3)
+        if (frame_idx > 1)
         {
             break;
         }
@@ -558,7 +536,33 @@ void EBVO::WriteEdgesToBinary(const std::string &filepath,
     ofs.write(reinterpret_cast<const char *>(&size), sizeof(size));
     ofs.write(reinterpret_cast<const char *>(edges.data()), sizeof(Edge) * size);
 }
+void EBVO::WriteThirdOrderEdgesToFile(size_t frame_idx, const std::string &output_filepath)
+{
+    if (dataset.left_edges.empty())
+    {
+        std::cerr << "No edges available for current frame." << std::endl;
+        return;
+    }
 
+    std::ofstream output_file(output_filepath);
+    if (!output_file.is_open())
+    {
+        std::cerr << "Error opening output file: " << output_filepath << std::endl;
+        return;
+    }
+
+    // Write third-order edges to the file in the same format as toed.txt
+    for (const Edge &edge : dataset.left_edges)
+    {
+        output_file << std::fixed << std::setprecision(5)
+                    << edge.location.x << "\t"
+                    << edge.location.y << "\t"
+                    << edge.orientation << std::endl;
+    }
+
+    output_file.close();
+    std::cout << "Wrote " << dataset.left_edges.size() << " third-order edges to " << output_filepath << std::endl;
+}
 void EBVO::WriteEdgeMatchResult(StereoMatchResult &match_result,
                                 std::vector<double> &max_disparity_values,
                                 std::vector<double> &per_image_avg_before_epi,
@@ -1089,13 +1093,15 @@ void EBVO::GetGTEdges(size_t &frame_idx, StereoFrame &previous_frame, StereoFram
     std::cout << left_edges_GT_Info.size() << std::endl;
 }
 
-// Add this function to your EBVO.cpp file to debug NCC scores against GT data
 void EBVO::DebugNCCScoresWithGT(const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
+                                const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
                                 size_t frame_idx, const StereoFrame &previous_frame,
                                 const StereoFrame &current_frame)
 {
     std::string output_dir = dataset.get_output_path();
+    // Create two distinctly named files
     std::string debug_filename = output_dir + "/ncc_scores_gt_debug_frame_" + std::to_string(frame_idx) + ".csv";
+
     std::ofstream debug_csv(debug_filename);
 
     // Write CSV header
@@ -1105,12 +1111,6 @@ void EBVO::DebugNCCScoresWithGT(const std::unordered_map<Edge, EdgeGTMatchInfo> 
     int gt_matches_found = 0;
     int total_matches_with_high_ncc = 0;
     int total_gt_with_high_ncc = 0;
-
-    std::string vis_dir = output_dir + "/patch_visualization";
-    std::filesystem::create_directories(vis_dir);
-
-    const int num_edges_to_visualize = 5;
-    int edges_visualized = 0;
 
     for (const auto &gt_pair : gt_correspondences)
     {
@@ -1146,251 +1146,6 @@ void EBVO::DebugNCCScoresWithGT(const std::unordered_map<Edge, EdgeGTMatchInfo> 
             total_gt_with_high_ncc++;
         }
         //> CH TODO: Avoid using OpenCV to visualize. Use Python or MATLAB instead.
-        // if (edges_visualized < num_edges_to_visualize)
-        // {
-        //     std::string edge_dir = vis_dir + "/edge_" + std::to_string(prev_edge_idx);
-        //     std::filesystem::create_directories(edge_dir);
-
-        //     // 1. Create visualization of previous frame with the edge
-        //     cv::Mat prev_frame_vis = previous_frame.left_image.clone();
-        //     // cv::cvtColor(prev_frame_vis, prev_frame_vis, cv::COLOR_GRAY2BGR);
-
-        //     // Draw the previous edge point
-        //     // cv::circle(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y), 5, cv::Scalar(0, 0, 255), -1);
-
-        //     // Get orthogonal shifted points for patch visualization
-        //     std::pair<cv::Point2d, cv::Point2d> shifted_points_prev = get_Orthogonal_Shifted_Points(prev_edge);
-
-        //     // Draw orthogonal direction lines
-        //     // cv::line(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y),
-        //     //          cv::Point(prev_edge.location.x + 20 * cos(prev_edge.orientation),
-        //     //                    prev_edge.location.y + 20 * sin(prev_edge.orientation)),
-        //     //          cv::Scalar(255, 0, 0), 2);
-
-        //     // Draw perpendicular direction
-        //     // cv::line(prev_frame_vis, cv::Point(prev_edge.location.x, prev_edge.location.y),
-        //     //          cv::Point(prev_edge.location.x + 20 * cos(prev_edge.orientation + M_PI / 2),
-        //     //                    prev_edge.location.y + 20 * sin(prev_edge.orientation + M_PI / 2)),
-        //     //          cv::Scalar(0, 255, 0), 2);
-
-        //     // Draw patch boundaries
-        //     int half_patch = PATCH_SIZE / 2;
-        //     // cv::rectangle(prev_frame_vis,
-        //     //               cv::Point(shifted_points_prev.first.x - half_patch, shifted_points_prev.first.y - half_patch),
-        //     //               cv::Point(shifted_points_prev.first.x + half_patch, shifted_points_prev.first.y + half_patch),
-        //     //               cv::Scalar(0, 255, 0), 2);
-        //     // cv::rectangle(prev_frame_vis,
-        //     //               cv::Point(shifted_points_prev.second.x - half_patch, shifted_points_prev.second.y - half_patch),
-        //     //               cv::Point(shifted_points_prev.second.x + half_patch, shifted_points_prev.second.y + half_patch),
-        //     //               cv::Scalar(255, 0, 0), 2);
-
-        //     // Add text labels
-        //     // std::string edge_info = "Edge " + std::to_string(prev_edge_idx) + " (" +
-        //     //                         std::to_string(int(prev_edge.location.x)) + "," +
-        //     //                         std::to_string(int(prev_edge.location.y)) + ")";
-        //     // cv::putText(prev_frame_vis, edge_info, cv::Point(20, 30),
-        //     //             cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-
-        //     // cv::imwrite(edge_dir + "/1_previous_frame_edge.png", prev_frame_vis);
-
-        //     // 2. Create visualization of current frame with the GT edge
-        //     // cv::Mat curr_frame_gt_vis = current_frame.left_image.clone();
-        //     // cv::cvtColor(curr_frame_gt_vis, curr_frame_gt_vis, cv::COLOR_GRAY2BGR);
-
-        //     // Draw the GT edge point
-        //     // cv::circle(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 5, cv::Scalar(0, 0, 255), -1);
-
-        //     // Draw orthogonal direction lines for GT
-        //     // cv::line(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y),
-        //     //          cv::Point(gt_edge.location.x + 20 * cos(gt_edge.orientation),
-        //     //                    gt_edge.location.y + 20 * sin(gt_edge.orientation)),
-        //     //          cv::Scalar(255, 0, 0), 2);
-
-        //     // Draw perpendicular direction
-        //     // cv::line(curr_frame_gt_vis, cv::Point(gt_edge.location.x, gt_edge.location.y),
-        //     //          cv::Point(gt_edge.location.x + 20 * cos(gt_edge.orientation + M_PI / 2),
-        //     //                    gt_edge.location.y + 20 * sin(gt_edge.orientation + M_PI / 2)),
-        //     //          cv::Scalar(0, 255, 0), 2);
-
-        //     // Add text labels
-        //     // std::string gt_info = "GT Edge (" +
-        //     //                       std::to_string(int(gt_edge.location.x)) + "," +
-        //     //                       std::to_string(int(gt_edge.location.y)) + ")";
-        //     // cv::putText(curr_frame_gt_vis, gt_info, cv::Point(20, 30),
-        //     //             cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-        //     // std::string ncc_info = "NCC Score: " + std::to_string(gt_ncc_score);
-        //     // cv::putText(curr_frame_gt_vis, ncc_info, cv::Point(20, 60),
-        //     //             cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-
-        //     // cv::imwrite(edge_dir + "/2_current_frame_gt_edge.png", curr_frame_gt_vis);
-
-        //     // 3. Create combined visualization with GT and all vertical edges
-        //     // cv::Mat combined_vis = current_frame.left_image.clone();
-        //     // cv::cvtColor(combined_vis, combined_vis, cv::COLOR_GRAY2BGR);
-
-        //     // Draw the GT edge in magenta
-        //     // cv::circle(combined_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 5, cv::Scalar(255, 0, 255), -1);
-
-        //     // Add information about number of vertical edges
-        //     // std::string vert_count = "Vertical edges: " + std::to_string(vertical_edges.size());
-        //     // cv::putText(combined_vis, vert_count, cv::Point(20, 30),
-        //                 // cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-        //     for (size_t i = 0; i < vertical_edges.size(); i++)
-        //     {
-        //         const Edge &vert_edge = vertical_edges[i];
-        //         double distance = cv::norm(vert_edge.location - gt_edge.location);
-        //         double ncc = edge_patch_similarity(prev_edge, vert_edge,
-        //                                            previous_frame.left_image,
-        //                                            current_frame.left_image);
-
-        //         // Color based on NCC score (green for high, red for low)
-        //         cv::Scalar color;
-        //         if (!std::isnan(ncc) && ncc >= NCC_THRESH_WEAK_BOTH_SIDES)
-        //         {
-        //             color = cv::Scalar(0, 255, 0); // Green for good match
-        //         }
-        //         else
-        //         {
-        //             color = cv::Scalar(0, 0, 255); // Red for poor match
-        //         }
-
-        //         cv::circle(combined_vis, cv::Point(vert_edge.location.x, vert_edge.location.y), 3, color, -1);
-
-        //         // Add index number next to each edge
-        //         cv::putText(combined_vis, std::to_string(i),
-        //                     cv::Point(vert_edge.location.x + 5, vert_edge.location.y),
-        //                     cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
-
-        //         // Create individual visualization for each vertical edge
-        //         if (i < 5)
-        //         { // Limit to first 5 vertical edges to avoid too many images
-        //             cv::Mat vert_vis = current_frame.left_image.clone();
-        //             cv::cvtColor(vert_vis, vert_vis, cv::COLOR_GRAY2BGR);
-
-        //             // Draw the vertical edge
-        //             cv::circle(vert_vis, cv::Point(vert_edge.location.x, vert_edge.location.y), 5, color, -1);
-
-        //             // Draw GT edge as reference (smaller, semi-transparent)
-        //             cv::circle(vert_vis, cv::Point(gt_edge.location.x, gt_edge.location.y), 3,
-        //                        cv::Scalar(255, 0, 255), 1);
-
-        //             // Add information text
-        //             std::string vert_info = "Vertical Edge " + std::to_string(i) + " (" +
-        //                                     std::to_string(int(vert_edge.location.x)) + "," +
-        //                                     std::to_string(int(vert_edge.location.y)) + ")";
-        //             cv::putText(vert_vis, vert_info, cv::Point(20, 30),
-        //                         cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-        //             std::string dist_info = "Distance to GT: " + std::to_string(distance);
-        //             cv::putText(vert_vis, dist_info, cv::Point(20, 60),
-        //                         cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-
-        //             std::string ncc_text = "NCC: " + (std::isnan(ncc) ? "NaN" : std::to_string(ncc));
-        //             cv::putText(vert_vis, ncc_text, cv::Point(20, 90),
-        //                         cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-
-        //             cv::imwrite(edge_dir + "/3_vertical_edge_" + std::to_string(i) + ".png", vert_vis);
-        //         }
-        //     }
-        //     cv::imwrite(edge_dir + "/4_all_vertical_edges.png", combined_vis);
-
-        //     // Save patch images and statistics
-        //     std::ofstream stats_file(edge_dir + "/patch_statistics.txt");
-        //     stats_file << "PATCH STATISTICS FOR EDGE " << prev_edge_idx << std::endl;
-        //     stats_file << "--------------------------------------" << std::endl;
-        //     stats_file << "Previous Edge Location: (" << prev_edge.location.x << ", "
-        //                << prev_edge.location.y << ")" << std::endl;
-        //     stats_file << "Previous Edge Orientation: " << prev_edge.orientation << std::endl;
-        //     stats_file << "GT Edge Location: (" << gt_edge.location.x << ", "
-        //                << gt_edge.location.y << ")" << std::endl;
-        //     stats_file << "GT Edge Orientation: " << gt_edge.orientation << std::endl;
-        //     stats_file << "GT NCC Score: " << gt_ncc_score << std::endl
-        //                << std::endl;
-
-        //     // Extract and save patches for both previous and GT edges
-        //     std::pair<cv::Point2d, cv::Point2d> shifted_points_gt = get_Orthogonal_Shifted_Points(gt_edge);
-
-        //     cv::Mat patch_coord_x_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        //     cv::Mat patch_coord_y_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        //     cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        //     cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-
-        //     cv::Mat prev_patch_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        //     cv::Mat prev_patch_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        //     cv::Mat gt_patch_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-        //     cv::Mat gt_patch_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-
-        //     // Extract patches
-        //     get_patch_on_one_edge_side(shifted_points_prev.first, prev_edge.orientation,
-        //                                patch_coord_x_plus, patch_coord_y_plus,
-        //                                prev_patch_plus, previous_frame.left_image);
-
-        //     get_patch_on_one_edge_side(shifted_points_prev.second, prev_edge.orientation,
-        //                                patch_coord_x_minus, patch_coord_y_minus,
-        //                                prev_patch_minus, previous_frame.left_image);
-
-        //     get_patch_on_one_edge_side(shifted_points_gt.first, gt_edge.orientation,
-        //                                patch_coord_x_plus, patch_coord_y_plus,
-        //                                gt_patch_plus, current_frame.left_image);
-
-        //     get_patch_on_one_edge_side(shifted_points_gt.second, gt_edge.orientation,
-        //                                patch_coord_x_minus, patch_coord_y_minus,
-        //                                gt_patch_minus, current_frame.left_image);
-
-        //     // Save normalized patch images
-        //     cv::Mat norm_patch;
-
-        //     cv::normalize(prev_patch_plus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
-        //     cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
-        //     cv::imwrite(edge_dir + "/patch_prev_plus.png", norm_patch);
-
-        //     cv::normalize(prev_patch_minus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
-        //     cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
-        //     cv::imwrite(edge_dir + "/patch_prev_minus.png", norm_patch);
-
-        //     cv::normalize(gt_patch_plus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
-        //     cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
-        //     cv::imwrite(edge_dir + "/patch_gt_plus.png", norm_patch);
-
-        //     cv::normalize(gt_patch_minus, norm_patch, 0, 255, cv::NORM_MINMAX, CV_8U);
-        //     cv::resize(norm_patch, norm_patch, cv::Size(100, 100), 0, 0, cv::INTER_NEAREST);
-        //     cv::imwrite(edge_dir + "/patch_gt_minus.png", norm_patch);
-
-        //     // Calculate and save patch statistics
-        //     double mean_prev_plus = cv::mean(prev_patch_plus)[0];
-        //     double mean_prev_minus = cv::mean(prev_patch_minus)[0];
-        //     double mean_gt_plus = cv::mean(gt_patch_plus)[0];
-        //     double mean_gt_minus = cv::mean(gt_patch_minus)[0];
-
-        //     double var_prev_plus = cv::mean((prev_patch_plus - mean_prev_plus).mul(prev_patch_plus - mean_prev_plus))[0];
-        //     double var_prev_minus = cv::mean((prev_patch_minus - mean_prev_minus).mul(prev_patch_minus - mean_prev_minus))[0];
-        //     double var_gt_plus = cv::mean((gt_patch_plus - mean_gt_plus).mul(gt_patch_plus - mean_gt_plus))[0];
-        //     double var_gt_minus = cv::mean((gt_patch_minus - mean_gt_minus).mul(gt_patch_minus - mean_gt_minus))[0];
-
-        //     stats_file << "Patch Statistics:" << std::endl;
-        //     stats_file << "  Prev Plus  - Mean: " << mean_prev_plus << ", Variance: " << var_prev_plus << std::endl;
-        //     stats_file << "  Prev Minus - Mean: " << mean_prev_minus << ", Variance: " << var_prev_minus << std::endl;
-        //     stats_file << "  GT Plus    - Mean: " << mean_gt_plus << ", Variance: " << var_gt_plus << std::endl;
-        //     stats_file << "  GT Minus   - Mean: " << mean_gt_minus << ", Variance: " << var_gt_minus << std::endl;
-        //     stats_file << std::endl;
-
-        //     // Add vertical edge statistics
-        //     stats_file << "Vertical Edges:" << std::endl;
-        //     for (size_t i = 0; i < vertical_edges.size(); i++)
-        //     {
-        //         const Edge &vert_edge = vertical_edges[i];
-        //         double ncc = edge_patch_similarity(prev_edge, vert_edge,
-        //                                            previous_frame.left_image,
-        //                                            current_frame.left_image);
-
-        //         stats_file << "  Edge " << i << " - Location: ("
-        //                    << vert_edge.location.x << ", " << vert_edge.location.y
-        //                    << "), NCC: " << ncc << std::endl;
-        //     }
-
-        //     stats_file.close();
-        //     edges_visualized++;
-        // }
-
         // Now check all vertical edges
         int candidate_idx = 0;
         bool found_gt_among_candidates = false;
@@ -1464,7 +1219,9 @@ void EBVO::EvaluateEdgeMatchPerformance(const std::unordered_map<Edge, std::vect
                                         const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
                                         size_t frame_idx,
                                         const std::string &stage_name,
-                                        double distance_threshold)
+                                        double distance_threshold,
+                                        const StereoFrame &previous_frame,
+                                        const StereoFrame &current_frame)
 {
     int true_positives = 0;
     int false_positives = 0;
@@ -1494,6 +1251,40 @@ void EBVO::EvaluateEdgeMatchPerformance(const std::unordered_map<Edge, std::vect
 
     int fp_count = 0;
     int idx = 0;
+
+    std::string debug_all_edge_filename = output_dir + "/ncc_scores_all_edges_frame_" + std::to_string(frame_idx) + stage_name + ".csv";
+
+    std::ofstream debug_all_edge_csv(debug_all_edge_filename);
+
+    debug_all_edge_csv << "prev_edge_idx,prev_x,prev_y,prev_orientation,candidate_type,candidate_idx,candidate_x,candidate_y,candidate_orientation,gt_x,gt_y,ncc_score,is_gt_match\n";
+    auto first_match = Edge_match.begin();
+
+    const Edge &prev_edge = first_match->first;
+    const std::vector<Edge> &candidates = first_match->second;
+
+    int candidate_idx = 0;
+    for (const Edge &candidate : candidates)
+    {
+        double ncc_score = edge_patch_similarity(prev_edge, candidate,
+                                                 previous_frame.left_image,
+                                                 current_frame.left_image);
+
+        debug_all_edge_csv << "0" << ","
+                           << prev_edge.location.x << ","
+                           << prev_edge.location.y << ","
+                           << prev_edge.orientation << ","
+                           << "Candidate" << ","
+                           << candidate_idx << ","
+                           << candidate.location.x << ","
+                           << candidate.location.y << ","
+                           << candidate.orientation << ","
+                           << "-1" << "," // No GT coords for all edges
+                           << "-1" << ","
+                           << ncc_score << ","
+                           << "0" << "\n"; // is_gt_match = false
+
+        candidate_idx++;
+    }
     // Evaluate each edge match
     for (const auto &edge_pair : Edge_match)
     {
@@ -1519,7 +1310,7 @@ void EBVO::EvaluateEdgeMatchPerformance(const std::unordered_map<Edge, std::vect
         // Evaluate each matched edge for this previous edge
         for (const Edge &matched_edge : matched_edges)
         {
-            total_individual_matches++; // NEW: Count every individual match
+            total_individual_matches++;
 
             double error_distance = cv::norm(matched_edge.location - gt_curr_location);
             bool is_correct = (error_distance <= distance_threshold);

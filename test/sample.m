@@ -1,0 +1,1 @@
+interactive_edge_comparison(1, 8); % For frame 1, edge 8

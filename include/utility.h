@@ -39,10 +39,10 @@ public:
     typedef std::shared_ptr<Utility> Ptr;
 
     Utility();
-    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y );
-    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y );
-    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection );
-    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection );
+    double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y);
+    double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y);
+    double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection);
+    double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection);
 
     void Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
                                          std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2,
@@ -53,7 +53,6 @@ public:
 template <typename T>
 double Bilinear_Interpolation(cv::Mat meshGrid, cv::Point2d P)
 {
-
     //> y2 Q12--------Q22
     //      |          |
     //      |    P     |
@@ -65,11 +64,16 @@ double Bilinear_Interpolation(cv::Mat meshGrid, cv::Point2d P)
     cv::Point2d Q11(floor(P.x), ceil(P.y));
     cv::Point2d Q21(ceil(P.x), ceil(P.y));
 
+    if (Q11.x < 0 || Q11.y < 0 || Q21.x >= meshGrid.cols || Q21.y >= meshGrid.rows ||
+        Q12.x < 0 || Q12.y < 0 || Q22.x >= meshGrid.cols || Q22.y >= meshGrid.rows)
+    {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
     double f_x_y1 = ((Q21.x - P.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q11.y, Q11.x) + ((P.x - Q11.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q21.y, Q21.x);
     double f_x_y2 = ((Q21.x - P.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q12.y, Q12.x) + ((P.x - Q11.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q22.y, Q22.x);
     return ((Q12.y - P.y) / (Q12.y - Q11.y)) * f_x_y1 + ((P.y - Q11.y) / (Q12.y - Q11.y)) * f_x_y2;
 }
-
 /*
     Other version of Bilinear interpolation for a point P in a mesh grid.
     Returns NaN if the point is out of bounds.
@@ -208,17 +212,19 @@ inline Eigen::Matrix3d ConvertToEigenMatrix(const std::vector<std::vector<double
     return eigen_matrix;
 }
 
-template< typename T >
-T rad_to_deg( T theta ) {
+template <typename T>
+T rad_to_deg(T theta)
+{
     return theta * (180.0 / M_PI);
 }
 
-template< typename T >
-T deg_to_rad( T theta ) {
+template <typename T>
+T deg_to_rad(T theta)
+{
     return theta * (M_PI / 180.0);
 }
 
-inline std::vector<int> find_Unique_Sorted_Numbers( std::vector<int> vec ) 
+inline std::vector<int> find_Unique_Sorted_Numbers(std::vector<int> vec)
 {
     std::vector<int> unique_sorted_vec = vec;
     std::sort(unique_sorted_vec.begin(), unique_sorted_vec.end());

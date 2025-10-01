@@ -171,12 +171,16 @@ public:
                              const std::unordered_map<int, cv::Mat> &current_descriptors_cache,
                              size_t frame_idx,
                              double distance_threshold = 5.0);
+    void WriteThirdOrderEdgesToFile(size_t frame_idx, const std::string &output_filepath);
     void EvaluateEdgeMatchPerformance(const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
                                       const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
                                       size_t frame_idx,
                                       const std::string &stage_name,
-                                      double distance_threshold = 3.0);
+                                      double distance_threshold,
+                                      const StereoFrame &previous_frame,
+                                      const StereoFrame &current_frame);
     void DebugNCCScoresWithGT(const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
+                              const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
                               size_t frame_idx, const StereoFrame &previous_frame,
                               const StereoFrame &current_frame);
 
