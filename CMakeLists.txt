@@ -34,6 +34,64 @@ if(PkgConfig_FOUND)
     pkg_check_modules(GFLAGS QUIET libgflags)
 endif()
 
+option(USE_MATLAB_NCC "Use MATLAB for NCC computation" OFF)
+
+# MATLAB support
+if(USE_MATLAB_NCC)
+    message(STATUS "Looking for MATLAB...")
+    
+    if(DEFINED SAUL_BUILD)
+        # For MACOS - try to find MATLAB in standard locations
+        find_package(Matlab COMPONENTS ENGINE_LIBRARY DATAARRAY_LIBRARY)
+    else()
+        # For Brown CCV Oscar - MATLAB might be in a module
+        # First try standard find_package
+        find_package(Matlab COMPONENTS ENGINE_LIBRARY DATAARRAY_LIBRARY)
+        
+        # If not found, try common Oscar MATLAB locations
+        if(NOT Matlab_FOUND)
+            # Try to find MATLAB manually on Oscar
+            set(MATLAB_POSSIBLE_PATHS
+                "/oscar/rt/9.2/software/0.20-generic/0.20.1/opt/spack/linux-rhel9-x86_64_v3/gcc-11.3.1/matlab-2023a-*"
+                "/gpfs/runtime/opt/matlab"
+                "/usr/local/MATLAB"
+            )
+            
+            foreach(MATLAB_PATH ${MATLAB_POSSIBLE_PATHS})
+                file(GLOB MATLAB_DIRS ${MATLAB_PATH})
+                if(MATLAB_DIRS)
+                    list(GET MATLAB_DIRS 0 MATLAB_ROOT)
+                    if(EXISTS "${MATLAB_ROOT}/extern/include")
+                        set(Matlab_FOUND TRUE)
+                        set(Matlab_INCLUDE_DIRS "${MATLAB_ROOT}/extern/include")
+                        set(Matlab_ENGINE_LIBRARY "${MATLAB_ROOT}/bin/glnxa64/libMatlabEngine.so")
+                        set(Matlab_DATAARRAY_LIBRARY "${MATLAB_ROOT}/bin/glnxa64/libMatlabDataArray.so")
+                        message(STATUS "Found MATLAB at: ${MATLAB_ROOT}")
+                        break()
+                    endif()
+                endif()
+            endforeach()
+        endif()
+    endif()
+    if(Matlab_FOUND)
+        set(USE_MATLAB_NCC_ENABLED TRUE)
+        message(STATUS "MATLAB NCC computation enabled")
+        message(STATUS "MATLAB include dirs: ${Matlab_INCLUDE_DIRS}")
+        message(STATUS "MATLAB engine library: ${Matlab_ENGINE_LIBRARY}")
+        message(STATUS "MATLAB dataarray library: ${Matlab_DATAARRAY_LIBRARY}")
+    else()
+        set(USE_MATLAB_NCC_ENABLED FALSE)
+        message(WARNING "MATLAB not found - NCC computation will use C++ implementation")
+        message(STATUS "To use MATLAB NCC, ensure MATLAB is available and try:")
+        message(STATUS "  module load matlab  # (on Oscar)")
+        message(STATUS "  cmake -DUSE_MATLAB_NCC=ON ..")
+    endif()
+else()
+    set(USE_MATLAB_NCC_ENABLED FALSE)
+    message(STATUS "MATLAB NCC computation disabled (use -DUSE_MATLAB_NCC=ON to enable)")
+endif()
+
+
 # Try to find glog using find_package if pkg-config didn't find it
 if(NOT GLOG_FOUND)
     find_package(glog QUIET)
@@ -142,6 +200,40 @@ if(DEFINED SAUL_BUILD)
   endif()
 else()
   #> for Brown CCV Oscars
+if(DEFINED SAUL_BUILD)
+  #> for MACOS
+  set(THIRD_PARTY_LIBS
+      ${OpenCV_LIBS}
+      ${Eigen_LIBS}        
+      pthread
+      ${CSparse_LIBRARY}
+      /usr/local/lib/libyaml-cpp.so
+    )
+  # Add glog and gflags only if found and enabled
+  if(USE_GLOGS AND GLOG_FOUND AND GLOG_LIBRARIES)
+    list(APPEND THIRD_PARTY_LIBS ${GLOG_LIBRARIES})
+  endif()
+  if(USE_GLOGS AND GFLAGS_FOUND AND GFLAGS_LIBRARIES)
+    list(APPEND THIRD_PARTY_LIBS ${GFLAGS_LIBRARIES})
+  endif()
+  # Add MATLAB libraries if enabled
+  if(USE_MATLAB_NCC_ENABLED)
+    list(APPEND THIRD_PARTY_LIBS ${Matlab_ENGINE_LIBRARY} ${Matlab_DATAARRAY_LIBRARY})
+  endif()
+  
+  include_directories(/usr/local/include/yaml-cpp)
+  include_directories(${EIGEN3_INCLUDE_DIR} ${CSPARSE_INCLUDE_DIR})
+  if(USE_GLOGS AND GLOG_FOUND)
+    include_directories(${GLOG_INCLUDE_DIRS})
+  endif()
+  if(USE_GLOGS AND GFLAGS_FOUND)
+    include_directories(${GFLAGS_INCLUDE_DIRS})
+  endif()
+  if(USE_MATLAB_NCC_ENABLED)
+    include_directories(${Matlab_INCLUDE_DIRS})
+  endif()
+else()
+  #> for Brown CCV Oscars
   set(THIRD_PARTY_LIBS
       ${OpenCV_LIBS}
       ${Eigen_LIBS}
@@ -155,16 +247,23 @@ else()
   if(USE_GLOGS AND GFLAGS_FOUND AND GFLAGS_LIBRARIES)
     list(APPEND THIRD_PARTY_LIBS ${GFLAGS_LIBRARIES})
   endif()
+  # Add MATLAB libraries if enabled
+  if(USE_MATLAB_NCC_ENABLED)
+    list(APPEND THIRD_PARTY_LIBS ${Matlab_ENGINE_LIBRARY} ${Matlab_DATAARRAY_LIBRARY})
+  endif()
   
   include_directories(/gpfs/data/bkimia/cchien3/yaml-cpp/bin/include)
   include_directories(${EIGEN3_INCLUDE_DIR})
   include_directories(/gpfs/data/bkimia/cchien3/opencv-4.7.0/opencv_install/include/opencv4)
   link_directories(/gpfs/data/bkimia/cchien3/yaml-cpp/bin/lib64)
-  if(USE_GLOGS AND GLOG_FOUND)
+  if(USE_GLOGS && GLOG_FOUND)
     include_directories(${GLOG_INCLUDE_DIRS})
   endif()
-  if(USE_GLOGS AND GFLAGS_FOUND)
+  if(USE_GLOGS && GFLAGS_FOUND)
     include_directories(${GFLAGS_INCLUDE_DIRS})
+  endif()
+  if(USE_MATLAB_NCC_ENABLED)
+    include_directories(${Matlab_INCLUDE_DIRS})
   endif()
 endif()
 
