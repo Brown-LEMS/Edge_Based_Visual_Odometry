@@ -11,6 +11,7 @@
 #include <sstream>
 #include <iostream>
 #include <algorithm>
+#include "./toed/cpu_toed.hpp"
 
 // =====================================================================================================================
 // class Stereo_Iterator: image iterator to load images from dataset once at a time
@@ -29,6 +30,10 @@ struct StereoFrame
     cv::Mat left_image_undistorted;
     cv::Mat right_image_undistorted;
     double timestamp;
+
+    //> third-order edges
+    std::vector<Edge> left_edges;
+    std::vector<Edge> right_edges;
 
     // Add ground truth if available
     // bool has_gt = false;

@@ -20,15 +20,31 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
                                 cv::Mat &patch_val, const cv::Mat img);
 double get_similarity(const cv::Mat patch_one, const cv::Mat patch_two);
 double edge_patch_similarity(const Edge target_edge_H1, const Edge target_edge_H2, const cv::Mat gray_img_H1, const cv::Mat gray_img_H2);
-StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, StereoEdgeCorrespondencesGT prev_stereo_frame, Dataset &dataset, int idx);
+
+//> This is Sula's function: construct edge correspondences from a stereo image pair
+StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, StereoEdgeCorrespondencesGT stereo_frame, Dataset &dataset, const std::vector<Edge> right_edges);
+
+
+
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges = std::vector<cv::Point2d>());
 
+//> ========== START OF CH'S EDITIONS ==========
 //> The following functions are newly added
-void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& stereo_frame, const std::vector<Edge> right_edges);
-std::vector<Edge> get_right_edges_close_to_GT_location(Edge target_left_edge, const cv::Point2d GT_location, const std::vector<Edge> constrained_right_edges, const double dist_tol = 1.0) ;
+void Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat left_disparity_map, StereoFrame& stereo_frame, Stereo_Edge_Pairs& stereo_frame_edge_pairs);
+void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoFrame& stereo_frame, Stereo_Edge_Pairs& stereo_frame_edge_pairs);
+std::vector<int> get_right_edge_indices_close_to_GT_location(StereoFrame& stereo_frame, const cv::Point2d GT_location, const std::vector<int> right_candidate_edge_indices, const double dist_tol);
 void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image);
+
+std::vector<int> extract_Epipolar_Edge_Indices(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, const double dist_tol);
+
+//> Evaluations
+void Evaluate_Stereo_Edge_Correspondences(StereoEdgeCorrespondencesGT& stereo_frame, size_t frame_idx, const std::string &stage_name);
+
+
+//> ========== END OF CH'S EDITIONS ==========
+
 
 void ExtractClusterPatches(
     int patch_size,

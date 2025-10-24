@@ -146,6 +146,64 @@ struct StereoMatchResult
     BidirectionalMetrics bidirectional_metrics;
 };
 
+//> CH: START OF THE REORGANIZATION OF THE DATA STRUCTURES
+struct Stereo_Edge_Pairs {
+    const StereoFrame* stereo_frame;                                //> pointer to StereoFrame without owning the data of StereoFrame
+    std::vector<int> left_edge_indices;                             //> indices into stereo_frame->left_edges
+    std::vector<int> right_edge_indices;                            //> indices into stereo_frame->right_edges
+    std::vector<cv::Point2d> GT_locations_from_left_edges;          //> GT locations of the left edges on the right image
+    std::vector<std::vector<int>> veridical_right_edges_indices;    //> indices into stereo_frame->right_edges that are veridical to the left edges
+    std::vector<Eigen::Vector3d> Gamma_in_left_cam_coord;           //> 3D points under the left camera coordinate
+    std::vector<cv::Mat> left_edge_descriptors;                     //> SIFT descriptors of left edges
+    std::vector<int> grid_indices;                                  //> grid indices of left edges
+
+    std::vector<int> matching_right_edges_indices;                  //> indices into stereo_frame->right_edges that are matched to the left edges
+
+    // std::vector<cv::Point2d> GT_locations_from_right_edges;
+
+    //> Constructor: defining which StereoFrame it points to
+    Stereo_Edge_Pairs(const StereoFrame* stereo_frame_ptr) : stereo_frame(stereo_frame_ptr) {}
+
+    //> Access left and right edges by logical index (through mapping)
+    Edge get_left_edge(size_t i)  const { return stereo_frame->left_edges[left_edge_indices[i]];   }
+    Edge get_right_edge(size_t i) const { return stereo_frame->right_edges[right_edge_indices[i]]; }
+
+    //> Return the number of left and right edge pairs
+    size_t size() const { return left_edge_indices.size(); }
+
+    //> Return a full vector of left edges (in the form of Edge objects)
+    std::vector<Edge> get_left_edges() const {
+        std::vector<Edge> subset;
+        subset.reserve(left_edge_indices.size());
+        for (int idx : left_edge_indices)
+            subset.push_back(stereo_frame->left_edges[idx]);
+        return subset;
+    }
+
+    //> Return a full vector of right edges (in the form of Edge objects)
+    std::vector<Edge> get_right_edges() const {
+        std::vector<Edge> subset;
+        subset.reserve(right_edge_indices.size());
+        for (int idx : right_edge_indices)
+            subset.push_back(stereo_frame->right_edges[idx]);
+        return subset;
+    }
+
+    bool b_is_size_consistent() 
+    { 
+        return left_edge_indices.size() == GT_locations_from_left_edges.size() && left_edge_indices.size() == veridical_right_edges_indices.size() && left_edge_indices.size() == Gamma_in_left_cam_coord.size(); 
+    }
+
+    void print_size_consistency()
+    {
+        std::cout << "The sizes of the Stereo_Edge_Pairs are not consistent!" << std::endl;
+        std::cout << "- Size of the left_edge_indices = " << left_edge_indices.size() << std::endl;
+        std::cout << "- Size of the GT_locations_from_left_edges = " << GT_locations_from_left_edges.size() << std::endl;
+        std::cout << "- Size of the veridical_right_edges_indices = " << veridical_right_edges_indices.size() << std::endl;
+        std::cout << "- Size of the Gamma_in_left_cam_coord = " << Gamma_in_left_cam_coord.size() << std::endl;
+    }
+};
+
 //> This struct defines a pool of GT edge correspondences in a stereo image pair
 struct StereoEdgeCorrespondencesGT
 {
@@ -155,6 +213,8 @@ struct StereoEdgeCorrespondencesGT
     std::vector<Eigen::Vector3d> Gamma_in_left_cam_coord;   //> 3D points under the left camera coordinate
     std::vector<cv::Mat> left_edge_descriptors;             //> SIFT descriptors of all left edges
     std::vector<int> grid_indices;                          //> (NOT ACTIVELY USED) grid indices of all left edges
+
+    std::vector<std::vector<Edge>> matching_right_edges;    //> right edges surviving at each filter step
 
     bool b_is_size_consistent() 
     { 
@@ -174,7 +234,6 @@ struct StereoEdgeCorrespondencesGT
 
 struct KF_CF_Edge_Correspondences
 {
-    //> Maybe use index instead of the edge itself?
     int kf_edge_index;
 
     //>>>>>>>>>> This block is a pool of GT data >>>>>>>>>
@@ -291,28 +350,5 @@ private:
     cv::Mat Small_Patch_Radius_Map;
     Utility::Ptr utility_tool = nullptr;
 };
-// struct CameraInfo{
-//     Eigen::Matrix3d rot_frame2body_left;
-//     Eigen::Vector3d transl_frame2body_left;
-//     //left:
-//     std::vector<int> left_res;
-//     std::vector<double> left_intr;
-//     std::vector<double> left_dist_coeffs;
 
-//     //Left to right image, will become R,T,F
-//     std::vector<std::vector<double>> rot_mat_21;
-//     std::vector<double> trans_vec_21;
-//     std::vector<std::vector<double>> fund_mat_21;
-//     //right:
-//     std::vector<int> right_res;
-//     std::vector<double> right_intr;
-//     std::vector<double> right_dist_coeffs;
-//     //Right to left, will be come R, T, F too.
-//     std::vector<std::vector<double>> rot_mat_12;
-//     std::vector<double> trans_vec_12;
-//     std::vector<std::vector<double>> fund_mat_12;
-//     //some other info.
-//     double focal_length;
-//     double baseline;
-// };
 #endif
