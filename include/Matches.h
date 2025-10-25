@@ -43,6 +43,7 @@ std::vector<int> extract_Epipolar_Edge_Indices(const Eigen::Vector3d &epipolar_l
 void Evaluate_Stereo_Edge_Correspondences(StereoEdgeCorrespondencesGT& stereo_frame, size_t frame_idx, const std::string &stage_name);
 
 
+void write_Stereo_Edge_Pairs_to_file(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edge_pairs, int frame_idx);
 //> ========== END OF CH'S EDITIONS ==========
 
 

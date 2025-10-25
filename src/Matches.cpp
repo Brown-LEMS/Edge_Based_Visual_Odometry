@@ -487,18 +487,18 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoFrame& stereo_frame, Stere
         int thread_id = omp_get_thread_num();
         
         #pragma omp for schedule(dynamic)
-        for (int left_edge_index = 0; left_edge_index < stereo_frame_edge_pairs.left_edge_indices.size(); left_edge_index++)
+        for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
         {
-            const auto e_coeffs = epip_line_coeffs[left_edge_index];
+            const auto e_coeffs = epip_line_coeffs[i];
             std::vector<int> right_candidate_edge_indices = extract_Epipolar_Edge_Indices(e_coeffs, stereo_frame.right_edges, 0.5);
-            right_candidate_edge_indices = get_right_edge_indices_close_to_GT_location(stereo_frame, stereo_frame_edge_pairs.GT_locations_from_left_edges[left_edge_index], right_candidate_edge_indices, 1.0);
+            right_candidate_edge_indices = get_right_edge_indices_close_to_GT_location(stereo_frame, stereo_frame_edge_pairs.GT_locations_from_left_edges[i], right_candidate_edge_indices, 1.0);
 
             if (right_candidate_edge_indices.empty()) {
-                thread_local_indices_to_remove[thread_id].push_back(left_edge_index);
+                thread_local_indices_to_remove[thread_id].push_back(i);
             }
             
             //> Direct assignment to pre-allocated vector to prevent race condition
-            stereo_frame_edge_pairs.veridical_right_edges_indices[left_edge_index] = right_candidate_edge_indices;
+            stereo_frame_edge_pairs.veridical_right_edges_indices[i] = right_candidate_edge_indices;
         }
     }
     
@@ -521,6 +521,21 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoFrame& stereo_frame, Stere
             stereo_frame_edge_pairs.veridical_right_edges_indices.erase(stereo_frame_edge_pairs.veridical_right_edges_indices.begin() + no_GT_index);
         }
     }
+}
+
+void write_Stereo_Edge_Pairs_to_file(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edge_pairs, int frame_idx)
+{
+    std::string output_dir = dataset.get_output_path();
+    std::string stereo_frame_edge_pairs_filename = output_dir + "/stereo_frame_edge_pairs_frame_" + std::to_string(frame_idx) + ".txt";
+    std::ofstream stereo_frame_edge_pairs_file(stereo_frame_edge_pairs_filename);
+    stereo_frame_edge_pairs_file << "left_edge_indices, GT_locations_from_left_edges, veridical_right_edges_indices" << std::endl;
+    for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
+    {
+        stereo_frame_edge_pairs_file << stereo_frame_edge_pairs.left_edge_indices[i] << " " \
+                                     << stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i).location.x << " " \
+                                     << stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i).location.y << std::endl;
+    }
+    stereo_frame_edge_pairs_file.close();
 }
 
 void Evaluate_Stereo_Edge_Correspondences(StereoEdgeCorrespondencesGT& stereo_frame, size_t frame_idx, const std::string &stage_name)
