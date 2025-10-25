@@ -130,16 +130,16 @@ public:
                       const std::string &filepath,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
-    void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image);
+    void augment_Edge_Data(Stereo_Edge_Pairs& stereo_frame_edge_pairs, const cv::Mat image);
 
-    void add_edges_to_spatial_grid(StereoEdgeCorrespondencesGT& stereo_frame);
+    void add_edges_to_spatial_grid(Stereo_Edge_Pairs& stereo_frame_edge_pairs);
 
     //> filtering methods
     void apply_spatial_grid_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT& keyframe_stereo, double grid_radius = 1.0);
     void apply_SIFT_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT& keyframe_stereo, const StereoEdgeCorrespondencesGT& current_stereo, double sift_dist_threshold = 600.0);
 
     //> last_keyframe and current frame
-    void Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, StereoEdgeCorrespondencesGT& last_keyframe_stereo, StereoEdgeCorrespondencesGT& current_frame_stereo, StereoFrame& last_keyframe, StereoFrame& current_frame, double gt_dist_threshold = 1.0);
+    void Find_Veridical_Edge_Correspondences_on_CF(Dataset &dataset, KF_CF_Edge_Pairs& kf_cf_edge_pairs, double gt_dist_threshold = 1.0);
 
     //> Evaluations
     void Evaluate_KF_CF_Edge_Correspondences(const std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, \

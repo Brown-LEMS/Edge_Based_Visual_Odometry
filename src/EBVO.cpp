@@ -38,9 +38,11 @@ void EBVO::PerformEdgeBasedVO()
     LOG_INFO("Start looping over all image pairs");
 
     //> Initialize
-    StereoFrame last_keyframe_stereo, current_frame_stereo;
+    StereoFrame last_keyframe, current_frame;
     
-    // StereoEdgeCorrespondencesGT last_keyframe_stereo, current_frame_stereo;
+    // StereoEdgeCorrespondencesGT last_keyframe, current_frame;
+    Stereo_Edge_Pairs current_frame_stereo_edge_pairs;
+    Stereo_Edge_Pairs last_keyframe_stereo_edge_pairs;
 
     cv::Mat left_calib_inv = left_calib.inv();
     cv::Mat right_calib_inv = right_calib.inv();
@@ -53,7 +55,7 @@ void EBVO::PerformEdgeBasedVO()
     size_t frame_idx = 0;
     while (dataset.stereo_iterator->hasNext() && num_pairs - frame_idx >= 0)
     {
-        if (!dataset.stereo_iterator->getNext(current_frame_stereo))
+        if (!dataset.stereo_iterator->getNext(current_frame))
         {
             break;
         }
@@ -66,15 +68,15 @@ void EBVO::PerformEdgeBasedVO()
         dataset.ncc_two_vs_err.clear();
         dataset.ground_truth_right_edges_after_lowe.clear();
 
-        std::cout << "Image Pair #" << frame_idx << "\n";
+        std::cout << std::endl << "Image Pair #" << frame_idx << std::endl;
 
         cv::Mat left_prev_undistorted, right_prev_undistorted, left_cur_undistorted, right_cur_undistorted;
 
-        cv::undistort(current_frame_stereo.left_image, left_cur_undistorted, left_calib, left_dist_coeff_mat);
-        cv::undistort(current_frame_stereo.right_image, right_cur_undistorted, right_calib, right_dist_coeff_mat);
+        cv::undistort(current_frame.left_image, left_cur_undistorted, left_calib, left_dist_coeff_mat);
+        cv::undistort(current_frame.right_image, right_cur_undistorted, right_calib, right_dist_coeff_mat);
 
-        current_frame_stereo.left_image_undistorted = left_cur_undistorted;
-        current_frame_stereo.right_image_undistorted = right_cur_undistorted;
+        current_frame.left_image_undistorted = left_cur_undistorted;
+        current_frame.right_image_undistorted = right_cur_undistorted;
 
         if (dataset.get_num_imgs() == 0)
         {
@@ -94,68 +96,71 @@ void EBVO::PerformEdgeBasedVO()
         std::string right_edge_path = edge_dir + "/right_edges_" + std::to_string(frame_idx + 1);
 
         //> Detect third-order edges for the keyframe    
-        ProcessEdges(left_cur_undistorted, left_edge_path, TOED, current_frame_stereo.left_edges);
-        std::cout << "Number of edges on the left image: " << current_frame_stereo.left_edges.size() << std::endl;
+        ProcessEdges(left_cur_undistorted, left_edge_path, TOED, current_frame.left_edges);
+        std::cout << "Number of edges on the left image: " << current_frame.left_edges.size() << std::endl;
 
-        ProcessEdges(right_cur_undistorted, right_edge_path, TOED, current_frame_stereo.right_edges);
-        std::cout << "Number of edges on the right image: " << current_frame_stereo.right_edges.size() << std::endl;
+        ProcessEdges(right_cur_undistorted, right_edge_path, TOED, current_frame.right_edges);
+        std::cout << "Number of edges on the right image: " << current_frame.right_edges.size() << std::endl;
 
         dataset.increment_num_imgs();
         std::cout << std::endl;
 
-        Stereo_Edge_Pairs current_frame_stereo_edge_pairs(&current_frame_stereo);
+        
 
         if (b_is_keyframe)
         {
-            last_keyframe_stereo = current_frame_stereo;
-            Stereo_Edge_Pairs last_keyframe_stereo_edge_pairs(&current_frame_stereo);
+            last_keyframe_stereo_edge_pairs.stereo_frame = &current_frame;
+            last_keyframe = current_frame;
 
             //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
-            Find_Stereo_GT_Locations(dataset, left_disparity_map, last_keyframe_stereo, last_keyframe_stereo_edge_pairs);
-            std::cout << "Complete calculating GT locations for left edges of the keyframe (previous frame)..." << std::endl;
+            Find_Stereo_GT_Locations(dataset, left_disparity_map, last_keyframe, last_keyframe_stereo_edge_pairs);
+            std::cout << "Complete calculating GT locations for left edges of the keyframe..." << std::endl;
             std::cout << "Size of left edges with GT locations on the right image = " << last_keyframe_stereo_edge_pairs.size() << std::endl;
             
             //> Construct a GT stereo edge pool
-            get_Stereo_Edge_GT_Pairs(dataset, last_keyframe_stereo, last_keyframe_stereo_edge_pairs);
+            get_Stereo_Edge_GT_Pairs(dataset, last_keyframe, last_keyframe_stereo_edge_pairs);
             std::cout << "Size of stereo edge correspondences pool = " << last_keyframe_stereo_edge_pairs.size() << std::endl;
 
             //> construct stereo edge correspondences
             // StereoMatchResult match_result = get_Stereo_Edge_Pairs(
             //     left_cur_undistorted,
             //     right_cur_undistorted,
-            //     last_keyframe_stereo,
+            //     last_keyframe,
             //     dataset, frame_idx
             // );
 
-            // //> extract SIFT descriptor for each left edge of last_keyframe_stereo
-            // augment_Edge_Data(last_keyframe_stereo, last_keyframe.left_image_undistorted);
-            // if (!last_keyframe_stereo.b_is_size_consistent()) last_keyframe_stereo.print_size_consistency();
-
-            exit(1);
+            //> extract SIFT descriptor for each left edge of last_keyframe
+            augment_Edge_Data(last_keyframe_stereo_edge_pairs, last_keyframe.left_image_undistorted);
+            if (!last_keyframe_stereo_edge_pairs.b_is_size_consistent()) last_keyframe_stereo_edge_pairs.print_size_consistency();
 
             b_is_keyframe = false;
         }
         else
         {
-            // //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
-            // Find_Stereo_GT_Locations(left_disparity_map, current_frame_stereo);
-            // std::cout << "Complete calculating GT locations for left edges of the current frame..." << std::endl;
+            current_frame_stereo_edge_pairs.stereo_frame = &current_frame;
             
-            // //> Construct a GT stereo edge pool
-            // get_Stereo_Edge_GT_Pairs(dataset, current_frame_stereo, dataset.right_edges);
-            // std::cout << "Size of stereo edge correspondences pool = " << current_frame_stereo.left_edges.size() << std::endl;
+            //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
+            Find_Stereo_GT_Locations(dataset, left_disparity_map, current_frame, current_frame_stereo_edge_pairs);
+            std::cout << "Complete calculating GT locations for left edges of the current frame..." << std::endl;
+            std::cout << "Size of left edges with GT locations on the right image = " << current_frame_stereo_edge_pairs.size() << std::endl;
+            
+            //> Construct a GT stereo edge pool
+            get_Stereo_Edge_GT_Pairs(dataset, current_frame, current_frame_stereo_edge_pairs);
+            std::cout << "Size of stereo edge correspondences pool = " << current_frame_stereo_edge_pairs.size() << std::endl;
 
-            // //> extract SIFT descriptor for each left edge of current_frame_stereo
-            // augment_Edge_Data(current_frame_stereo, current_frame.left_image_undistorted);
-            // if (!current_frame_stereo.b_is_size_consistent()) current_frame_stereo.print_size_consistency();
+            //> extract SIFT descriptor for each left edge of current_frame_stereo
+            augment_Edge_Data(current_frame_stereo_edge_pairs, current_frame.left_image_undistorted);
+            if (!current_frame_stereo_edge_pairs.b_is_size_consistent()) current_frame_stereo_edge_pairs.print_size_consistency();
 
-            // add_edges_to_spatial_grid(current_frame_stereo);
+            add_edges_to_spatial_grid(current_frame_stereo_edge_pairs);
 
-            // //> Construct correspondences structure between last keyframe and the current frame
-            // std::vector<KF_CF_Edge_Correspondences> KF_CF_edge_pairs;
-            // Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs, last_keyframe_stereo, current_frame_stereo, last_keyframe, current_frame);
+            //> Construct correspondences structure between last keyframe and the current frame
+            KF_CF_Edge_Pairs kf_cf_edge_pairs(&last_keyframe, &current_frame, &last_keyframe_stereo_edge_pairs, &current_frame_stereo_edge_pairs);
 
-            // std::cout << "Size of veridical edge pairs = " << KF_CF_edge_pairs.size() << std::endl;
+            // std::vector<KF_CF_Edge_Correspondences> kf_cf_edge_correspondences;
+            Find_Veridical_Edge_Correspondences_on_CF(dataset, kf_cf_edge_pairs);
+
+            std::cout << "Size of KF-CF veridical edge pairs = " << kf_cf_edge_pairs.get_left_kf_edge_pairs_size() << std::endl;
             
             // //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             // //> Stage 1: Apply spatial grid to the current frame
@@ -425,7 +430,7 @@ void EBVO::PerformEdgeBasedVO()
     }
 }
 
-void EBVO::augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image) 
+void EBVO::augment_Edge_Data(Stereo_Edge_Pairs& stereo_frame_edge_pairs, const cv::Mat image) 
 {        
     //> Pre-allocate thread-local storage based on number of threads
     int num_threads = omp_get_max_threads();
@@ -437,9 +442,10 @@ void EBVO::augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv
     {
         const int thread_id = omp_get_thread_num();
         #pragma omp for schedule(dynamic)
-        for (const auto& le : stereo_frame.left_edges)
+        for (int le : stereo_frame_edge_pairs.left_edge_indices)
         {
-            cv::KeyPoint left_edge_kp(le.location, 1, 180 / M_PI * le.orientation);
+            const Edge left_edge = stereo_frame_edge_pairs.get_left_edge_by_StereoFrame_index(le);
+            cv::KeyPoint left_edge_kp(left_edge.location, 1, 180 / M_PI * left_edge.orientation);
             thread_local_keypoints[thread_id].push_back(left_edge_kp);
         }
     }
@@ -455,20 +461,21 @@ void EBVO::augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv
 
     //> Loop over all the rows of edge_desc and assign each to the stereo_frame.left_edge_descriptors
     for (int i = 0; i < edge_desc.rows; ++i) {
-        stereo_frame.left_edge_descriptors.push_back(edge_desc.row(i));
+        stereo_frame_edge_pairs.left_edge_descriptors.push_back(edge_desc.row(i));
     }
 
     // std::cout << "Descriptors matrix size: " << edge_desc.rows << " x " << edge_desc.cols << std::endl;
 }
 
-void EBVO::add_edges_to_spatial_grid(StereoEdgeCorrespondencesGT& stereo_frame)
+void EBVO::add_edges_to_spatial_grid(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
 {
     //> Add left edges to spatial grid. This is done on the current image only. 
     // TODO: check if this can be done in parallel for faster computation
-    for (int i = 0; i < stereo_frame.left_edges.size(); ++i)
+    for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); ++i)
     {
-        int grid_index = spatial_grid.add_edge_to_grids(i, stereo_frame.left_edges[i].location);
-        stereo_frame.grid_indices.push_back(grid_index);
+        const Edge &left_edge = stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i);
+        int grid_index = spatial_grid.add_edge_to_grids(i, left_edge.location);
+        stereo_frame_edge_pairs.grid_indices.push_back(grid_index);
     }
 }
 
@@ -546,50 +553,55 @@ std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2
     return {selected_points, selected_orientations, selected_ground_truth_points};
 }
 
-void EBVO::Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, \
-                                                     StereoEdgeCorrespondencesGT& last_keyframe_stereo, StereoEdgeCorrespondencesGT& current_frame_stereo, \
-                                                     StereoFrame& last_keyframe, StereoFrame& current_frame, double gt_dist_threshold)
+void EBVO::Find_Veridical_Edge_Correspondences_on_CF(Dataset &dataset, KF_CF_Edge_Pairs& kf_cf_edge_pairs, double gt_dist_threshold)
 {
     //> Ground-truth relative pose of the current frame with respect to the keyframe
-    Eigen::Matrix3d R1 = last_keyframe.gt_rotation;
-    Eigen::Vector3d t1 = last_keyframe.gt_translation;
-    Eigen::Matrix3d R2 = current_frame.gt_rotation;
-    Eigen::Vector3d t2 = current_frame.gt_translation;
+    Eigen::Matrix3d R1 = kf_cf_edge_pairs.keyframe->gt_rotation;
+    Eigen::Vector3d t1 = kf_cf_edge_pairs.keyframe->gt_translation;
+    Eigen::Matrix3d R2 = kf_cf_edge_pairs.current_frame->gt_rotation;
+    Eigen::Vector3d t2 = kf_cf_edge_pairs.current_frame->gt_translation;
 
     Eigen::Matrix3d R21 = R2 * R1.transpose();
     Eigen::Vector3d t21 = t2 - R2 * R1.transpose() * t1;
 
+    std::cout << "stereo_keyframe_edge_pairs left edge indices size: " << kf_cf_edge_pairs.stereo_keyframe_edge_pairs->left_edge_indices.size() << std::endl;
+
     //> For each left edge in the keyframe, find the GT location on the current image
-    for (int i = 0; i < last_keyframe_stereo.left_edges.size(); ++i)
+    for (int i = 0; i < kf_cf_edge_pairs.stereo_keyframe_edge_pairs->left_edge_indices.size(); ++i)
     {
-        Eigen::Vector3d projected_point = dataset.get_left_calib_matrix() * (R21 * last_keyframe_stereo.Gamma_in_left_cam_coord[i] + t21);
+        Eigen::Vector3d projected_point = dataset.get_left_calib_matrix() * (R21 * kf_cf_edge_pairs.stereo_keyframe_edge_pairs->Gamma_in_left_cam_coord[i] + t21);
         projected_point /= projected_point.z();
         cv::Point2d projected_point_cv(projected_point.x(), projected_point.y());
 
         if (projected_point.x() > 10 && projected_point.y() > 10 && projected_point.x() < dataset.get_width() - 10 && projected_point.y() < dataset.get_height() - 10)
         {
-            std::vector<int> current_candidate_edge_indices = spatial_grid.getCandidatesWithinRadius(last_keyframe_stereo.left_edges[i].location, 1);
+            // std::cout << "stereo_keyframe_edge_pairs left edge index: " << i << std::endl;
+            // std::cout << "stereo_keyframe_edge_pairs left edge location: " << kf_cf_edge_pairs.stereo_keyframe_edge_pairs->get_left_edge_by_Stereo_Edge_Pairs_index(i).location.x << ", " << kf_cf_edge_pairs.stereo_keyframe_edge_pairs->get_left_edge_by_Stereo_Edge_Pairs_index(i).location.y << std::endl;
+            // std::cout << "projected point on CF: " << projected_point_cv.x << ", " << projected_point_cv.y << std::endl;
+            std::vector<int> current_candidate_edge_indices = spatial_grid.getCandidatesWithinRadius(kf_cf_edge_pairs.stereo_keyframe_edge_pairs->get_left_edge_by_Stereo_Edge_Pairs_index(i).location, 1);
+            // std::cout << "current candidate edge indices: " << current_candidate_edge_indices.size() << std::endl;
+            // for (const auto& curr_e_index : current_candidate_edge_indices)
+            // {
+            //     std::cout << "current candidate edge location: " << kf_cf_edge_pairs.stereo_current_frame_edge_pairs->get_left_edge_by_Stereo_Edge_Pairs_index(curr_e_index).location.x << ", " << kf_cf_edge_pairs.stereo_current_frame_edge_pairs->get_left_edge_by_Stereo_Edge_Pairs_index(curr_e_index).location.y << std::endl;
+            // }
+            // break;
+
             std::vector<int> CF_veridical_edges_indices;
             for (const auto& curr_e_index : current_candidate_edge_indices)
             {
                 //> Check if the Euclidean distance is less than some threshold
-                if (cv::norm(current_frame_stereo.left_edges[curr_e_index].location - projected_point_cv) < gt_dist_threshold)
+                if (cv::norm(kf_cf_edge_pairs.stereo_current_frame_edge_pairs->get_left_edge_by_Stereo_Edge_Pairs_index(curr_e_index).location - projected_point_cv) < gt_dist_threshold)
                 {
-                    CF_veridical_edges_indices.push_back(curr_e_index);
+                    size_t veridical_index = kf_cf_edge_pairs.stereo_current_frame_edge_pairs->get_left_edge_index_in_StereoFrame_given_Stereo_Edge_Pairs_index(curr_e_index);
+                    CF_veridical_edges_indices.push_back(veridical_index);
                 }
             }
             if (!CF_veridical_edges_indices.empty())
             {
-                KF_CF_Edge_Correspondences edge_pair;
-
-                edge_pair.kf_edge_index = i;
-                edge_pair.gt_location_on_cf = projected_point_cv;
-                edge_pair.veridical_cf_edges_indices = CF_veridical_edges_indices;
-
-                //> FIXME: This should be obtained from the stereo edge matching result
-                // edge_pair.veridical_stereo_right_edges_for_cf.push_back(current_frame_stereo.veridical_right_edges[curr_e_index]);
-                // edge_pair.veridical_stereo_right_edges_for_kf.push_back(last_keyframe_stereo.veridical_right_edges[i]);
-                KF_CF_edge_pairs.push_back(edge_pair);
+                int toed_edge_index = kf_cf_edge_pairs.stereo_keyframe_edge_pairs->get_left_edge_index_in_StereoFrame_given_Stereo_Edge_Pairs_index(i);
+                kf_cf_edge_pairs.left_kf_edge_indices.push_back(toed_edge_index);
+                kf_cf_edge_pairs.left_gt_locations_on_cf.push_back(projected_point_cv);
+                kf_cf_edge_pairs.left_veridical_cf_edges_indices.push_back(CF_veridical_edges_indices);
             }
         }
     }
@@ -598,14 +610,14 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Corr
     std::cout << "Writing KF-CF-GT edge pairs for KF to: " << kf_cf_gt_edge_pairs_last_kf_filename << std::endl;
     std::ofstream kf_cf_gt_edge_pairs_kf_file(kf_cf_gt_edge_pairs_last_kf_filename);
     int gt_edge_idx = 0;
-    for (const auto& ep : KF_CF_edge_pairs)
+    for (int i = 0; i < kf_cf_edge_pairs.left_kf_edge_indices.size(); ++i)
     {
         kf_cf_gt_edge_pairs_kf_file << gt_edge_idx << "\t" \
-                                    << last_keyframe_stereo.left_edges[ep.kf_edge_index].location.x << "\t" \
-                                    << last_keyframe_stereo.left_edges[ep.kf_edge_index].location.y << "\t" \
-                                    << last_keyframe_stereo.left_edges[ep.kf_edge_index].orientation << "\t" \
-                                    << ep.gt_location_on_cf.x << "\t" \
-                                    << ep.gt_location_on_cf.y << "\n";
+                                    << kf_cf_edge_pairs.keyframe->left_edges[kf_cf_edge_pairs.left_kf_edge_indices[i]].location.x << "\t" \
+                                    << kf_cf_edge_pairs.keyframe->left_edges[kf_cf_edge_pairs.left_kf_edge_indices[i]].location.y << "\t" \
+                                    << kf_cf_edge_pairs.keyframe->left_edges[kf_cf_edge_pairs.left_kf_edge_indices[i]].orientation << "\t" \
+                                    << kf_cf_edge_pairs.left_gt_locations_on_cf[i].x << "\t" \
+                                    << kf_cf_edge_pairs.left_gt_locations_on_cf[i].y << "\n";
         gt_edge_idx++;
     }
     kf_cf_gt_edge_pairs_kf_file.close();
@@ -614,14 +626,14 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(std::vector<KF_CF_Edge_Corr
     std::cout << "Writing KF-CF-GT edge pairs for CF to: " << kf_cf_gt_edge_pairs_curr_kf_filename << std::endl;
     std::ofstream kf_cf_gt_edge_pairs_cf_file(kf_cf_gt_edge_pairs_curr_kf_filename);
     gt_edge_idx = 0;
-    for (const auto& ep : KF_CF_edge_pairs)
+    for (int i = 0; i < kf_cf_edge_pairs.left_kf_edge_indices.size(); ++i)
     {
-        for (const auto& v_edge_idx : ep.veridical_cf_edges_indices)
+        for (const auto& v_edge_idx : kf_cf_edge_pairs.left_veridical_cf_edges_indices[i])
         {
             kf_cf_gt_edge_pairs_cf_file << gt_edge_idx << "\t" \
-                                        << current_frame_stereo.left_edges[v_edge_idx].location.x << "\t" \
-                                        << current_frame_stereo.left_edges[v_edge_idx].location.y << "\t" \
-                                        << current_frame_stereo.left_edges[v_edge_idx].orientation << "\n";
+                                        << kf_cf_edge_pairs.current_frame->left_edges[v_edge_idx].location.x << "\t" \
+                                        << kf_cf_edge_pairs.current_frame->left_edges[v_edge_idx].location.y << "\t" \
+                                        << kf_cf_edge_pairs.current_frame->left_edges[v_edge_idx].orientation << "\n";
         }
         gt_edge_idx++;
     }

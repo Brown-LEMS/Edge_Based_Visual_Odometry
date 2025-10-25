@@ -147,7 +147,8 @@ struct StereoMatchResult
 };
 
 //> CH: START OF THE REORGANIZATION OF THE DATA STRUCTURES
-struct Stereo_Edge_Pairs {
+struct Stereo_Edge_Pairs 
+{
     const StereoFrame* stereo_frame;                                //> pointer to StereoFrame without owning the data of StereoFrame
     std::vector<int> left_edge_indices;                             //> indices into stereo_frame->left_edges
     std::vector<int> right_edge_indices;                            //> indices into stereo_frame->right_edges
@@ -163,10 +164,18 @@ struct Stereo_Edge_Pairs {
 
     //> Constructor: defining which StereoFrame it points to
     Stereo_Edge_Pairs(const StereoFrame* stereo_frame_ptr) : stereo_frame(stereo_frame_ptr) {}
+    Stereo_Edge_Pairs() : stereo_frame(nullptr) {}
 
     //> Access left and right edges by logical index (through mapping)
-    Edge get_left_edge(size_t i)  const { return stereo_frame->left_edges[left_edge_indices[i]];   }
-    Edge get_right_edge(size_t i) const { return stereo_frame->right_edges[right_edge_indices[i]]; }
+    Edge get_left_edge_by_StereoFrame_index(size_t i) const { 
+        if (i >= stereo_frame->left_edges.size()) {
+            std::cerr << "ERROR: left edge index " << i << " out of bounds!" << std::endl;
+            return Edge();
+        }
+        return stereo_frame->left_edges[i];
+    }
+    Edge get_left_edge_by_Stereo_Edge_Pairs_index(size_t i)  const { return stereo_frame->left_edges[left_edge_indices[i]];   }
+    // Edge get_right_edge(size_t i) const { return stereo_frame->right_edges[right_edge_indices[i]]; }
 
     //> Return the number of left and right edge pairs
     size_t size() const { return left_edge_indices.size(); }
@@ -189,9 +198,13 @@ struct Stereo_Edge_Pairs {
         return subset;
     }
 
+    //> getters
+    int get_left_edge_index_in_StereoFrame_given_Stereo_Edge_Pairs_index(size_t i) const { return left_edge_indices[i]; }
+    int get_left_edge_indices_size() const { return left_edge_indices.size(); }
+
     bool b_is_size_consistent() 
     { 
-        return left_edge_indices.size() == GT_locations_from_left_edges.size() && left_edge_indices.size() == veridical_right_edges_indices.size() && left_edge_indices.size() == Gamma_in_left_cam_coord.size(); 
+        return left_edge_indices.size() == GT_locations_from_left_edges.size() && left_edge_indices.size() == veridical_right_edges_indices.size() && left_edge_indices.size() == Gamma_in_left_cam_coord.size() && left_edge_indices.size() == left_edge_descriptors.size(); 
     }
 
     void print_size_consistency()
@@ -201,7 +214,37 @@ struct Stereo_Edge_Pairs {
         std::cout << "- Size of the GT_locations_from_left_edges = " << GT_locations_from_left_edges.size() << std::endl;
         std::cout << "- Size of the veridical_right_edges_indices = " << veridical_right_edges_indices.size() << std::endl;
         std::cout << "- Size of the Gamma_in_left_cam_coord = " << Gamma_in_left_cam_coord.size() << std::endl;
+        std::cout << "- Size of the left_edge_descriptors = " << left_edge_descriptors.size() << std::endl;
     }
+};
+
+struct KF_CF_Edge_Pairs
+{
+    const StereoFrame* keyframe;
+    const StereoFrame* current_frame;
+    const Stereo_Edge_Pairs* stereo_keyframe_edge_pairs;
+    const Stereo_Edge_Pairs* stereo_current_frame_edge_pairs;
+
+    //>>>>>>>>>> This block is a pool of GT data >>>>>>>>>
+    std::vector<int> left_kf_edge_indices;
+    std::vector<int> right_kf_edge_indices;
+    std::vector<cv::Point2d> left_gt_locations_on_cf;                    //> ground truth correspondence edge in the current frame for the left edges
+    std::vector<std::vector<int>> left_veridical_cf_edges_indices;       //> corresponding veridical edges in the current frame for the left edges
+    std::vector<cv::Point2d> right_gt_locations_on_cf;                   //> ground truth correspondence edge in the current frame for the right edges
+    std::vector<std::vector<int>> right_veridical_cf_edges_indices;      //> corresponding veridical edges in the current frame for the right edges
+
+    std::vector<int> left_matching_cf_edges_indices;
+    std::vector<int> right_matching_cf_edges_indices;
+
+    //> Constructor: defining which StereoFrame and Stereo_Edge_Pairs it points to
+    KF_CF_Edge_Pairs(const StereoFrame* keyframe_ptr, const StereoFrame* current_frame_ptr, \
+                     const Stereo_Edge_Pairs* stereo_keyframe_edge_pairs_ptr, const Stereo_Edge_Pairs* stereo_current_frame_edge_pairs_ptr) \
+                    : keyframe(keyframe_ptr), current_frame(current_frame_ptr), \
+                      stereo_keyframe_edge_pairs(stereo_keyframe_edge_pairs_ptr), stereo_current_frame_edge_pairs(stereo_current_frame_edge_pairs_ptr) {}
+    
+    //> getters
+    size_t get_left_kf_edge_pairs_size() const { return left_kf_edge_indices.size(); }
+    size_t get_right_kf_edge_pairs_size() const { return right_kf_edge_indices.size(); }
 };
 
 //> This struct defines a pool of GT edge correspondences in a stereo image pair

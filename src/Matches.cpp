@@ -507,8 +507,6 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoFrame& stereo_frame, Stere
         indices_to_remove.insert(indices_to_remove.end(), local_indices.begin(), local_indices.end());
     }
 
-    std::cout << "Size of indices to be removed = " << indices_to_remove.size() << std::endl;
-
     //> Remove the left edges from the stereo_frame structure if there is no right edge correspondences close to the GT edge
     if (!indices_to_remove.empty()) 
     {
