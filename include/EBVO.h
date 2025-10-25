@@ -135,8 +135,8 @@ public:
     void add_edges_to_spatial_grid(Stereo_Edge_Pairs& stereo_frame_edge_pairs);
 
     //> filtering methods
-    void apply_spatial_grid_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT& keyframe_stereo, double grid_radius = 1.0);
-    void apply_SIFT_filtering(std::vector<KF_CF_Edge_Correspondences>& KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT& keyframe_stereo, const StereoEdgeCorrespondencesGT& current_stereo, double sift_dist_threshold = 600.0);
+    void apply_spatial_grid_filtering(KF_CF_Edge_Pairs& kf_cf_edge_pairs, double grid_radius = 1.0);
+    void apply_SIFT_filtering(KF_CF_Edge_Pairs& kf_cf_edge_pairs, double sift_dist_threshold = 600.0);
 
     //> last_keyframe and current frame
     void Find_Veridical_Edge_Correspondences_on_CF(Dataset &dataset, KF_CF_Edge_Pairs& kf_cf_edge_pairs, double gt_dist_threshold = 1.0);

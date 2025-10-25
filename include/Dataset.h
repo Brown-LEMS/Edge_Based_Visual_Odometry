@@ -6,6 +6,7 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+#include <unordered_map>
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -157,6 +158,7 @@ struct Stereo_Edge_Pairs
     std::vector<Eigen::Vector3d> Gamma_in_left_cam_coord;           //> 3D points under the left camera coordinate
     std::vector<cv::Mat> left_edge_descriptors;                     //> SIFT descriptors of left edges
     std::vector<int> grid_indices;                                  //> grid indices of left edges
+    std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
 
     std::vector<int> matching_right_edges_indices;                  //> indices into stereo_frame->right_edges that are matched to the left edges
 
@@ -165,6 +167,11 @@ struct Stereo_Edge_Pairs
     //> Constructor: defining which StereoFrame it points to
     Stereo_Edge_Pairs(const StereoFrame* stereo_frame_ptr) : stereo_frame(stereo_frame_ptr) {}
     Stereo_Edge_Pairs() : stereo_frame(nullptr) {}
+
+    void construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map() {
+        for (int i = 0; i < left_edge_indices.size(); ++i)
+            toed_left_id_to_Stereo_Edge_Pairs_left_id_map[left_edge_indices[i]] = i;
+    }
 
     //> Access left and right edges by logical index (through mapping)
     Edge get_left_edge_by_StereoFrame_index(size_t i) const { 
@@ -176,6 +183,8 @@ struct Stereo_Edge_Pairs
     }
     Edge get_left_edge_by_Stereo_Edge_Pairs_index(size_t i)  const { return stereo_frame->left_edges[left_edge_indices[i]];   }
     // Edge get_right_edge(size_t i) const { return stereo_frame->right_edges[right_edge_indices[i]]; }
+
+    
 
     //> Return the number of left and right edge pairs
     size_t size() const { return left_edge_indices.size(); }
@@ -199,7 +208,11 @@ struct Stereo_Edge_Pairs
     }
 
     //> getters
-    int get_left_edge_index_in_StereoFrame_given_Stereo_Edge_Pairs_index(size_t i) const { return left_edge_indices[i]; }
+    int get_left_toed_edge_index(size_t i) const { return left_edge_indices[i]; }
+    int get_Stereo_Edge_Pairs_left_id_index(int toed_left_id) const { 
+        auto it = toed_left_id_to_Stereo_Edge_Pairs_left_id_map.find(toed_left_id);
+        return (it != toed_left_id_to_Stereo_Edge_Pairs_left_id_map.end()) ? it->second : -1;
+    }
     int get_left_edge_indices_size() const { return left_edge_indices.size(); }
 
     bool b_is_size_consistent() 
@@ -233,8 +246,8 @@ struct KF_CF_Edge_Pairs
     std::vector<cv::Point2d> right_gt_locations_on_cf;                   //> ground truth correspondence edge in the current frame for the right edges
     std::vector<std::vector<int>> right_veridical_cf_edges_indices;      //> corresponding veridical edges in the current frame for the right edges
 
-    std::vector<int> left_matching_cf_edges_indices;
-    std::vector<int> right_matching_cf_edges_indices;
+    std::vector<std::vector<int>> left_matching_cf_edges_indices;
+    std::vector<std::vector<int>> right_matching_cf_edges_indices;
 
     //> Constructor: defining which StereoFrame and Stereo_Edge_Pairs it points to
     KF_CF_Edge_Pairs(const StereoFrame* keyframe_ptr, const StereoFrame* current_frame_ptr, \
