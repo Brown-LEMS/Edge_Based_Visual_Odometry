@@ -133,9 +133,13 @@ void EBVO::PerformEdgeBasedVO()
             //     dataset, frame_idx
             // );
 
+            get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_edge_pairs, frame_idx);
+
             //> extract SIFT descriptor for each left edge of last_keyframe
             augment_Edge_Data(last_keyframe_stereo_edge_pairs, last_keyframe.left_image_undistorted);
             if (!last_keyframe_stereo_edge_pairs.b_is_size_consistent()) last_keyframe_stereo_edge_pairs.print_size_consistency();
+
+            exit(1);
 
             b_is_keyframe = false;
         }

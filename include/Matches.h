@@ -21,8 +21,8 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
 double get_similarity(const cv::Mat patch_one, const cv::Mat patch_two);
 double edge_patch_similarity(const Edge target_edge_H1, const Edge target_edge_H2, const cv::Mat gray_img_H1, const cv::Mat gray_img_H2);
 
-//> This is Sula's function: construct edge correspondences from a stereo image pair
-StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, StereoEdgeCorrespondencesGT stereo_frame, Dataset &dataset, const std::vector<Edge> right_edges);
+//> This is Saul's original function: construct edge correspondences from a stereo image pair
+// StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, StereoEdgeCorrespondencesGT stereo_frame, Dataset &dataset, const std::vector<Edge> right_edges);
 
 
 
@@ -38,6 +38,8 @@ std::vector<int> get_right_edge_indices_close_to_GT_location(StereoFrame& stereo
 void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image);
 
 std::vector<int> extract_Epipolar_Edge_Indices(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, const double dist_tol);
+
+void get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edge_pairs, size_t frame_idx);
 
 //> Evaluations
 void Evaluate_Stereo_Edge_Correspondences(StereoEdgeCorrespondencesGT& stereo_frame, size_t frame_idx, const std::string &stage_name);
