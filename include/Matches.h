@@ -74,9 +74,7 @@ void ExtractPatches(
     std::vector<cv::Point2d> *filtered_gt_edges_out);
 
 // checked
-Edge PerformEpipolarShift(
-    Edge original_edge,
-    std::vector<double> epipolar_line_coeffs, bool &b_pass_epipolar_tengency_check);
+// Edge PerformEpipolarShift(Edge original_edge, std::vector<double> epipolar_line_coeffs);
 // checked
 std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
 

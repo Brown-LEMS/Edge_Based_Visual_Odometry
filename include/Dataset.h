@@ -70,6 +70,7 @@ struct EdgeCluster
 {
     Edge center_edge;
     std::vector<Edge> contributing_edges;
+    std::vector<int> contributing_edges_toed_indices;
 };
 
 struct EdgeMatch
@@ -158,10 +159,12 @@ struct Stereo_Edge_Pairs
     std::vector<Eigen::Vector3d> Gamma_in_left_cam_coord;           //> 3D points under the left camera coordinate
     std::vector<cv::Mat> left_edge_descriptors;                     //> SIFT descriptors of left edges
     std::vector<int> grid_indices;                                  //> grid indices of left edges
+    std::vector<Eigen::Vector3d> epip_line_coeffs_of_left_edges;    //> epipolar line coefficients of left edges
     std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
 
-    std::vector<std::vector<int>> matching_right_edges_indices;                  //> indices into stereo_frame->right_edges that are matched to the left edges
-
+    // std::vector<std::vector<int>> matching_right_edges_indices;                  //> indices into stereo_frame->right_edges that are matched to the left edges
+    std::vector<std::vector<EdgeCluster>> matching_edge_clusters;
+    
     // std::vector<cv::Point2d> GT_locations_from_right_edges;
 
     //> Constructor: defining which StereoFrame it points to

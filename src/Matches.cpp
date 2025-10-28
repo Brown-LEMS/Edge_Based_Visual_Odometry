@@ -157,9 +157,7 @@ std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_m
     Perform an epipolar shift on the original edge location based on the epipolar line coefficients.
     The function checks if the corrected edge passes the epipolar tengency test.
 */
-Edge PerformEpipolarShift(
-    Edge original_edge,
-    const Eigen::Vector3d epipolar_line_coeffs, bool &b_pass_epipolar_tengency_check, Utility util)
+Edge shift_Edge_to_Epipolar_Line(Edge original_edge, const Eigen::Vector3d epipolar_line_coeffs, Utility util)
 {
     Eigen::Vector3d xy1_edge( original_edge.location.x, original_edge.location.y, 1.0 );
     double corrected_x, corrected_y, corrected_theta;
@@ -169,7 +167,7 @@ Edge PerformEpipolarShift(
     {
         //> If normal distance is small, move directly to the epipolar line
         cv::Point2d corrected_edge_loc(epiline_x, epiline_y);
-        b_pass_epipolar_tengency_check = true;
+
         //> CH TODO: Pass the frame ID to the last input argument
         return Edge{corrected_edge_loc, original_edge.orientation, false, 0};
     }
@@ -183,7 +181,7 @@ Edge PerformEpipolarShift(
         {
             //> (i) if the displacement after epipolar shift is less than EPIP_TANGENCY_DISPL_THRESH, then feel free to shift it along its direction vector
             cv::Point2d corrected_edge_loc(x_intersection, y_intersection);
-            b_pass_epipolar_tengency_check = true;
+            // b_pass_epipolar_tengency_check = true;
             //> CH TODO: Pass the frame ID to the last input argument
             return Edge{corrected_edge_loc, original_edge.orientation, false, 0};
         }
@@ -207,13 +205,13 @@ Edge PerformEpipolarShift(
             if ( util.getTangentialDistance2EpipolarLine( epipolar_line_coeffs, isolated_edge_, x_intersection, y_intersection ) < EPIP_TANGENCY_DISPL_THRESH ) 
             {
                 cv::Point2d corrected_edge_loc(x_intersection, y_intersection);
-                b_pass_epipolar_tengency_check = true;
+                // b_pass_epipolar_tengency_check = true;
                 //> CH TODO: Pass the frame ID to the last input argument
                 return Edge{corrected_edge_loc, theta, false, 0};
             } 
             else 
             {
-                b_pass_epipolar_tengency_check = false;
+                // b_pass_epipolar_tengency_check = false;
 
                 //> CH TODO: Pass the frame ID to the last input argument
                 return Edge{original_edge.location, original_edge.orientation, false, 0};
@@ -541,27 +539,53 @@ void Evaluate_Stereo_Edge_Correspondences(Stereo_Edge_Pairs& stereo_frame_edge_p
     // std::ofstream eval_PR(eval_filename);
 
     //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame 
-    int total_num_of_true_positives = 0;
+    int total_num_of_true_positives_for_recall = 0;
+    int total_num_of_true_positives_for_precision = 0;
     std::vector<double> num_of_target_edges_per_source_edge;
     std::vector<double> precision_per_edge;
     num_of_target_edges_per_source_edge.reserve(stereo_frame_edge_pairs.left_edge_indices.size());
     precision_per_edge.reserve(stereo_frame_edge_pairs.left_edge_indices.size());
     for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
     {
-        //> Find if there is at least one edge index in matching_right_edges_indices is found in veridical_right_edges_indices
-        for (const auto& surviving_edge_index : stereo_frame_edge_pairs.matching_right_edges_indices[i])
+        // //> Find if there is at least one edge index in matching_right_edges_indices is found in veridical_right_edges_indices
+        // for (const auto& surviving_edge_index : stereo_frame_edge_pairs.matching_right_edges_indices[i])
+        // {
+        //     if (std::find(stereo_frame_edge_pairs.veridical_right_edges_indices[i].begin(), stereo_frame_edge_pairs.veridical_right_edges_indices[i].end(), surviving_edge_index) != stereo_frame_edge_pairs.veridical_right_edges_indices[i].end())
+        //     {
+        //         total_num_of_true_positives++;
+        //         precision_per_edge.push_back( static_cast<double>(stereo_frame_edge_pairs.veridical_right_edges_indices[i].size()) / static_cast<double>(stereo_frame_edge_pairs.matching_right_edges_indices[i].size()) );
+        //         break;
+        //     }
+        // }
+        // num_of_target_edges_per_source_edge.push_back( stereo_frame_edge_pairs.matching_right_edges_indices[i].size() );
+
+        //> Find if there is at least one edge in the matching_edge_clusters is found in the veridical_right_edges_indices
+        total_num_of_true_positives_for_precision = 0;
+
+        if (stereo_frame_edge_pairs.matching_edge_clusters[i].size() > 0)
         {
-            if (std::find(stereo_frame_edge_pairs.veridical_right_edges_indices[i].begin(), stereo_frame_edge_pairs.veridical_right_edges_indices[i].end(), surviving_edge_index) != stereo_frame_edge_pairs.veridical_right_edges_indices[i].end())
+            int total_num_of_clusters = stereo_frame_edge_pairs.matching_edge_clusters[i].size();
+            for (const auto& matching_edge_cluster : stereo_frame_edge_pairs.matching_edge_clusters[i])
             {
-                total_num_of_true_positives++;
-                precision_per_edge.push_back( static_cast<double>(stereo_frame_edge_pairs.veridical_right_edges_indices[i].size()) / static_cast<double>(stereo_frame_edge_pairs.matching_right_edges_indices[i].size()) );
-                break;
+                if (cv::norm(matching_edge_cluster.center_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= 1.0)
+                {
+                    total_num_of_true_positives_for_precision++;
+                }
             }
+            if (total_num_of_true_positives_for_precision > 0)
+            {
+                total_num_of_true_positives_for_recall++;
+            }
+            precision_per_edge.push_back( static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_clusters) );
+            num_of_target_edges_per_source_edge.push_back( total_num_of_clusters );
         }
-        num_of_target_edges_per_source_edge.push_back( stereo_frame_edge_pairs.matching_right_edges_indices[i].size() );
+        else
+        {
+            precision_per_edge.push_back(0.0);
+        }
     }
 
-    double recall_per_image = static_cast<double>(total_num_of_true_positives) / stereo_frame_edge_pairs.left_edge_indices.size();
+    double recall_per_image = static_cast<double>(total_num_of_true_positives_for_recall) / stereo_frame_edge_pairs.left_edge_indices.size();
     double precision_per_image = std::accumulate(precision_per_edge.begin(), precision_per_edge.end(), 0.0) / precision_per_edge.size();
     double num_of_target_edges_per_source_edge_avg = std::accumulate(num_of_target_edges_per_source_edge.begin(), num_of_target_edges_per_source_edge.end(), 0.0) / num_of_target_edges_per_source_edge.size();
 
@@ -575,9 +599,10 @@ void Evaluate_Stereo_Edge_Correspondences(Stereo_Edge_Pairs& stereo_frame_edge_p
 void apply_Epipolar_Line_Distance_Filtering(Stereo_Edge_Pairs& stereo_frame_edge_pairs, Dataset &dataset, const std::vector<Edge> right_edges)
 {
     std::vector<Eigen::Vector3d> epip_line_coeffs = CalculateEpipolarLine(dataset.get_fund_mat_21(), stereo_frame_edge_pairs.get_left_edges());
-    
+    stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges = epip_line_coeffs;
+
     //> Pre-allocate the output vector to avoid race conditions
-    stereo_frame_edge_pairs.matching_right_edges_indices.resize(epip_line_coeffs.size());
+    stereo_frame_edge_pairs.matching_edge_clusters.resize(epip_line_coeffs.size());
     
     //> Pre-allocate thread-local storage based on number of threads
     int num_threads = omp_get_max_threads();
@@ -593,39 +618,60 @@ void apply_Epipolar_Line_Distance_Filtering(Stereo_Edge_Pairs& stereo_frame_edge
             const auto e_coeffs = epip_line_coeffs[i];
             std::vector<int> right_candidate_edge_indices = extract_Epipolar_Edge_Indices(e_coeffs, stereo_frame_edge_pairs.stereo_frame->right_edges, 0.5);
 
-            //> Direct assignment to pre-allocated vector to prevent race condition
-            stereo_frame_edge_pairs.matching_right_edges_indices[i] = right_candidate_edge_indices;
+            //> each right candidate edge is a cluster
+            std::vector<EdgeCluster> right_candidate_edge_clusters;
+            for (const auto& right_candidate_edge_index : right_candidate_edge_indices)
+            {
+                EdgeCluster right_candidate_edge_cluster;
+                right_candidate_edge_cluster.center_edge = stereo_frame_edge_pairs.stereo_frame->right_edges[right_candidate_edge_index];
+                // right_candidate_edge_cluster.contributing_edges.push_back(stereo_frame_edge_pairs.stereo_frame->right_edges[right_candidate_edge_index]);
+                right_candidate_edge_clusters.push_back(right_candidate_edge_cluster);
+            }
+            stereo_frame_edge_pairs.matching_edge_clusters[i] = right_candidate_edge_clusters;
         }
     }
-    
 }
 
 void apply_Disparity_Filtering(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
 {
-    std::vector<std::vector<int>> initial_matching_right_edges_indices = stereo_frame_edge_pairs.matching_right_edges_indices;
-    stereo_frame_edge_pairs.matching_right_edges_indices.clear();
-    stereo_frame_edge_pairs.matching_right_edges_indices.resize(initial_matching_right_edges_indices.size());
+    std::vector<std::vector<EdgeCluster>> initial_matching_edge_clusters = stereo_frame_edge_pairs.matching_edge_clusters;
+    stereo_frame_edge_pairs.matching_edge_clusters.clear();
+    stereo_frame_edge_pairs.matching_edge_clusters.resize(initial_matching_edge_clusters.size());
     #pragma omp parallel
     {
         #pragma omp for schedule(dynamic)
         for (int i = 0; i < static_cast<int>(stereo_frame_edge_pairs.left_edge_indices.size()); ++i)
         {
-            std::vector<int> surviving_right_edges_index;
+            std::vector<EdgeCluster> surviving_edge_clusters;
             Edge left_edge = stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i);
-            for (auto const& right_edge_index : initial_matching_right_edges_indices[i])
+            for (auto const& edge_cluster : initial_matching_edge_clusters[i])
             {
-                Edge right_edge = stereo_frame_edge_pairs.stereo_frame->right_edges[right_edge_index];
+                Edge right_edge = edge_cluster.center_edge;
                 
                 double candidate_disparity = left_edge.location.x - right_edge.location.x;
                 if (candidate_disparity >= 0 && candidate_disparity <= MAX_DISPARITY)
                 {
-                    surviving_right_edges_index.push_back(right_edge_index);
+                    surviving_edge_clusters.push_back(edge_cluster);
                 }
             }
-            stereo_frame_edge_pairs.matching_right_edges_indices[i] = surviving_right_edges_index;
+            stereo_frame_edge_pairs.matching_edge_clusters[i] = surviving_edge_clusters;
         }
     }
 }
+
+// void do_Epipolar_Shift_and_Clustering(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
+// {
+//     std::vector<std::vector<int>> initial_matching_right_edges_indices = stereo_frame_edge_pairs.matching_right_edges_indices;
+//     for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
+//     {
+//         const auto e_coeffs = stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges[i];
+//         for (const auto& right_edge_index : initial_matching_right_edges_indices[i])
+//         {
+//             Edge right_edge = stereo_frame_edge_pairs.stereo_frame->right_edges[right_edge_index];
+            
+//         }
+//     }
+// }
 
 void get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edge_pairs, size_t frame_idx)
 {
@@ -643,6 +689,7 @@ void get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edg
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Maximal Disparity Filtering");
     //> ============= END OF CH'S EDITIONS =============
 
+    //> epipolar shift and clustering
 
 
     // std::vector<Edge> left_edges = stereo_frame.left_edges;
@@ -1639,7 +1686,7 @@ void EpipolarShiftFilter(
     {
         bool b_secondary_passes_tangency = false;
 
-        Edge shifted_edge = PerformEpipolarShift(filtered_edges[j], epipolar_line, b_secondary_passes_tangency, util);
+        Edge shifted_edge = shift_Edge_to_Epipolar_Line(filtered_edges[j], epipolar_line, util);
         if (b_secondary_passes_tangency)
         {
             shifted_edges.push_back(shifted_edge);
