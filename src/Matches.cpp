@@ -157,8 +157,9 @@ std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_m
     Perform an epipolar shift on the original edge location based on the epipolar line coefficients.
     The function checks if the corrected edge passes the epipolar tengency test.
 */
-Edge shift_Edge_to_Epipolar_Line(Edge original_edge, const Eigen::Vector3d epipolar_line_coeffs, Utility util)
+Edge shift_Edge_to_Epipolar_Line(Edge original_edge, const Eigen::Vector3d epipolar_line_coeffs)
 {
+    Utility util{};
     Eigen::Vector3d xy1_edge( original_edge.location.x, original_edge.location.y, 1.0 );
     double corrected_x, corrected_y, corrected_theta;
     double epiline_x, epiline_y;
@@ -211,6 +212,7 @@ Edge shift_Edge_to_Epipolar_Line(Edge original_edge, const Eigen::Vector3d epipo
             } 
             else 
             {
+                //> If the edge does not pass the epipolar tengency test, then return the original edge
                 // b_pass_epipolar_tengency_check = false;
 
                 //> CH TODO: Pass the frame ID to the last input argument
@@ -263,14 +265,21 @@ std::vector<int> extract_Epipolar_Edge_Indices(const Eigen::Vector3d &epipolar_l
     return extracted_indices;
 }
 
-std::vector<int> get_right_edge_indices_close_to_GT_location(StereoFrame& stereo_frame, const cv::Point2d GT_location, const std::vector<int> right_candidate_edge_indices, const double dist_tol) 
+std::vector<int> get_right_edge_indices_close_to_GT_location(StereoFrame& stereo_frame, const cv::Point2d GT_location, double GT_orientation, \
+                                                            const std::vector<int> right_candidate_edge_indices, \
+                                                            const double dist_tol, const double orient_tol) 
 {
     std::vector<int> right_edge_indices_close_to_GT_location;
     for (const auto& right_candidate_edge_index : right_candidate_edge_indices) 
     {
+        //> Check if the right candidate edge location is close to the GT location
         if (cv::norm(GT_location - stereo_frame.right_edges[right_candidate_edge_index].location) < dist_tol) 
         {
-            right_edge_indices_close_to_GT_location.push_back(right_candidate_edge_index);
+            //> Check if the right candidate edge orientation is close to the corresponding left edge orientation
+            if (std::abs(rad_to_deg<double>(stereo_frame.right_edges[right_candidate_edge_index].orientation) - rad_to_deg<double>(GT_orientation)) < orient_tol) 
+            {
+                right_edge_indices_close_to_GT_location.push_back(right_candidate_edge_index);
+            }
         }
     }
     return right_edge_indices_close_to_GT_location;
@@ -282,54 +291,60 @@ std::vector<int> get_right_edge_indices_close_to_GT_location(StereoFrame& stereo
     one for the edge points and one for their corresponding orientations.
     The clustering is based on a distance threshold and an orientation difference threshold.
 */
-std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges)
-{
-    EdgeClusterer edge_cluster_engine( valid_shifted_edges );
-    edge_cluster_engine.performClustering( );
+// std::vector<EdgeCluster> cluster_Epipolar_Shifted_Edges(std::vector<Edge> shifted_edges, bool b_show_data = false)
+// {
+//     EdgeClusterer edge_cluster_engine( shifted_edges );
+//     edge_cluster_engine.performClustering( );
 
-    std::vector<Edge> clustered_edges = edge_cluster_engine.Epip_Correct_Edges;
-    const int Num_Of_Clusters = edge_cluster_engine.Num_Of_Clusters;
-    std::vector<int> cluster_labels = edge_cluster_engine.cluster_labels;
+//     std::vector<EdgeCluster> returned_clusters = edge_cluster_engine.returned_clusters;
 
-    //> Renumbering the cluster labels into 0, 1, 2, etc for each epipolar shifted edge
-    std::vector<int> renumbered_cluster_labels = cluster_labels;
-    std::vector<int> unique_cluster_labels = find_Unique_Sorted_Numbers( cluster_labels );
-    for (int i = 0; i < unique_cluster_labels.size(); i++) {
-        for (int j = 0; j < cluster_labels.size(); j++) {
-            if (cluster_labels[j] == unique_cluster_labels[i]) {
-                renumbered_cluster_labels[j] = i;
-            }
-        }
-    }
+//     // std::vector<Edge> clustered_edges = edge_cluster_engine.Epip_Correct_Edges;
+//     // const int Num_Of_Clusters = edge_cluster_engine.Num_Of_Clusters;
+//     // std::vector<int> cluster_labels = edge_cluster_engine.cluster_labels;
 
-    //> Construct contributing edges for each cluster
-    std::vector<std::vector<Edge>> edges_in_clusters;
-    edges_in_clusters.resize(Num_Of_Clusters);
-    for (int i = 0; i < renumbered_cluster_labels.size(); i++)
-    {
-        edges_in_clusters[ renumbered_cluster_labels[i] ].push_back(valid_shifted_edges[i]);
-    }
+//     // //> Renumbering the cluster labels into 0, 1, 2, etc for each epipolar shifted edge
+//     // std::vector<int> renumbered_cluster_labels = cluster_labels;
+//     // std::vector<int> unique_cluster_labels = find_Unique_Sorted_Numbers( cluster_labels );
+//     // for (int i = 0; i < unique_cluster_labels.size(); i++) {
+//     //     for (int j = 0; j < cluster_labels.size(); j++) {
+//     //         if (cluster_labels[j] == unique_cluster_labels[i]) {
+//     //             renumbered_cluster_labels[j] = i;
+//     //         }
+//     //     }
+//     // }
 
-    //> Construct cluster structure
-    std::vector<EdgeCluster> cluster_centers;
-    cluster_centers.resize(Num_Of_Clusters);
-    for (int i = 0; i < Num_Of_Clusters; i++) 
-    {
-        for (int j = 0; j < renumbered_cluster_labels.size(); j++)
-        {
-            if (renumbered_cluster_labels[j] == i)
-            {
-                EdgeCluster cluster;
-                cluster.center_edge = clustered_edges[j];
-                cluster.contributing_edges = edges_in_clusters[renumbered_cluster_labels[j]];
-                cluster_centers[i] = cluster;
-                break;
-            }
-        }
-    }
+//     // int cluster_count = 0;
+//     // std::vector<EdgeCluster> returned_clusters;
+//     // returned_clusters.resize(Num_Of_Clusters);
+//     // std::vector<bool> cluster_centers_filled(Num_Of_Clusters, false);
+//     // for (int i = 0; i < renumbered_cluster_labels.size(); i++)
+//     // {
+//     //     if (!cluster_centers_filled[renumbered_cluster_labels[i]] && renumbered_cluster_labels[i] == cluster_count)
+//     //     {
+//     //         returned_clusters[cluster_count].center_edge = clustered_edges[i];
+//     //         cluster_centers_filled[renumbered_cluster_labels[i]] = true;
+//     //         cluster_count++;
+//     //     }
+//     //     returned_clusters[renumbered_cluster_labels[i]].contributing_edges.push_back(shifted_edges[i]);
+//     //     // if (cluster_count == Num_Of_Clusters) break;
+//     // }
 
-    return cluster_centers;
-}
+//     if (b_show_data)
+//     {
+//         std::cout << "Cluster centers: " << std::endl;
+//         for (int i = 0; i < returned_clusters.size(); i++)
+//         {
+//             std::cout << "- Cluster " << i << ": (" << returned_clusters[i].center_edge.location.x << ", " << returned_clusters[i].center_edge.location.y << ", " << returned_clusters[i].center_edge.orientation << ")" << std::endl;
+//             std::cout << "  Contributing edges: " << std::endl;
+//             for (const auto& edge : returned_clusters[i].contributing_edges)
+//             {
+//                 std::cout << "  (" << edge.location.x << ", " << edge.location.y << ", " << edge.orientation << ")" << std::endl;
+//             }
+//         }
+//     }
+
+//     return returned_clusters;
+// }
 
 /*
     Extract patches from the image based on the cluster centers and shifted edge points.
@@ -482,9 +497,10 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoFrame& stereo_frame, Stere
         #pragma omp for schedule(dynamic)
         for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
         {
+            Edge left_edge = stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i);
             const auto e_coeffs = epip_line_coeffs[i];
             std::vector<int> right_candidate_edge_indices = extract_Epipolar_Edge_Indices(e_coeffs, stereo_frame.right_edges, 0.5);
-            right_candidate_edge_indices = get_right_edge_indices_close_to_GT_location(stereo_frame, stereo_frame_edge_pairs.GT_locations_from_left_edges[i], right_candidate_edge_indices, 1.0);
+            right_candidate_edge_indices = get_right_edge_indices_close_to_GT_location(stereo_frame, stereo_frame_edge_pairs.GT_locations_from_left_edges[i], left_edge.orientation, right_candidate_edge_indices, 1.0, 5.0);
 
             if (right_candidate_edge_indices.empty()) {
                 thread_local_indices_to_remove[thread_id].push_back(i);
@@ -531,7 +547,7 @@ void write_Stereo_Edge_Pairs_to_file(Dataset &dataset, Stereo_Edge_Pairs& stereo
     stereo_frame_edge_pairs_file.close();
 }
 
-void Evaluate_Stereo_Edge_Correspondences(Stereo_Edge_Pairs& stereo_frame_edge_pairs, size_t frame_idx, const std::string &stage_name)
+void Evaluate_Stereo_Edge_Correspondences(Stereo_Edge_Pairs& stereo_frame_edge_pairs, size_t frame_idx, const std::string &stage_name, std::vector<int> &false_negative_indices)
 {
     //> FIXME: Write the results to a file
     // std::string output_dir = dataset.get_output_path();
@@ -582,6 +598,11 @@ void Evaluate_Stereo_Edge_Correspondences(Stereo_Edge_Pairs& stereo_frame_edge_p
         else
         {
             precision_per_edge.push_back(0.0);
+        }
+
+        if (total_num_of_true_positives_for_precision == 0)
+        {
+            false_negative_indices.push_back(i);
         }
     }
 
@@ -659,34 +680,69 @@ void apply_Disparity_Filtering(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
     }
 }
 
-// void do_Epipolar_Shift_and_Clustering(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
-// {
-//     std::vector<std::vector<int>> initial_matching_right_edges_indices = stereo_frame_edge_pairs.matching_right_edges_indices;
-//     for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
-//     {
-//         const auto e_coeffs = stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges[i];
-//         for (const auto& right_edge_index : initial_matching_right_edges_indices[i])
-//         {
-//             Edge right_edge = stereo_frame_edge_pairs.stereo_frame->right_edges[right_edge_index];
-            
-//         }
-//     }
-// }
+void do_Epipolar_Shift_and_Clustering(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
+{
+    std::vector<std::vector<EdgeCluster>> initial_matching_edge_clusters = stereo_frame_edge_pairs.matching_edge_clusters;
+    for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
+    {
+        std::vector<Edge> shifted_edges;
+        const auto e_coeffs = stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges[i];
+
+        //> Shift edges in the edge cluster to the epipolar line
+        for (const auto& edge_cluster : initial_matching_edge_clusters[i])
+        {
+            Edge shifted_edge = shift_Edge_to_Epipolar_Line(edge_cluster.center_edge, e_coeffs);
+            shifted_edges.push_back(shifted_edge);
+        }
+        
+        //> Cluster the shifted edges
+        EdgeClusterer edge_cluster_engine( shifted_edges );
+        edge_cluster_engine.performClustering( );
+        stereo_frame_edge_pairs.matching_edge_clusters[i] = edge_cluster_engine.returned_clusters;
+
+        // //> Print the clustered edges
+        // bool b_show_data = (i == 100) ? true : false;
+        // if (b_show_data)
+        // {
+        //     std::vector<EdgeCluster> edge_clusters = edge_cluster_engine.returned_clusters;
+        //     std::cout << "Cluster centers: " << std::endl;
+        //     for (int i = 0; i < edge_clusters.size(); i++)
+        //     {
+        //         std::cout << "- Cluster " << i << ": (" << edge_clusters[i].center_edge.location.x << ", " << edge_clusters[i].center_edge.location.y << ", " << edge_clusters[i].center_edge.orientation << ")" << std::endl;
+        //         std::cout << "  Contributing edges: " << std::endl;
+        //         for (const auto& edge : edge_clusters[i].contributing_edges)
+        //         {
+        //             std::cout << "  (" << edge.location.x << ", " << edge.location.y << ", " << edge.orientation << ")" << std::endl;
+        //         }
+        //     }
+        // }
+    }
+}
 
 void get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edge_pairs, size_t frame_idx)
 {
-    // Utility util{};
-
     ///////////////////////////////FORWARD DIRECTION///////////////////////////////
+    std::vector<int> false_negative_indices;
     
     //> ============= START OF CH'S EDITIONS =============
     //> Apply epipolar line distance filtering
     apply_Epipolar_Line_Distance_Filtering(stereo_frame_edge_pairs, dataset, stereo_frame_edge_pairs.stereo_frame->right_edges);
-    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Epipolar Line Distance Filtering");
+    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Epipolar Line Distance Filtering", false_negative_indices);
+    if (false_negative_indices.empty()) std::cout << "Good!" << std::endl;
 
     //> Apply disparity filtering
     apply_Disparity_Filtering(stereo_frame_edge_pairs);
-    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Maximal Disparity Filtering");
+    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Maximal Disparity Filtering", false_negative_indices);
+    if (false_negative_indices.empty()) std::cout << "Good!" << std::endl;
+
+    //> Shift edges to the epipolar line and cluster them
+    do_Epipolar_Shift_and_Clustering(stereo_frame_edge_pairs);
+    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Epipolar Shift and Clustering", false_negative_indices);
+    for (const auto& false_negative_index : false_negative_indices)
+    {
+        std::cout << "False negative index: " << false_negative_index << std::endl;
+    }
+
     //> ============= END OF CH'S EDITIONS =============
 
     //> epipolar shift and clustering
@@ -866,597 +922,597 @@ void get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edg
     // return StereoMatchResult{forward_match, reverse_match, confirmed_matches, bidirectional_metrics};
 }
 
-//> MARK: Main Edge Pairing
-EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges, \
-                                 const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, \
-                                 const std::vector<Eigen::Vector3d> &epipolar_lines_secondary, \
-                                 const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges)
-{
-    Utility util{};
+// //> MARK: Main Edge Pairing
+// EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges, \
+//                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, \
+//                                  const std::vector<Eigen::Vector3d> &epipolar_lines_secondary, \
+//                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges)
+// {
+//     Utility util{};
 
-    auto total_start = std::chrono::high_resolution_clock::now();
-    // bunch of counts
-    std::vector<int> epi_input_counts;
-    std::vector<int> epi_output_counts;
+//     auto total_start = std::chrono::high_resolution_clock::now();
+//     // bunch of counts
+//     std::vector<int> epi_input_counts;
+//     std::vector<int> epi_output_counts;
 
-    std::vector<int> disp_input_counts;
-    std::vector<int> disp_output_counts;
+//     std::vector<int> disp_input_counts;
+//     std::vector<int> disp_output_counts;
 
-    std::vector<int> shift_input_counts;
-    std::vector<int> shift_output_counts;
+//     std::vector<int> shift_input_counts;
+//     std::vector<int> shift_output_counts;
 
-    std::vector<int> clust_input_counts;
-    std::vector<int> clust_output_counts;
+//     std::vector<int> clust_input_counts;
+//     std::vector<int> clust_output_counts;
 
-    std::vector<int> patch_input_counts;
-    std::vector<int> patch_output_counts;
+//     std::vector<int> patch_input_counts;
+//     std::vector<int> patch_output_counts;
 
-    std::vector<int> ncc_input_counts;
-    std::vector<int> ncc_output_counts;
+//     std::vector<int> ncc_input_counts;
+//     std::vector<int> ncc_output_counts;
 
-    std::vector<int> lowe_input_counts;
-    std::vector<int> lowe_output_counts;
+//     std::vector<int> lowe_input_counts;
+//     std::vector<int> lowe_output_counts;
 
-    double total_time;
+//     double total_time;
 
-    //> CH: this is a global structure of final_matches
-    // was  std::vector<std::pair<SourceEdge, EdgeMatch>> final_matches;
-    std::vector<std::pair<Edge, EdgeMatch>> final_matches;
-    std::unordered_map<Edge, std::vector<Edge>> final_lowe_matches;
-    std::unordered_map<Edge, std::vector<Edge>> final_reverse_lowe_matches;
+//     //> CH: this is a global structure of final_matches
+//     // was  std::vector<std::pair<SourceEdge, EdgeMatch>> final_matches;
+//     std::vector<std::pair<Edge, EdgeMatch>> final_matches;
+//     std::unordered_map<Edge, std::vector<Edge>> final_lowe_matches;
+//     std::unordered_map<Edge, std::vector<Edge>> final_reverse_lowe_matches;
 
-    //> CH: this is local structure of final matches
-    // was std::vector<std::vector<std::pair<SourceEdge, EdgeMatch>>> local_final_matches(omp_get_max_threads());
-    std::vector<std::vector<std::pair<Edge, EdgeMatch>>> local_final_matches(omp_get_max_threads());
-    std::vector<std::unordered_map<Edge, std::vector<Edge>>> local_final_lowe_matches(omp_get_max_threads());
-    std::vector<std::unordered_map<Edge, std::vector<Edge>>> local_final_reverse_lowe_matches(omp_get_max_threads());
+//     //> CH: this is local structure of final matches
+//     // was std::vector<std::vector<std::pair<SourceEdge, EdgeMatch>>> local_final_matches(omp_get_max_threads());
+//     std::vector<std::vector<std::pair<Edge, EdgeMatch>>> local_final_matches(omp_get_max_threads());
+//     std::vector<std::unordered_map<Edge, std::vector<Edge>>> local_final_lowe_matches(omp_get_max_threads());
+//     std::vector<std::unordered_map<Edge, std::vector<Edge>>> local_final_reverse_lowe_matches(omp_get_max_threads());
 
-    //> CH: Local structures of all counts
-    std::vector<std::vector<int>> local_epi_input_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_epi_output_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_disp_input_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_disp_output_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_shift_input_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_shift_output_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_clust_input_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_clust_output_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_patch_input_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_patch_output_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_ncc_input_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_ncc_output_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_lowe_input_counts(omp_get_max_threads());
-    std::vector<std::vector<int>> local_lowe_output_counts(omp_get_max_threads());
+//     //> CH: Local structures of all counts
+//     std::vector<std::vector<int>> local_epi_input_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_epi_output_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_disp_input_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_disp_output_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_shift_input_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_shift_output_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_clust_input_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_clust_output_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_patch_input_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_patch_output_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_ncc_input_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_ncc_output_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_lowe_input_counts(omp_get_max_threads());
+//     std::vector<std::vector<int>> local_lowe_output_counts(omp_get_max_threads());
 
-    //> CH: Local structures for GT right edge after Lowe's ratio test
-    std::vector<std::vector<cv::Point2d>> local_GT_right_edges_after_lowe(omp_get_max_threads());
+//     //> CH: Local structures for GT right edge after Lowe's ratio test
+//     std::vector<std::vector<cv::Point2d>> local_GT_right_edges_after_lowe(omp_get_max_threads());
 
-    int time_epi_edges_evaluated = 0;
-    int time_disp_edges_evaluated = 0;
-    int time_shift_edges_evaluated = 0;
-    int time_clust_edges_evaluated = 0;
-    int time_patch_edges_evaluated = 0;
-    int time_ncc_edges_evaluated = 0;
-    int time_lowe_edges_evaluated = 0;
-    double time_epi = 0.0;
-    double time_disp = 0.0;
-    double time_shift = 0.0;
-    double time_patch = 0.0;
-    double time_cluster = 0.0;
-    double time_ncc = 0.0;
-    double time_lowe = 0.0;
+//     int time_epi_edges_evaluated = 0;
+//     int time_disp_edges_evaluated = 0;
+//     int time_shift_edges_evaluated = 0;
+//     int time_clust_edges_evaluated = 0;
+//     int time_patch_edges_evaluated = 0;
+//     int time_ncc_edges_evaluated = 0;
+//     int time_lowe_edges_evaluated = 0;
+//     double time_epi = 0.0;
+//     double time_disp = 0.0;
+//     double time_shift = 0.0;
+//     double time_patch = 0.0;
+//     double time_cluster = 0.0;
+//     double time_ncc = 0.0;
+//     double time_lowe = 0.0;
 
-    //> These are global variables for reduction sum
-    double per_edge_epi_precision = 0.0;
-    double per_edge_disp_precision = 0.0;
-    double per_edge_shift_precision = 0.0;
-    double per_edge_clust_precision = 0.0;
-    double per_edge_ncc_precision = 0.0;
-    double per_edge_lowe_precision = 0.0;
-    int epi_true_positive = 0;
-    int epi_false_negative = 0;
-    int epi_true_negative = 0;
-    int disp_true_positive = 0;
-    int disp_false_negative = 0;
-    int shift_true_positive = 0;
-    int shift_false_negative = 0;
-    int cluster_true_positive = 0;
-    int cluster_false_negative = 0;
-    int cluster_true_negative = 0;
-    int ncc_true_positive = 0;
-    int ncc_false_negative = 0;
-    int lowe_true_positive = 0;
-    int lowe_false_negative = 0;
-    int epi_edges_evaluated = 0;
-    int disp_edges_evaluated = 0;
-    int shift_edges_evaluated = 0;
-    int clust_edges_evaluated = 0;
-    int ncc_edges_evaluated = 0;
-    int lowe_edges_evaluated = 0;
+//     //> These are global variables for reduction sum
+//     double per_edge_epi_precision = 0.0;
+//     double per_edge_disp_precision = 0.0;
+//     double per_edge_shift_precision = 0.0;
+//     double per_edge_clust_precision = 0.0;
+//     double per_edge_ncc_precision = 0.0;
+//     double per_edge_lowe_precision = 0.0;
+//     int epi_true_positive = 0;
+//     int epi_false_negative = 0;
+//     int epi_true_negative = 0;
+//     int disp_true_positive = 0;
+//     int disp_false_negative = 0;
+//     int shift_true_positive = 0;
+//     int shift_false_negative = 0;
+//     int cluster_true_positive = 0;
+//     int cluster_false_negative = 0;
+//     int cluster_true_negative = 0;
+//     int ncc_true_positive = 0;
+//     int ncc_false_negative = 0;
+//     int lowe_true_positive = 0;
+//     int lowe_false_negative = 0;
+//     int epi_edges_evaluated = 0;
+//     int disp_edges_evaluated = 0;
+//     int shift_edges_evaluated = 0;
+//     int clust_edges_evaluated = 0;
+//     int ncc_edges_evaluated = 0;
+//     int lowe_edges_evaluated = 0;
 
-#pragma omp parallel
-    {
-        int thread_id = omp_get_thread_num();
+// #pragma omp parallel
+//     {
+//         int thread_id = omp_get_thread_num();
 
-        cv::Point2d ground_truth_edge;
-        const int skip = 1;
+//         cv::Point2d ground_truth_edge;
+//         const int skip = 1;
 
-//> Start looping over left edges
-#pragma omp for schedule(static, dataset.get_omp_threads()) reduction(+ : epi_true_positive, epi_false_negative, epi_true_negative, disp_true_positive, disp_false_negative, shift_true_positive, shift_false_negative, cluster_true_positive, cluster_false_negative, cluster_true_negative, ncc_true_positive, ncc_false_negative, lowe_true_positive, lowe_false_negative, per_edge_epi_precision, per_edge_disp_precision, per_edge_shift_precision, per_edge_clust_precision, per_edge_ncc_precision, per_edge_lowe_precision, epi_edges_evaluated, disp_edges_evaluated, shift_edges_evaluated, clust_edges_evaluated, ncc_edges_evaluated, lowe_edges_evaluated)
-        for (size_t i = 0; i < selected_primary_edges.size(); i += skip)
-        {
-            const auto &primary_edge = selected_primary_edges[i];
+// //> Start looping over left edges
+// #pragma omp for schedule(static, dataset.get_omp_threads()) reduction(+ : epi_true_positive, epi_false_negative, epi_true_negative, disp_true_positive, disp_false_negative, shift_true_positive, shift_false_negative, cluster_true_positive, cluster_false_negative, cluster_true_negative, ncc_true_positive, ncc_false_negative, lowe_true_positive, lowe_false_negative, per_edge_epi_precision, per_edge_disp_precision, per_edge_shift_precision, per_edge_clust_precision, per_edge_ncc_precision, per_edge_lowe_precision, epi_edges_evaluated, disp_edges_evaluated, shift_edges_evaluated, clust_edges_evaluated, ncc_edges_evaluated, lowe_edges_evaluated)
+//         for (size_t i = 0; i < selected_primary_edges.size(); i += skip)
+//         {
+//             const auto &primary_edge = selected_primary_edges[i];
 
-            if (!selected_ground_truth_edges.empty())
-            {
-                ground_truth_edge = selected_ground_truth_edges[i];
-            }
+//             if (!selected_ground_truth_edges.empty())
+//             {
+//                 ground_truth_edge = selected_ground_truth_edges[i];
+//             }
 
-            const auto &epipolar_line = epipolar_lines_secondary[i];
-            const auto &primary_patch_one = primary_patch_set_one[i];
-            const auto &primary_patch_two = primary_patch_set_two[i];
+//             const auto &epipolar_line = epipolar_lines_secondary[i];
+//             const auto &primary_patch_one = primary_patch_set_one[i];
+//             const auto &primary_patch_two = primary_patch_set_two[i];
 
-            // if (!CheckEpipolarTangency(primary_edge, epipolar_line))
-            // {
-            //     continue;
-            // }
+//             // if (!CheckEpipolarTangency(primary_edge, epipolar_line))
+//             // {
+//             //     continue;
+//             // }
 
-            ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD///////////////////////////////
-#if MEASURE_TIMINGS
-            auto start_epi = std::chrono::high_resolution_clock::now();
-#endif
-            std::vector<Edge> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 0.5);
-            std::vector<Edge> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 3);
+//             ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD///////////////////////////////
+// #if MEASURE_TIMINGS
+//             auto start_epi = std::chrono::high_resolution_clock::now();
+// #endif
+//             std::vector<Edge> secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 0.5);
+//             std::vector<Edge> test_secondary_candidates_data = ExtractEpipolarEdges(epipolar_line, secondary_edges, 3);
 
-            local_epi_input_counts[thread_id].push_back(secondary_edges.size());
+//             local_epi_input_counts[thread_id].push_back(secondary_edges.size());
 
-#if MEASURE_TIMINGS
-            time_epi_edges_evaluated++;
-            auto end_epi = std::chrono::high_resolution_clock::now();
-            time_epi += std::chrono::duration<double, std::milli>(end_epi - start_epi).count();
-#endif
-            //> MARK: Epipolar Distance
-            ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD RECALL//////////////////////////
-            if (!selected_ground_truth_edges.empty())
-            {
-                if (FilterByEpipolarDistance(
-                        epi_true_positive, epi_false_negative, epi_true_negative, per_edge_epi_precision, epi_edges_evaluated,
-                        secondary_candidates_data, test_secondary_candidates_data, ground_truth_edge,
-                        0.5 // threshold
-                        ))
-                    continue;
-            }
-            ///////////////////////////////MAXIMUM DISPARITY THRESHOLD//////////////////////////
-#if MEASURE_TIMINGS
-            auto start_disp = std::chrono::high_resolution_clock::now();
-#endif
+// #if MEASURE_TIMINGS
+//             time_epi_edges_evaluated++;
+//             auto end_epi = std::chrono::high_resolution_clock::now();
+//             time_epi += std::chrono::duration<double, std::milli>(end_epi - start_epi).count();
+// #endif
+//             //> MARK: Epipolar Distance
+//             ///////////////////////////////EPIPOLAR DISTANCE THRESHOLD RECALL//////////////////////////
+//             if (!selected_ground_truth_edges.empty())
+//             {
+//                 if (FilterByEpipolarDistance(
+//                         epi_true_positive, epi_false_negative, epi_true_negative, per_edge_epi_precision, epi_edges_evaluated,
+//                         secondary_candidates_data, test_secondary_candidates_data, ground_truth_edge,
+//                         0.5 // threshold
+//                         ))
+//                     continue;
+//             }
+//             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD//////////////////////////
+// #if MEASURE_TIMINGS
+//             auto start_disp = std::chrono::high_resolution_clock::now();
+// #endif
 
-            // epi_output_counts.push_back(secondary_candidates_data.size());
-            local_epi_output_counts[thread_id].push_back(secondary_candidates_data.size());
+//             // epi_output_counts.push_back(secondary_candidates_data.size());
+//             local_epi_output_counts[thread_id].push_back(secondary_candidates_data.size());
 
-            std::vector<Edge> filtered_secondary_edges;
+//             std::vector<Edge> filtered_secondary_edges;
 
-            FilterByDisparity(
-                filtered_secondary_edges,
-                secondary_candidates_data,
-                !selected_ground_truth_edges.empty(),
-                primary_edge);
+//             FilterByDisparity(
+//                 filtered_secondary_edges,
+//                 secondary_candidates_data,
+//                 !selected_ground_truth_edges.empty(),
+//                 primary_edge);
 
-            // disp_input_counts.push_back(secondary_candidates_data.size());
-            local_disp_input_counts[thread_id].push_back(secondary_candidates_data.size());
+//             // disp_input_counts.push_back(secondary_candidates_data.size());
+//             local_disp_input_counts[thread_id].push_back(secondary_candidates_data.size());
 
-#if MEASURE_TIMINGS
-            time_disp_edges_evaluated++;
-            auto end_disp = std::chrono::high_resolution_clock::now();
-            time_disp += std::chrono::duration<double, std::milli>(end_disp - start_disp).count();
-#endif
-            //> MARK: Maximum Disparity
-            ///////////////////////////////MAXIMUM DISPARITY THRESHOLD RECALL//////////////////////////
-            if (!selected_ground_truth_edges.empty())
-            {
-                RecallUpdate(disp_true_positive, disp_false_negative, disp_edges_evaluated,
-                             per_edge_disp_precision, filtered_secondary_edges, ground_truth_edge,
-                             0.5);
-            }
-            ///////////////////////////////EPIPOLAR SHIFT THRESHOLD//////////////////////////
-#if MEASURE_TIMINGS
-            auto start_shift = std::chrono::high_resolution_clock::now();
-#endif
+// #if MEASURE_TIMINGS
+//             time_disp_edges_evaluated++;
+//             auto end_disp = std::chrono::high_resolution_clock::now();
+//             time_disp += std::chrono::duration<double, std::milli>(end_disp - start_disp).count();
+// #endif
+//             //> MARK: Maximum Disparity
+//             ///////////////////////////////MAXIMUM DISPARITY THRESHOLD RECALL//////////////////////////
+//             if (!selected_ground_truth_edges.empty())
+//             {
+//                 RecallUpdate(disp_true_positive, disp_false_negative, disp_edges_evaluated,
+//                              per_edge_disp_precision, filtered_secondary_edges, ground_truth_edge,
+//                              0.5);
+//             }
+//             ///////////////////////////////EPIPOLAR SHIFT THRESHOLD//////////////////////////
+// #if MEASURE_TIMINGS
+//             auto start_shift = std::chrono::high_resolution_clock::now();
+// #endif
 
-            // disp_output_counts.push_back(filtered_secondary_edges.size());
-            local_disp_output_counts[thread_id].push_back(filtered_secondary_edges.size());
+//             // disp_output_counts.push_back(filtered_secondary_edges.size());
+//             local_disp_output_counts[thread_id].push_back(filtered_secondary_edges.size());
 
-            std::vector<Edge> shifted_secondary_edge;
-            EpipolarShiftFilter(filtered_secondary_edges, shifted_secondary_edge, epipolar_line, util);
+//             std::vector<Edge> shifted_secondary_edge;
+//             EpipolarShiftFilter(filtered_secondary_edges, shifted_secondary_edge, epipolar_line, util);
 
-            // shift_input_counts.push_back(filtered_secondary_edges.size());
-            local_shift_input_counts[thread_id].push_back(filtered_secondary_edges.size());
+//             // shift_input_counts.push_back(filtered_secondary_edges.size());
+//             local_shift_input_counts[thread_id].push_back(filtered_secondary_edges.size());
 
-#if MEASURE_TIMINGS
-            time_shift_edges_evaluated++;
-            auto end_shift = std::chrono::high_resolution_clock::now();
-            time_shift += std::chrono::duration<double, std::milli>(end_shift - start_shift).count();
-#endif
-            //> MARK: Epipolar Shift
-            ///////////////////////////////EPIPOLAR SHIFT THRESHOLD RECALL//////////////////////////
-            if (!selected_ground_truth_edges.empty())
-            {
-                RecallUpdate(shift_true_positive, shift_false_negative, shift_edges_evaluated,
-                             per_edge_shift_precision, shifted_secondary_edge, ground_truth_edge,
-                             3.0);
-            }
-            ///////////////////////////////EPIPOLAR CLUSTER THRESHOLD//////////////////////////
-#if MEASURE_TIMINGS
-            auto start_cluster = std::chrono::high_resolution_clock::now();
-#endif
-            local_shift_output_counts[thread_id].push_back(shifted_secondary_edge.size());
-            std::vector<EdgeCluster> cluster_centers = ClusterEpipolarShiftedEdges(shifted_secondary_edge); // notice: shifted_secondary_edge will be changed inside the function but wouldn't be used later on.;
-            // FormClusterCenters(cluster_centers, clusters);
+// #if MEASURE_TIMINGS
+//             time_shift_edges_evaluated++;
+//             auto end_shift = std::chrono::high_resolution_clock::now();
+//             time_shift += std::chrono::duration<double, std::milli>(end_shift - start_shift).count();
+// #endif
+//             //> MARK: Epipolar Shift
+//             ///////////////////////////////EPIPOLAR SHIFT THRESHOLD RECALL//////////////////////////
+//             if (!selected_ground_truth_edges.empty())
+//             {
+//                 RecallUpdate(shift_true_positive, shift_false_negative, shift_edges_evaluated,
+//                              per_edge_shift_precision, shifted_secondary_edge, ground_truth_edge,
+//                              3.0);
+//             }
+//             ///////////////////////////////EPIPOLAR CLUSTER THRESHOLD//////////////////////////
+// #if MEASURE_TIMINGS
+//             auto start_cluster = std::chrono::high_resolution_clock::now();
+// #endif
+//             local_shift_output_counts[thread_id].push_back(shifted_secondary_edge.size());
+//             std::vector<EdgeCluster> cluster_centers = cluster_Epipolar_Shifted_Edges(shifted_secondary_edge); // notice: shifted_secondary_edge will be changed inside the function but wouldn't be used later on.;
+//             // FormClusterCenters(cluster_centers, clusters);
 
-            local_clust_input_counts[thread_id].push_back(shifted_secondary_edge.size());
+//             local_clust_input_counts[thread_id].push_back(shifted_secondary_edge.size());
 
-#if MEASURE_TIMINGS
-            time_clust_edges_evaluated++;
-            auto end_cluster = std::chrono::high_resolution_clock::now();
-            time_cluster += std::chrono::duration<double, std::milli>(end_cluster - start_cluster).count();
-#endif
-            //> MARK: Clustering
-            ///////////////////////////////EPIPOLAR CLUSTER THRESHOLD RECALL//////////////////////////
-            if (!selected_ground_truth_edges.empty())
-            {
-                RecallUpdate(cluster_true_positive, cluster_false_negative, clust_edges_evaluated,
-                             per_edge_clust_precision, cluster_centers, ground_truth_edge,
-                             3.0);
-            }
-            ///////////////////////////////EXTRACT PATCHES THRESHOLD////////////////////////////////////////////
-#if MEASURE_TIMINGS
-            auto start_patch = std::chrono::high_resolution_clock::now();
-#endif
+// #if MEASURE_TIMINGS
+//             time_clust_edges_evaluated++;
+//             auto end_cluster = std::chrono::high_resolution_clock::now();
+//             time_cluster += std::chrono::duration<double, std::milli>(end_cluster - start_cluster).count();
+// #endif
+//             //> MARK: Clustering
+//             ///////////////////////////////EPIPOLAR CLUSTER THRESHOLD RECALL//////////////////////////
+//             if (!selected_ground_truth_edges.empty())
+//             {
+//                 RecallUpdate(cluster_true_positive, cluster_false_negative, clust_edges_evaluated,
+//                              per_edge_clust_precision, cluster_centers, ground_truth_edge,
+//                              3.0);
+//             }
+//             ///////////////////////////////EXTRACT PATCHES THRESHOLD////////////////////////////////////////////
+// #if MEASURE_TIMINGS
+//             auto start_patch = std::chrono::high_resolution_clock::now();
+// #endif
 
-            // clust_output_counts.push_back(cluster_centers.size());
-            local_clust_output_counts[thread_id].push_back(cluster_centers.size());
+//             // clust_output_counts.push_back(cluster_centers.size());
+//             local_clust_output_counts[thread_id].push_back(cluster_centers.size());
 
-            std::vector<Edge> cluster_coords;
+//             std::vector<Edge> cluster_coords;
 
-            for (const auto &cluster : cluster_centers)
-            {
-                // checked: std::cout << "Cluster center edge location: " << cluster.center_edge.location << std::endl;
-                cluster_coords.push_back(cluster.center_edge);
-            }
+//             for (const auto &cluster : cluster_centers)
+//             {
+//                 // checked: std::cout << "Cluster center edge location: " << cluster.center_edge.location << std::endl;
+//                 cluster_coords.push_back(cluster.center_edge);
+//             }
 
-            auto [secondary_orthogonal_one, secondary_orthogonal_two] = CalculateOrthogonalShifts(
-                cluster_coords,
-                ORTHOGONAL_SHIFT_MAG,
-                dataset);
+//             auto [secondary_orthogonal_one, secondary_orthogonal_two] = CalculateOrthogonalShifts(
+//                 cluster_coords,
+//                 ORTHOGONAL_SHIFT_MAG,
+//                 dataset);
 
-            std::vector<EdgeCluster> filtered_cluster_centers;
-            std::vector<cv::Mat> secondary_patch_set_one;
-            std::vector<cv::Mat> secondary_patch_set_two;
+//             std::vector<EdgeCluster> filtered_cluster_centers;
+//             std::vector<cv::Mat> secondary_patch_set_one;
+//             std::vector<cv::Mat> secondary_patch_set_two;
 
-            ExtractClusterPatches(
-                PATCH_SIZE,
-                secondary_image,
-                cluster_centers,
-                nullptr,
-                secondary_orthogonal_one,
-                secondary_orthogonal_two,
-                filtered_cluster_centers,
-                nullptr,
-                secondary_patch_set_one,
-                secondary_patch_set_two);
-            local_patch_input_counts[thread_id].push_back(cluster_centers.size());
+//             ExtractClusterPatches(
+//                 PATCH_SIZE,
+//                 secondary_image,
+//                 cluster_centers,
+//                 nullptr,
+//                 secondary_orthogonal_one,
+//                 secondary_orthogonal_two,
+//                 filtered_cluster_centers,
+//                 nullptr,
+//                 secondary_patch_set_one,
+//                 secondary_patch_set_two);
+//             local_patch_input_counts[thread_id].push_back(cluster_centers.size());
 
-#if MEASURE_TIMINGS
-            time_patch_edges_evaluated++;
-            auto end_patch = std::chrono::high_resolution_clock::now();
-            time_patch += std::chrono::duration<double, std::milli>(end_patch - start_patch).count();
-            //> MARK: NCC
-            ///////////////////////////////NCC THRESHOLD/////////////////////////////////////////////////////
-            auto start_ncc = std::chrono::high_resolution_clock::now();
-#endif
+// #if MEASURE_TIMINGS
+//             time_patch_edges_evaluated++;
+//             auto end_patch = std::chrono::high_resolution_clock::now();
+//             time_patch += std::chrono::duration<double, std::milli>(end_patch - start_patch).count();
+//             //> MARK: NCC
+//             ///////////////////////////////NCC THRESHOLD/////////////////////////////////////////////////////
+//             auto start_ncc = std::chrono::high_resolution_clock::now();
+// #endif
 
-            //    patch_output_counts.push_back(filtered_cluster_centers.size());
-            local_patch_output_counts[thread_id].push_back(filtered_cluster_centers.size());
+//             //    patch_output_counts.push_back(filtered_cluster_centers.size());
+//             local_patch_output_counts[thread_id].push_back(filtered_cluster_centers.size());
 
-            std::vector<EdgeMatch> passed_ncc_matches;
+//             std::vector<EdgeMatch> passed_ncc_matches;
 
-            FilterByNCC(
-                primary_patch_one,
-                primary_patch_two,
-                secondary_patch_set_one,
-                secondary_patch_set_two,
-                ground_truth_edge,
-                passed_ncc_matches,
-                filtered_cluster_centers,
-                !selected_ground_truth_edges.empty(),
-                ncc_true_positive,
-                ncc_false_negative,
-                per_edge_ncc_precision,
-                ncc_edges_evaluated,
-                3.0);
+//             FilterByNCC(
+//                 primary_patch_one,
+//                 primary_patch_two,
+//                 secondary_patch_set_one,
+//                 secondary_patch_set_two,
+//                 ground_truth_edge,
+//                 passed_ncc_matches,
+//                 filtered_cluster_centers,
+//                 !selected_ground_truth_edges.empty(),
+//                 ncc_true_positive,
+//                 ncc_false_negative,
+//                 per_edge_ncc_precision,
+//                 ncc_edges_evaluated,
+//                 3.0);
 
-            local_ncc_input_counts[thread_id].push_back(filtered_cluster_centers.size());
-            local_ncc_output_counts[thread_id].push_back(passed_ncc_matches.size());
+//             local_ncc_input_counts[thread_id].push_back(filtered_cluster_centers.size());
+//             local_ncc_output_counts[thread_id].push_back(passed_ncc_matches.size());
 
-#if MEASURE_TIMINGS
-            time_ncc_edges_evaluated++;
-            auto end_ncc = std::chrono::high_resolution_clock::now();
-            time_ncc += std::chrono::duration<double, std::milli>(end_ncc - start_ncc).count();
-            //> MARK: Lowe's Ratio Test
-            ///////////////////////////////LOWES RATIO TEST//////////////////////////////////////////////
-            auto start_lowe = std::chrono::high_resolution_clock::now();
-#endif
-            FilterByLowe(local_final_matches,
-                         local_lowe_input_counts,
-                         local_lowe_output_counts,
-                         local_GT_right_edges_after_lowe,
-                         local_final_lowe_matches,
-                         local_final_reverse_lowe_matches,
-                         thread_id,
-                         passed_ncc_matches,
-                         !selected_ground_truth_edges.empty(),
-                         primary_edge,
-                         ground_truth_edge,
-                         lowe_true_positive,
-                         lowe_false_negative,
-                         per_edge_lowe_precision,
-                         lowe_edges_evaluated,
-                         3.0);
-        } //> MARK: end of looping over left edges
-    }
+// #if MEASURE_TIMINGS
+//             time_ncc_edges_evaluated++;
+//             auto end_ncc = std::chrono::high_resolution_clock::now();
+//             time_ncc += std::chrono::duration<double, std::milli>(end_ncc - start_ncc).count();
+//             //> MARK: Lowe's Ratio Test
+//             ///////////////////////////////LOWES RATIO TEST//////////////////////////////////////////////
+//             auto start_lowe = std::chrono::high_resolution_clock::now();
+// #endif
+//             FilterByLowe(local_final_matches,
+//                          local_lowe_input_counts,
+//                          local_lowe_output_counts,
+//                          local_GT_right_edges_after_lowe,
+//                          local_final_lowe_matches,
+//                          local_final_reverse_lowe_matches,
+//                          thread_id,
+//                          passed_ncc_matches,
+//                          !selected_ground_truth_edges.empty(),
+//                          primary_edge,
+//                          ground_truth_edge,
+//                          lowe_true_positive,
+//                          lowe_false_negative,
+//                          per_edge_lowe_precision,
+//                          lowe_edges_evaluated,
+//                          3.0);
+//         } //> MARK: end of looping over left edges
+//     }
 
-#if MEASURE_TIMINGS
-    auto total_end = std::chrono::high_resolution_clock::now();
-    total_time = std::chrono::duration<double, std::milli>(total_end - total_start).count();
-#endif
-    cv::Point2d ground_truth_edge;
-    for (int i = 0; i < omp_get_max_threads(); i++)
-    {
-        for (const auto &[src, candidates] : local_final_lowe_matches[i])
-        {
-            final_lowe_matches[src].insert(final_lowe_matches[src].end(), candidates.begin(), candidates.end());
-        }
-        for (const auto &[src, candidates] : local_final_reverse_lowe_matches[i])
-        {
-            final_reverse_lowe_matches[src].insert(final_reverse_lowe_matches[src].end(), candidates.begin(), candidates.end());
-        }
-    }
-    for (const auto &[src, candidates] : final_lowe_matches)
-    {
-        if (candidates.size() == 1)
-        {
-            Edge tgt = candidates[0];
-            final_reverse_lowe_matches.erase(tgt); // Remove reverse match if it exists, so that others will know this edge is already matched.
-            final_lowe_matches.erase(src);         // Remove the source edge from final matches, as it has been matched.
-        }
-    }
+// #if MEASURE_TIMINGS
+//     auto total_end = std::chrono::high_resolution_clock::now();
+//     total_time = std::chrono::duration<double, std::milli>(total_end - total_start).count();
+// #endif
+//     cv::Point2d ground_truth_edge;
+//     for (int i = 0; i < omp_get_max_threads(); i++)
+//     {
+//         for (const auto &[src, candidates] : local_final_lowe_matches[i])
+//         {
+//             final_lowe_matches[src].insert(final_lowe_matches[src].end(), candidates.begin(), candidates.end());
+//         }
+//         for (const auto &[src, candidates] : local_final_reverse_lowe_matches[i])
+//         {
+//             final_reverse_lowe_matches[src].insert(final_reverse_lowe_matches[src].end(), candidates.begin(), candidates.end());
+//         }
+//     }
+//     for (const auto &[src, candidates] : final_lowe_matches)
+//     {
+//         if (candidates.size() == 1)
+//         {
+//             Edge tgt = candidates[0];
+//             final_reverse_lowe_matches.erase(tgt); // Remove reverse match if it exists, so that others will know this edge is already matched.
+//             final_lowe_matches.erase(src);         // Remove the source edge from final matches, as it has been matched.
+//         }
+//     }
 
-    for (const auto &[src, candidates] : final_reverse_lowe_matches)
-    {
-        if (candidates.size() >= 2)
-        {
-            const Edge &candidates_1 = candidates[0];
-            const Edge &candidates_2 = candidates[1];
-            if (final_reverse_lowe_matches.find(candidates_1) != final_reverse_lowe_matches.end())
-            {
-                if (final_reverse_lowe_matches.find(candidates_2) == final_reverse_lowe_matches.end())
-                {
-                    // candidates_2 has been ruled out by other matches
-                    if (1)
-                    {
-                        // local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
-                        if (cv::norm(candidates_1.location - ground_truth_edge) <= 3.0)
-                        {
-                            // lowe_precision_numerator++;
-                            lowe_true_positive++;
-                        }
-                        else
-                        {
-                            lowe_false_negative++;
-                        }
-                    }
-                    EdgeMatch match;
-                    match.edge = candidates_1;
-                    final_matches.emplace_back(src, match);
-                    lowe_output_counts.push_back(1);
-                }
-                else
-                {
-                    lowe_false_negative++;
-                    lowe_output_counts.push_back(0);
-                }
-            }
-            else
-            {
-                if (final_reverse_lowe_matches.find(candidates_2) != final_reverse_lowe_matches.end())
-                {
-                    // candidates_1 has been ruled out by other matches
-                    if (!selected_ground_truth_edges.empty())
-                    {
-                        // local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
-                        if (cv::norm(candidates_2.location - ground_truth_edge) <= 1)
-                        {
-                            // lowe_precision_numerator++;
-                            lowe_true_positive++;
-                        }
-                        else
-                        {
-                            lowe_false_negative++;
-                        }
-                    }
-                    EdgeMatch match;
-                    match.edge = candidates_2;
-                    final_matches.emplace_back(src, match);
-                    lowe_output_counts.push_back(1);
-                }
-                else
-                {
-                    // still cannot decide
-                    lowe_false_negative++;
-                    lowe_output_counts.push_back(0);
-                }
-            }
-        }
-    }
+//     for (const auto &[src, candidates] : final_reverse_lowe_matches)
+//     {
+//         if (candidates.size() >= 2)
+//         {
+//             const Edge &candidates_1 = candidates[0];
+//             const Edge &candidates_2 = candidates[1];
+//             if (final_reverse_lowe_matches.find(candidates_1) != final_reverse_lowe_matches.end())
+//             {
+//                 if (final_reverse_lowe_matches.find(candidates_2) == final_reverse_lowe_matches.end())
+//                 {
+//                     // candidates_2 has been ruled out by other matches
+//                     if (1)
+//                     {
+//                         // local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
+//                         if (cv::norm(candidates_1.location - ground_truth_edge) <= 3.0)
+//                         {
+//                             // lowe_precision_numerator++;
+//                             lowe_true_positive++;
+//                         }
+//                         else
+//                         {
+//                             lowe_false_negative++;
+//                         }
+//                     }
+//                     EdgeMatch match;
+//                     match.edge = candidates_1;
+//                     final_matches.emplace_back(src, match);
+//                     lowe_output_counts.push_back(1);
+//                 }
+//                 else
+//                 {
+//                     lowe_false_negative++;
+//                     lowe_output_counts.push_back(0);
+//                 }
+//             }
+//             else
+//             {
+//                 if (final_reverse_lowe_matches.find(candidates_2) != final_reverse_lowe_matches.end())
+//                 {
+//                     // candidates_1 has been ruled out by other matches
+//                     if (!selected_ground_truth_edges.empty())
+//                     {
+//                         // local_GT_right_edges_after_lowe[thread_id].push_back(ground_truth_edge);
+//                         if (cv::norm(candidates_2.location - ground_truth_edge) <= 1)
+//                         {
+//                             // lowe_precision_numerator++;
+//                             lowe_true_positive++;
+//                         }
+//                         else
+//                         {
+//                             lowe_false_negative++;
+//                         }
+//                     }
+//                     EdgeMatch match;
+//                     match.edge = candidates_2;
+//                     final_matches.emplace_back(src, match);
+//                     lowe_output_counts.push_back(1);
+//                 }
+//                 else
+//                 {
+//                     // still cannot decide
+//                     lowe_false_negative++;
+//                     lowe_output_counts.push_back(0);
+//                 }
+//             }
+//         }
+//     }
 
-    double epi_distance_recall = 0.0;
-    if ((epi_true_positive + epi_false_negative) > 0)
-    {
-        epi_distance_recall = static_cast<double>(epi_true_positive) / (epi_true_positive + epi_false_negative);
-    }
+//     double epi_distance_recall = 0.0;
+//     if ((epi_true_positive + epi_false_negative) > 0)
+//     {
+//         epi_distance_recall = static_cast<double>(epi_true_positive) / (epi_true_positive + epi_false_negative);
+//     }
 
-    double max_disparity_recall = 0.0;
-    if ((disp_true_positive + disp_false_negative) > 0)
-    {
-        max_disparity_recall = static_cast<double>(disp_true_positive) / (disp_true_positive + disp_false_negative);
-    }
+//     double max_disparity_recall = 0.0;
+//     if ((disp_true_positive + disp_false_negative) > 0)
+//     {
+//         max_disparity_recall = static_cast<double>(disp_true_positive) / (disp_true_positive + disp_false_negative);
+//     }
 
-    double epi_shift_recall = 0.0;
-    if ((shift_true_positive + shift_false_negative) > 0)
-    {
-        epi_shift_recall = static_cast<double>(shift_true_positive) / (shift_true_positive + shift_false_negative);
-    }
+//     double epi_shift_recall = 0.0;
+//     if ((shift_true_positive + shift_false_negative) > 0)
+//     {
+//         epi_shift_recall = static_cast<double>(shift_true_positive) / (shift_true_positive + shift_false_negative);
+//     }
 
-    double epi_cluster_recall = 0.0;
-    if ((cluster_true_positive + cluster_false_negative) > 0)
-    {
-        epi_cluster_recall = static_cast<double>(cluster_true_positive) / (cluster_true_positive + cluster_false_negative);
-    }
+//     double epi_cluster_recall = 0.0;
+//     if ((cluster_true_positive + cluster_false_negative) > 0)
+//     {
+//         epi_cluster_recall = static_cast<double>(cluster_true_positive) / (cluster_true_positive + cluster_false_negative);
+//     }
 
-    double ncc_recall = 0.0;
-    if ((ncc_true_positive + ncc_false_negative) > 0)
-    {
-        ncc_recall = static_cast<double>(ncc_true_positive) / (ncc_true_positive + ncc_false_negative);
-    }
+//     double ncc_recall = 0.0;
+//     if ((ncc_true_positive + ncc_false_negative) > 0)
+//     {
+//         ncc_recall = static_cast<double>(ncc_true_positive) / (ncc_true_positive + ncc_false_negative);
+//     }
 
-    double lowe_recall = 0.0;
-    if ((lowe_true_positive + lowe_false_negative) > 0)
-    {
-        lowe_recall = static_cast<double>(lowe_true_positive) / (lowe_true_positive + lowe_false_negative);
-    }
+//     double lowe_recall = 0.0;
+//     if ((lowe_true_positive + lowe_false_negative) > 0)
+//     {
+//         lowe_recall = static_cast<double>(lowe_true_positive) / (lowe_true_positive + lowe_false_negative);
+//     }
 
-    std::cout << "Epipolar Distance Recall: " << std::fixed << std::setprecision(2) << epi_distance_recall * 100 << "%" << std::endl;
-    std::cout << "Max Disparity Threshold Recall: " << std::fixed << std::setprecision(2) << max_disparity_recall * 100 << "%" << std::endl;
-    std::cout << "Epipolar Shift Threshold Recall: " << std::fixed << std::setprecision(2) << epi_shift_recall * 100 << "%" << std::endl;
-    std::cout << "Epipolar Cluster Threshold Recall: " << std::fixed << std::setprecision(2) << epi_cluster_recall * 100 << "%" << std::endl;
-    std::cout << "NCC Threshold Recall: " << std::fixed << std::setprecision(2) << ncc_recall * 100 << "%" << std::endl;
-    std::cout << "LRT Threshold Recall: " << std::fixed << std::setprecision(2) << lowe_recall * 100 << "%" << std::endl;
+//     std::cout << "Epipolar Distance Recall: " << std::fixed << std::setprecision(2) << epi_distance_recall * 100 << "%" << std::endl;
+//     std::cout << "Max Disparity Threshold Recall: " << std::fixed << std::setprecision(2) << max_disparity_recall * 100 << "%" << std::endl;
+//     std::cout << "Epipolar Shift Threshold Recall: " << std::fixed << std::setprecision(2) << epi_shift_recall * 100 << "%" << std::endl;
+//     std::cout << "Epipolar Cluster Threshold Recall: " << std::fixed << std::setprecision(2) << epi_cluster_recall * 100 << "%" << std::endl;
+//     std::cout << "NCC Threshold Recall: " << std::fixed << std::setprecision(2) << ncc_recall * 100 << "%" << std::endl;
+//     std::cout << "LRT Threshold Recall: " << std::fixed << std::setprecision(2) << lowe_recall * 100 << "%" << std::endl;
 
-    double per_image_epi_precision = (epi_edges_evaluated > 0) ? (per_edge_epi_precision / epi_edges_evaluated) : (0.0);
-    double per_image_disp_precision = (disp_edges_evaluated > 0) ? (per_edge_disp_precision / disp_edges_evaluated) : (0.0);
-    double per_image_shift_precision = (shift_edges_evaluated > 0) ? (per_edge_shift_precision / shift_edges_evaluated) : (0.0);
-    double per_image_clust_precision = (clust_edges_evaluated > 0) ? (per_edge_clust_precision / clust_edges_evaluated) : (0.0);
-    double per_image_ncc_precision = (ncc_edges_evaluated > 0) ? (per_edge_ncc_precision / ncc_edges_evaluated) : (0.0);
-    double per_image_lowe_precision = (lowe_edges_evaluated > 0) ? (per_edge_lowe_precision / lowe_edges_evaluated) : (0.0);
+//     double per_image_epi_precision = (epi_edges_evaluated > 0) ? (per_edge_epi_precision / epi_edges_evaluated) : (0.0);
+//     double per_image_disp_precision = (disp_edges_evaluated > 0) ? (per_edge_disp_precision / disp_edges_evaluated) : (0.0);
+//     double per_image_shift_precision = (shift_edges_evaluated > 0) ? (per_edge_shift_precision / shift_edges_evaluated) : (0.0);
+//     double per_image_clust_precision = (clust_edges_evaluated > 0) ? (per_edge_clust_precision / clust_edges_evaluated) : (0.0);
+//     double per_image_ncc_precision = (ncc_edges_evaluated > 0) ? (per_edge_ncc_precision / ncc_edges_evaluated) : (0.0);
+//     double per_image_lowe_precision = (lowe_edges_evaluated > 0) ? (per_edge_lowe_precision / lowe_edges_evaluated) : (0.0);
 
-    std::cout << "Epipolar Distance Precision: "
-        << std::fixed << std::setprecision(2)
-        << per_image_epi_precision * 100 << "%" << std::endl;
-    std::cout << "Maximum Disparity Precision: "
-        << std::fixed << std::setprecision(2)
-        << per_image_disp_precision * 100 << "%" << std::endl;
-    std::cout << "Epipolar Shift Precision: "
-        << std::fixed << std::setprecision(2)
-        << per_image_shift_precision * 100 << "%" << std::endl;
-    std::cout << "Epipolar Cluster Precision: "
-        << std::fixed << std::setprecision(2)
-        << per_image_clust_precision * 100 << "%" << std::endl;
-    std::cout << "NCC Precision: "
-        << std::fixed << std::setprecision(2)
-        << per_image_ncc_precision * 100 << "%" << std::endl;
-    std::cout << "LRT Precision: "
-        << std::fixed << std::setprecision(2)
-        << per_image_lowe_precision * 100 << "%" << std::endl;
+//     std::cout << "Epipolar Distance Precision: "
+//         << std::fixed << std::setprecision(2)
+//         << per_image_epi_precision * 100 << "%" << std::endl;
+//     std::cout << "Maximum Disparity Precision: "
+//         << std::fixed << std::setprecision(2)
+//         << per_image_disp_precision * 100 << "%" << std::endl;
+//     std::cout << "Epipolar Shift Precision: "
+//         << std::fixed << std::setprecision(2)
+//         << per_image_shift_precision * 100 << "%" << std::endl;
+//     std::cout << "Epipolar Cluster Precision: "
+//         << std::fixed << std::setprecision(2)
+//         << per_image_clust_precision * 100 << "%" << std::endl;
+//     std::cout << "NCC Precision: "
+//         << std::fixed << std::setprecision(2)
+//         << per_image_ncc_precision * 100 << "%" << std::endl;
+//     std::cout << "LRT Precision: "
+//         << std::fixed << std::setprecision(2)
+//         << per_image_lowe_precision * 100 << "%" << std::endl;
 
-    double per_image_epi_time = (time_epi_edges_evaluated > 0) ? (time_epi / time_epi_edges_evaluated) : (0.0);
-    double per_image_disp_time = (time_disp_edges_evaluated > 0) ? (time_disp / time_disp_edges_evaluated) : 0.0;
-    double per_image_shift_time = (time_shift_edges_evaluated > 0) ? (time_shift / time_shift_edges_evaluated) : 0.0;
-    double per_image_clust_time = (time_clust_edges_evaluated > 0) ? (time_cluster / time_clust_edges_evaluated) : 0.0;
-    double per_image_patch_time = (time_patch_edges_evaluated > 0) ? (time_patch / time_patch_edges_evaluated) : 0.0;
-    double per_image_ncc_time = (time_ncc_edges_evaluated > 0) ? (time_ncc / time_ncc_edges_evaluated) : 0.0;
-    double per_image_lowe_time = (time_lowe_edges_evaluated > 0) ? (time_lowe / time_lowe_edges_evaluated) : 0.0;
-    double per_image_total_time = (selected_primary_edges.size() > 0) ? (total_time / selected_primary_edges.size()) : 0.0;
+//     double per_image_epi_time = (time_epi_edges_evaluated > 0) ? (time_epi / time_epi_edges_evaluated) : (0.0);
+//     double per_image_disp_time = (time_disp_edges_evaluated > 0) ? (time_disp / time_disp_edges_evaluated) : 0.0;
+//     double per_image_shift_time = (time_shift_edges_evaluated > 0) ? (time_shift / time_shift_edges_evaluated) : 0.0;
+//     double per_image_clust_time = (time_clust_edges_evaluated > 0) ? (time_cluster / time_clust_edges_evaluated) : 0.0;
+//     double per_image_patch_time = (time_patch_edges_evaluated > 0) ? (time_patch / time_patch_edges_evaluated) : 0.0;
+//     double per_image_ncc_time = (time_ncc_edges_evaluated > 0) ? (time_ncc / time_ncc_edges_evaluated) : 0.0;
+//     double per_image_lowe_time = (time_lowe_edges_evaluated > 0) ? (time_lowe / time_lowe_edges_evaluated) : 0.0;
+//     double per_image_total_time = (selected_primary_edges.size() > 0) ? (total_time / selected_primary_edges.size()) : 0.0;
 
-    //> CH: stack all local_final_matches to a global final_matches
+//     //> CH: stack all local_final_matches to a global final_matches
 
-    for (const auto &local_matches : local_final_matches)
-    {
-        final_matches.insert(final_matches.end(), local_matches.begin(), local_matches.end());
-    }
-    std::cout << "Final matches size: " << final_matches.size() << std::endl;
-    for (const auto &local_counts : local_epi_input_counts)
-        epi_input_counts.insert(epi_input_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_epi_output_counts)
-        epi_output_counts.insert(epi_output_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_disp_input_counts)
-        disp_input_counts.insert(disp_input_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_disp_output_counts)
-        disp_output_counts.insert(disp_output_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_shift_input_counts)
-        shift_input_counts.insert(shift_input_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_shift_output_counts)
-        shift_output_counts.insert(shift_output_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_clust_input_counts)
-        clust_input_counts.insert(clust_input_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_clust_output_counts)
-        clust_output_counts.insert(clust_output_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_patch_input_counts)
-        patch_input_counts.insert(patch_input_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_patch_output_counts)
-        patch_output_counts.insert(patch_output_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_ncc_input_counts)
-        ncc_input_counts.insert(ncc_input_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_ncc_output_counts)
-        ncc_output_counts.insert(ncc_output_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_lowe_input_counts)
-        lowe_input_counts.insert(lowe_input_counts.end(), local_counts.begin(), local_counts.end());
-    for (const auto &local_counts : local_lowe_output_counts)
-        lowe_output_counts.insert(lowe_output_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_matches : local_final_matches)
+//     {
+//         final_matches.insert(final_matches.end(), local_matches.begin(), local_matches.end());
+//     }
+//     std::cout << "Final matches size: " << final_matches.size() << std::endl;
+//     for (const auto &local_counts : local_epi_input_counts)
+//         epi_input_counts.insert(epi_input_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_epi_output_counts)
+//         epi_output_counts.insert(epi_output_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_disp_input_counts)
+//         disp_input_counts.insert(disp_input_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_disp_output_counts)
+//         disp_output_counts.insert(disp_output_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_shift_input_counts)
+//         shift_input_counts.insert(shift_input_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_shift_output_counts)
+//         shift_output_counts.insert(shift_output_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_clust_input_counts)
+//         clust_input_counts.insert(clust_input_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_clust_output_counts)
+//         clust_output_counts.insert(clust_output_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_patch_input_counts)
+//         patch_input_counts.insert(patch_input_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_patch_output_counts)
+//         patch_output_counts.insert(patch_output_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_ncc_input_counts)
+//         ncc_input_counts.insert(ncc_input_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_ncc_output_counts)
+//         ncc_output_counts.insert(ncc_output_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_lowe_input_counts)
+//         lowe_input_counts.insert(lowe_input_counts.end(), local_counts.begin(), local_counts.end());
+//     for (const auto &local_counts : local_lowe_output_counts)
+//         lowe_output_counts.insert(lowe_output_counts.end(), local_counts.begin(), local_counts.end());
 
-    for (const auto &local_GT_right_edges_stack : local_GT_right_edges_after_lowe)
-    {
-        dataset.ground_truth_right_edges_after_lowe.insert(dataset.ground_truth_right_edges_after_lowe.end(), local_GT_right_edges_stack.begin(), local_GT_right_edges_stack.end());
-    }
+//     for (const auto &local_GT_right_edges_stack : local_GT_right_edges_after_lowe)
+//     {
+//         dataset.ground_truth_right_edges_after_lowe.insert(dataset.ground_truth_right_edges_after_lowe.end(), local_GT_right_edges_stack.begin(), local_GT_right_edges_stack.end());
+//     }
 
-    return EdgeMatchResult{
-        RecallMetrics{
-            epi_distance_recall,
-            max_disparity_recall,
-            epi_shift_recall,
-            epi_cluster_recall,
-            ncc_recall,
-            lowe_recall,
-            epi_input_counts,
-            epi_output_counts,
-            disp_input_counts,
-            disp_output_counts,
-            shift_input_counts,
-            shift_output_counts,
-            clust_input_counts,
-            clust_output_counts,
-            patch_input_counts,
-            patch_output_counts,
-            ncc_input_counts,
-            ncc_output_counts,
-            lowe_input_counts,
-            lowe_output_counts,
-            per_image_epi_precision,
-            per_image_disp_precision,
-            per_image_shift_precision,
-            per_image_clust_precision,
-            per_image_ncc_precision,
-            per_image_lowe_precision,
-            lowe_true_positive,
-            lowe_false_negative,
-            per_image_epi_time,
-            per_image_disp_time,
-            per_image_shift_time,
-            per_image_clust_time,
-            per_image_patch_time,
-            per_image_ncc_time,
-            per_image_lowe_time,
-            per_image_total_time},
-        final_matches};
-}
+//     return EdgeMatchResult{
+//         RecallMetrics{
+//             epi_distance_recall,
+//             max_disparity_recall,
+//             epi_shift_recall,
+//             epi_cluster_recall,
+//             ncc_recall,
+//             lowe_recall,
+//             epi_input_counts,
+//             epi_output_counts,
+//             disp_input_counts,
+//             disp_output_counts,
+//             shift_input_counts,
+//             shift_output_counts,
+//             clust_input_counts,
+//             clust_output_counts,
+//             patch_input_counts,
+//             patch_output_counts,
+//             ncc_input_counts,
+//             ncc_output_counts,
+//             lowe_input_counts,
+//             lowe_output_counts,
+//             per_image_epi_precision,
+//             per_image_disp_precision,
+//             per_image_shift_precision,
+//             per_image_clust_precision,
+//             per_image_ncc_precision,
+//             per_image_lowe_precision,
+//             lowe_true_positive,
+//             lowe_false_negative,
+//             per_image_epi_time,
+//             per_image_disp_time,
+//             per_image_shift_time,
+//             per_image_clust_time,
+//             per_image_patch_time,
+//             per_image_ncc_time,
+//             per_image_lowe_time,
+//             per_image_total_time},
+//         final_matches};
+// }
 
 /*
     Extract patches from the image based on shifted edge points and orientations.
@@ -1674,25 +1730,25 @@ void RecallUpdate(int &true_positive,
     }
 }
 
-void EpipolarShiftFilter(
-    const std::vector<Edge> &filtered_edges,
-    std::vector<Edge> &shifted_edges,
-    const Eigen::Vector3d &epipolar_line,
-    Utility util)
-{
-    // std::vector<double> epipolar_coefficients = {epipolar_line(0), epipolar_line(1), epipolar_line(2)};
+// void EpipolarShiftFilter(
+//     const std::vector<Edge> &filtered_edges,
+//     std::vector<Edge> &shifted_edges,
+//     const Eigen::Vector3d &epipolar_line,
+//     Utility util)
+// {
+//     // std::vector<double> epipolar_coefficients = {epipolar_line(0), epipolar_line(1), epipolar_line(2)};
 
-    for (size_t j = 0; j < filtered_edges.size(); j++)
-    {
-        bool b_secondary_passes_tangency = false;
+//     for (size_t j = 0; j < filtered_edges.size(); j++)
+//     {
+//         bool b_secondary_passes_tangency = false;
 
-        Edge shifted_edge = shift_Edge_to_Epipolar_Line(filtered_edges[j], epipolar_line, util);
-        if (b_secondary_passes_tangency)
-        {
-            shifted_edges.push_back(shifted_edge);
-        }
-    }
-}
+//         Edge shifted_edge = shift_Edge_to_Epipolar_Line(filtered_edges[j], epipolar_line, util);
+//         if (b_secondary_passes_tangency)
+//         {
+//             shifted_edges.push_back(shifted_edge);
+//         }
+//     }
+// }
 
 void FormClusterCenters(
     std::vector<EdgeCluster> &cluster_centers,

@@ -34,7 +34,7 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
 //> The following functions are newly added
 void Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat left_disparity_map, StereoFrame& stereo_frame, Stereo_Edge_Pairs& stereo_frame_edge_pairs);
 void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoFrame& stereo_frame, Stereo_Edge_Pairs& stereo_frame_edge_pairs);
-std::vector<int> get_right_edge_indices_close_to_GT_location(StereoFrame& stereo_frame, const cv::Point2d GT_location, const std::vector<int> right_candidate_edge_indices, const double dist_tol);
+std::vector<int> get_right_edge_indices_close_to_GT_location(StereoFrame& stereo_frame, const cv::Point2d GT_location, double GT_orientation, const std::vector<int> right_candidate_edge_indices, const double dist_tol, const double orient_tol);
 void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image);
 
 std::vector<int> extract_Epipolar_Edge_Indices(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, const double dist_tol);

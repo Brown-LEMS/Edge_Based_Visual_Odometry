@@ -105,12 +105,13 @@ std::tuple<double, double, double> EdgeClusterer::computeGaussianAverage( int la
 
 void EdgeClusterer::performClustering( ) 
 {
-    //> Track average orientations for each cluster in degrees
-    for (int i = 0; i < Num_Of_Epipolar_Corrected_H2_Edges; ++i) {
-        double normalized_orient = normalizeOrientation( Epip_Correct_Edges[i].orientation );
-        Epip_Correct_Edges[i].orientation = normalized_orient;
-        cluster_avg_orientations[i] = normalized_orient;
-    }
+    std::vector<Edge> shifted_edges = Epip_Correct_Edges;
+    // //> Track average orientations for each cluster in degrees
+    // for (int i = 0; i < Num_Of_Epipolar_Corrected_H2_Edges; ++i) {
+    //     double normalized_orient = normalizeOrientation( Epip_Correct_Edges[i].orientation );
+    //     Epip_Correct_Edges[i].orientation = normalized_orient;
+    //     cluster_avg_orientations[i] = normalized_orient;
+    // }
 
     //> Merge clusters starting from closest pairs
     bool merged = true;
@@ -129,8 +130,10 @@ void EdgeClusterer::performClustering( )
                     double dist = cv::norm( Epip_Correct_Edges[i].location - Epip_Correct_Edges[j].location );
 
                     //> orient_i and orient_j are both in degrees
-                    double orient_i = cluster_avg_orientations[cluster_labels[i]];
-                    double orient_j = cluster_avg_orientations[cluster_labels[j]];
+                    // double orient_i = cluster_avg_orientations[cluster_labels[i]];
+                    // double orient_j = cluster_avg_orientations[cluster_labels[j]];
+                    double orient_i = Epip_Correct_Edges[i].orientation;
+                    double orient_j = Epip_Correct_Edges[j].orientation;
                     if (dist < min_dist && dist < CLUSTER_DIST_THRESH && std::abs(orient_i - orient_j) < deg_to_rad<double>(CLUSTER_ORIENT_THRESH)) {
                         min_dist = dist;
                         nearest = j;
@@ -149,10 +152,10 @@ void EdgeClusterer::performClustering( )
 
                     double merged_orientation = std::get<2>(result);
                     // Update the average orientation of the merged cluster
-                    //cluster_avg_orientations[new_label] = merged_orientation;
+                    cluster_avg_orientations[new_label] = merged_orientation;
 
-                    double normalized_merged_orient = normalizeOrientation(merged_orientation);
-                    cluster_avg_orientations[new_label] = normalized_merged_orient;
+                    // double normalized_merged_orient = normalizeOrientation(merged_orientation);
+                    // cluster_avg_orientations[new_label] = normalized_merged_orient;
 
                     // Update all points in the smaller cluster
                     for (int k = 0; k < Num_Of_Epipolar_Corrected_H2_Edges; ++k) {
@@ -223,5 +226,33 @@ void EdgeClusterer::performClustering( )
             Epip_Correct_Edges[idx] = gaussian_weighted_avg;
             // Epip_Correct_Edges.row(idx) = gaussian_weighted_avg;
         }
+    }
+
+    std::vector<Edge> clustered_edges = Epip_Correct_Edges;
+
+    //> Renumbering the cluster labels into 0, 1, 2, etc for each epipolar shifted edge
+    std::vector<int> renumbered_cluster_labels = cluster_labels;
+    std::vector<int> unique_cluster_labels = find_Unique_Sorted_Numbers( cluster_labels );
+    for (int i = 0; i < unique_cluster_labels.size(); i++) {
+        for (int j = 0; j < cluster_labels.size(); j++) {
+            if (cluster_labels[j] == unique_cluster_labels[i]) {
+                renumbered_cluster_labels[j] = i;
+            }
+        }
+    }
+
+    int cluster_count = 0;
+    returned_clusters.resize(Num_Of_Clusters);
+    std::vector<bool> cluster_centers_filled(Num_Of_Clusters, false);
+    for (int i = 0; i < renumbered_cluster_labels.size(); i++)
+    {
+        if (!cluster_centers_filled[renumbered_cluster_labels[i]] && renumbered_cluster_labels[i] == cluster_count)
+        {
+            returned_clusters[cluster_count].center_edge = clustered_edges[i];
+            cluster_centers_filled[renumbered_cluster_labels[i]] = true;
+            cluster_count++;
+        }
+        returned_clusters[renumbered_cluster_labels[i]].contributing_edges.push_back(shifted_edges[i]);
+        // if (cluster_count == Num_Of_Clusters) break;
     }
 }

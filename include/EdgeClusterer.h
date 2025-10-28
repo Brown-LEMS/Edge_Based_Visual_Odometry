@@ -13,6 +13,7 @@
 #include "definitions.h"
 #include "toed/cpu_toed.hpp"
 #include "utility.h"
+#include "Dataset.h"
 
 //> Custom hash function for std::pair<int, int>
 struct PairHash {
@@ -39,10 +40,10 @@ public:
     std::vector<std::vector<int> > clusters;
     std::unordered_map<int, double> cluster_avg_orientations;
     unsigned Num_Of_Clusters;
-    
-    //> For each edge index, store all other edge indices in the same cluster
-    // std::unordered_map<std::pair<int, int>, std::vector<int>, PairHash> H2_Clusters; //<H1 edge index, H2 edge index>, cluster of H2 edges
 
+    //> the result of the clustering
+    std::vector<EdgeCluster> returned_clusters;
+    
 private:
     int getClusterSize(int label);
     double normalizeOrientation(double orientation);
