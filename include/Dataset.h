@@ -160,10 +160,15 @@ struct Stereo_Edge_Pairs
     std::vector<cv::Mat> left_edge_descriptors;                     //> SIFT descriptors of left edges
     std::vector<int> grid_indices;                                  //> grid indices of left edges
     std::vector<Eigen::Vector3d> epip_line_coeffs_of_left_edges;    //> epipolar line coefficients of left edges
+    std::vector<std::pair<cv::Mat, cv::Mat>> left_edge_patches;     //> patches on the two sides of the left edges
+    std::vector<bool> b_left_edge_patches_valid;                     //> whether the left edge patches are valid
     std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
 
     // std::vector<std::vector<int>> matching_right_edges_indices;                  //> indices into stereo_frame->right_edges that are matched to the left edges
     std::vector<std::vector<EdgeCluster>> matching_edge_clusters;
+    std::vector<std::vector<std::pair<cv::Mat, cv::Mat>>> matching_edge_patches;
+
+    std::vector<std::vector<EdgeCluster>> old_matching_edge_clusters;
     
     // std::vector<cv::Point2d> GT_locations_from_right_edges;
 

@@ -123,7 +123,7 @@ void EBVO::PerformEdgeBasedVO()
 
             last_keyframe_stereo_edge_pairs.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
 
-            // write_Stereo_Edge_Pairs_to_file(dataset, last_keyframe_stereo_edge_pairs, frame_idx);
+            write_Stereo_Edge_Pairs_to_file(dataset, last_keyframe_stereo_edge_pairs, frame_idx);
 
             //> construct stereo edge correspondences
             // StereoMatchResult match_result = get_Stereo_Edge_Pairs(

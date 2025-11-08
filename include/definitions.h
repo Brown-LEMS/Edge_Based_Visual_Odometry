@@ -21,6 +21,7 @@
 #define EDGE_CLUSTER_THRESH (0.3) //> in pixels
 #define ORTHOGONAL_SHIFT_MAG (5)  //> in pixels
 #define PATCH_SIZE (7)            //> in pixels
+#define NCC_THRESH (0.5)
 #define NCC_THRESH_STRONG_BOTH_SIDES (0.5)
 #define NCC_THRESH_WEAK_BOTH_SIDES (0.25)
 #define NCC_THRESH_STRONG_ONE_SIDE (0.65)
@@ -85,6 +86,7 @@
 #define LOG_ERROR(err_msg) printf("\033[1;31m[ERROR] %s\033[0m\n", std::string(err_msg).c_str());
 #define LOG_TEST(test_msg) printf("\033[1;30m[TEST] %s\033[0m\n", std::string(test_msg).c_str());
 #define LOG_FILE_ERROR(err_msg) printf("\033[1;31m[ERROR] File %s not found!\033[0m\n", std::string(err_msg).c_str());
+#define LOG_TRACE(msg) std::cout << "\033[1;30m[TRACE] " << __func__ << ":" << __LINE__ << " " << msg << "\033[0m" << std::endl;
 #define LOG_PRINT_HELP_MESSAGE printf("Usage: ./main_VO [flag] [argument]\n\n"                 \
                                       "options:\n"                                             \
                                       "  -h, --help         show this help message and exit\n" \

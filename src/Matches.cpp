@@ -22,7 +22,7 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
                                 cv::Mat &patch_coord_x, cv::Mat &patch_coord_y,
                                 cv::Mat &patch_val, const cv::Mat img)
 {
-    int half_patch_size = floor(PATCH_SIZE / 2);
+    const int half_patch_size = floor(PATCH_SIZE / 2);
     for (int i = -half_patch_size; i <= half_patch_size; i++)
     {
         for (int j = -half_patch_size; j <= half_patch_size; j++)
@@ -33,14 +33,30 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
             patch_coord_y.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
 
             //> get the image intensity of the rotated coordinate
+            // double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
             double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
             patch_val.at<double>(i + half_patch_size, j + half_patch_size) = interp_val;
         }
     }
 }
 
-double get_similarity(const cv::Mat patch_one, const cv::Mat patch_two)
+double get_patch_similarity(const cv::Mat patch_one, const cv::Mat patch_two)
 {
+    // //> Perform zero-mean normalised cross-correlation (ZNCC)
+    // cv::Scalar mean_one, stddev_one;
+    // cv::Scalar mean_two, stddev_two;
+    // cv::meanStdDev(patch_one, mean_one, stddev_one);
+    // cv::meanStdDev(patch_two, mean_two, stddev_two);
+
+    // const double epsilon = 1e-10;
+    // if (stddev_one[0] < epsilon || stddev_two[0] < epsilon)
+    // {
+    //     return -1.0;
+    // }
+
+    // cv::Mat norm_one = (patch_one - mean_one[0]) / stddev_one[0];
+    // cv::Mat norm_two = (patch_two - mean_two[0]) / stddev_two[0];
+    // return norm_one.dot(norm_two);
     double mean_one = (cv::mean(patch_one))[0];
     double mean_two = (cv::mean(patch_two))[0];
     double sum_of_squared_one = (cv::sum((patch_one - mean_one).mul(patch_one - mean_one))).val[0];
@@ -56,6 +72,46 @@ double get_similarity(const cv::Mat patch_one, const cv::Mat patch_two)
     cv::Mat norm_one = (patch_one - mean_one) / denom_one;
     cv::Mat norm_two = (patch_two - mean_two) / denom_two;
     return norm_one.dot(norm_two);
+}
+
+std::pair<cv::Mat, cv::Mat> get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug = false)
+{
+    Utility util{};
+
+    std::pair<cv::Point2d, cv::Point2d> shifted_points = get_Orthogonal_Shifted_Points(edge);
+    cv::Mat patch_val_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_val_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_x_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_y_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    get_patch_on_one_edge_side(shifted_points.first, edge.orientation, patch_coord_x_plus, patch_coord_y_plus, patch_val_plus, img);
+    get_patch_on_one_edge_side(shifted_points.second, edge.orientation, patch_coord_x_minus, patch_coord_y_minus, patch_val_minus, img);
+
+
+    if (b_debug)
+    {
+        std::cout << "Patch (+) coordinates: " << std::endl;
+        std::cout << patch_coord_x_plus << std::endl;
+        std::cout << patch_coord_y_plus << std::endl;
+        std::cout << "Patch (-) coordinates: " << std::endl;
+        std::cout << patch_coord_x_minus << std::endl;
+        std::cout << patch_coord_y_minus << std::endl;
+        std::cout << "Patch (+) values: " << std::endl;
+        std::cout << patch_val_plus << std::endl;
+        std::cout << "Patch (-) values: " << std::endl;
+        std::cout << patch_val_minus << std::endl;
+        std::cout << "Patch (+) type: " << util.cvMat_Type(patch_val_plus.type()) << std::endl;
+        std::cout << "Patch (-) type: " << util.cvMat_Type(patch_val_minus.type()) << std::endl;
+    }
+
+
+    if (patch_val_plus.type() != CV_32F)
+        patch_val_plus.convertTo(patch_val_plus, CV_32F);
+    if (patch_val_minus.type() != CV_32F)
+        patch_val_minus.convertTo(patch_val_minus, CV_32F);
+
+    return {patch_val_plus, patch_val_minus};
 }
 
 double edge_patch_similarity(const Edge target_edge_H1, const Edge target_edge_H2, const cv::Mat gray_img_H1, const cv::Mat gray_img_H2)
@@ -92,10 +148,10 @@ double edge_patch_similarity(const Edge target_edge_H1, const Edge target_edge_H
     if (patch_minus_H2.type() != CV_32F)
         patch_minus_H2.convertTo(patch_minus_H2, CV_32F);
 
-    double sim_pp = get_similarity(patch_plus_H1, patch_plus_H2);   //> (A+, B+)
-    double sim_nn = get_similarity(patch_minus_H1, patch_minus_H2); //> (A-, B-)
-    double sim_pn = get_similarity(patch_plus_H1, patch_minus_H2);  //> (A+, B-)
-    double sim_np = get_similarity(patch_minus_H1, patch_plus_H2);  //> (A-, B+)
+    double sim_pp = get_patch_similarity(patch_plus_H1, patch_plus_H2);   //> (A+, B+)
+    double sim_nn = get_patch_similarity(patch_minus_H1, patch_minus_H2); //> (A-, B-)
+    double sim_pn = get_patch_similarity(patch_plus_H1, patch_minus_H2);  //> (A+, B-)
+    double sim_np = get_patch_similarity(patch_minus_H1, patch_plus_H2);  //> (A-, B+)
     // std::cout << "- Similarity scores of (pp, nn, pn, np) = (" << sim_pp << ", " << sim_nn << ", " << sim_pn << ", " << sim_np << ")" << std::endl;
     double final_SIM_score = std::max({sim_pp, sim_nn, sim_pn, sim_np});
     return final_SIM_score;
@@ -532,17 +588,38 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoFrame& stereo_frame, Stere
     }
 }
 
+void write_False_Negative_Edge_Clusters_to_file(Dataset &dataset, std::vector<int>& left_edge_indices_to_false_negatives, std::vector<std::vector<EdgeCluster>>& false_negative_edge_clusters, int frame_idx)
+{
+    std::string output_dir = dataset.get_output_path();
+    std::string false_negative_edge_clusters_filename = output_dir + "/false_negative_edge_clusters_frame_" + std::to_string(frame_idx) + ".txt";
+    std::ofstream false_negative_edge_clusters_file(false_negative_edge_clusters_filename);
+    false_negative_edge_clusters_file << "left_edge_indices, center_edge_location, center_edge_orientation" << std::endl;
+    for (int i = 0; i < false_negative_edge_clusters.size(); i++)
+    {
+        for (const auto& false_negative_edge_cluster : false_negative_edge_clusters[i])
+        {
+            false_negative_edge_clusters_file << left_edge_indices_to_false_negatives[i] << " " \
+                                              << false_negative_edge_cluster.center_edge.location.x << " " \
+                                              << false_negative_edge_cluster.center_edge.location.y << " " \
+                                              << false_negative_edge_cluster.center_edge.orientation << std::endl;
+        }
+    }
+    false_negative_edge_clusters_file.close();
+}
+
 void write_Stereo_Edge_Pairs_to_file(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edge_pairs, int frame_idx)
 {
     std::string output_dir = dataset.get_output_path();
     std::string stereo_frame_edge_pairs_filename = output_dir + "/stereo_frame_edge_pairs_frame_" + std::to_string(frame_idx) + ".txt";
     std::ofstream stereo_frame_edge_pairs_file(stereo_frame_edge_pairs_filename);
-    stereo_frame_edge_pairs_file << "left_edge_indices, GT_locations_from_left_edges, veridical_right_edges_indices" << std::endl;
+    stereo_frame_edge_pairs_file << "left_edge_indices, GT_locations_from_left_edges" << std::endl;
     for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
     {
         stereo_frame_edge_pairs_file << stereo_frame_edge_pairs.left_edge_indices[i] << " " \
                                      << stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i).location.x << " " \
-                                     << stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i).location.y << std::endl;
+                                     << stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i).location.y << " " \
+                                     << stereo_frame_edge_pairs.GT_locations_from_left_edges[i].x << " " \
+                                     << stereo_frame_edge_pairs.GT_locations_from_left_edges[i].y << std::endl;
     }
     stereo_frame_edge_pairs_file.close();
 }
@@ -680,7 +757,115 @@ void apply_Disparity_Filtering(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
     }
 }
 
-void do_Epipolar_Shift_and_Clustering(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
+void apply_NCC_Filtering(Stereo_Edge_Pairs& stereo_frame_edge_pairs, \
+                         std::vector<std::vector<EdgeCluster>>& test_false_negative_edge_clusters, \
+                         std::vector<std::vector<std::pair<cv::Mat, cv::Mat>>>& test_false_negative_matching_edge_patches, \
+                         std::vector<int>& left_edge_indices_to_false_negatives)
+{
+    Utility util{};
+    cv::Mat left_image = stereo_frame_edge_pairs.stereo_frame->left_image;
+    cv::Mat right_image = stereo_frame_edge_pairs.stereo_frame->right_image;
+    if (left_image.type() != CV_64F)
+        left_image.convertTo(left_image, CV_64F);
+    if (right_image.type() != CV_64F)
+        right_image.convertTo(right_image, CV_64F);
+
+    stereo_frame_edge_pairs.left_edge_patches.resize(stereo_frame_edge_pairs.left_edge_indices.size());
+    stereo_frame_edge_pairs.matching_edge_patches.resize(stereo_frame_edge_pairs.left_edge_indices.size());
+
+    left_edge_indices_to_false_negatives.resize(stereo_frame_edge_pairs.left_edge_indices.size(), -1);
+    test_false_negative_edge_clusters.resize(stereo_frame_edge_pairs.left_edge_indices.size());
+    test_false_negative_matching_edge_patches.resize(stereo_frame_edge_pairs.left_edge_indices.size());
+
+    stereo_frame_edge_pairs.old_matching_edge_clusters = stereo_frame_edge_pairs.matching_edge_clusters;
+
+    #pragma omp parallel
+    {
+        #pragma omp for schedule(dynamic)
+        for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
+        {
+            //> Get the left edge patches
+            Edge left_edge = stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i);
+            stereo_frame_edge_pairs.left_edge_patches[i] = get_edge_patches(left_edge, left_image);
+
+            //> Get the right edge patches
+            std::vector<EdgeCluster> surviving_edge_clusters;
+            for (auto const& edge_cluster : stereo_frame_edge_pairs.matching_edge_clusters[i])
+            {
+                Edge right_edge = edge_cluster.center_edge;
+                std::pair<cv::Mat, cv::Mat> right_edge_patches = get_edge_patches(right_edge, right_image);
+
+                //> Calculate the similarity between the left edge patches and the right edge patches
+                double sim_pp = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].first, right_edge_patches.first);   //> (A+, B+)
+                double sim_nn = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].second, right_edge_patches.second); //> (A-, B-)
+                double sim_pn = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].first, right_edge_patches.second);  //> (A+, B-)
+                double sim_np = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].second, right_edge_patches.first);  //> (A-, B+)
+                // std::cout << "- Similarity scores of (pp, nn, pn, np) = (" << sim_pp << ", " << sim_nn << ", " << sim_pn << ", " << sim_np << ")" << std::endl;
+                double final_SIM_score = std::max({sim_pp, sim_nn, sim_pn, sim_np});
+                if (final_SIM_score > NCC_THRESH)
+                {
+                    surviving_edge_clusters.push_back(edge_cluster);
+                    stereo_frame_edge_pairs.matching_edge_patches[i].push_back(right_edge_patches);
+                }
+            }
+            stereo_frame_edge_pairs.matching_edge_clusters[i] = surviving_edge_clusters;
+
+            if (surviving_edge_clusters.empty())
+            {
+                left_edge_indices_to_false_negatives[i] = i;
+                for (auto const& edge_cluster : stereo_frame_edge_pairs.matching_edge_clusters[i])
+                {
+                    Edge right_edge = edge_cluster.center_edge;
+                    std::pair<cv::Mat, cv::Mat> right_edge_patches = get_edge_patches(right_edge, stereo_frame_edge_pairs.stereo_frame->right_image);
+                    test_false_negative_edge_clusters[i].push_back(edge_cluster);
+                    test_false_negative_matching_edge_patches[i].push_back(right_edge_patches);
+                }
+            }
+        }
+    }
+}
+
+void debug_NCC_Filtering(Stereo_Edge_Pairs& stereo_frame_edge_pairs, const std::vector<int> false_negative_indices)
+{
+    Utility util{};
+    cv::Mat left_image = stereo_frame_edge_pairs.stereo_frame->left_image;
+    cv::Mat right_image = stereo_frame_edge_pairs.stereo_frame->right_image;
+    if (left_image.type() != CV_64F)
+        left_image.convertTo(left_image, CV_64F);
+    if (right_image.type() != CV_64F)
+        right_image.convertTo(right_image, CV_64F);
+
+    //> Select a random false negative index
+    const int i = false_negative_indices[100];
+    std::cout << "- Left edge: (" << stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i).location.x << ", " << stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i).location.y << ", " << stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i).orientation << ")" << std::endl;
+    std::cout << "- GT location: (" << stereo_frame_edge_pairs.GT_locations_from_left_edges[i].x << ", " << stereo_frame_edge_pairs.GT_locations_from_left_edges[i].y << ")" << std::endl;
+    
+    //> Get the left edge patches
+    // Edge left_edge = stereo_frame_edge_pairs.get_left_edge_by_Stereo_Edge_Pairs_index(i);
+    std::pair<cv::Mat, cv::Mat> left_edge_patches = stereo_frame_edge_pairs.left_edge_patches[i];
+    std::cout << "Left patch 1: " << left_edge_patches.first << std::endl;
+    std::cout << "Left patch 2: " << left_edge_patches.second << std::endl;
+
+    //> Get the right edge patches
+    // std::vector<EdgeCluster> surviving_edge_clusters;
+    for (auto const& edge_cluster : stereo_frame_edge_pairs.old_matching_edge_clusters[i])
+    {
+        Edge right_edge = edge_cluster.center_edge;
+        std::pair<cv::Mat, cv::Mat> right_edge_patches = get_edge_patches(right_edge, right_image, true);
+        std::cout << "- Right edge: (" << right_edge.location.x << ", " << right_edge.location.y << ", " << right_edge.orientation << ")" << std::endl;
+        // std::cout << "Right patch 1: " << right_edge_patches.first << std::endl;
+        // std::cout << "Right patch 2: " << right_edge_patches.second << std::endl;
+        //> Calculate the similarity between the left edge patches and the right edge patches
+        double sim_pp = get_patch_similarity(left_edge_patches.first, right_edge_patches.first);   //> (A+, B+)
+        double sim_nn = get_patch_similarity(left_edge_patches.second, right_edge_patches.second); //> (A-, B-)
+        double sim_pn = get_patch_similarity(left_edge_patches.first, right_edge_patches.second);  //> (A+, B-)
+        double sim_np = get_patch_similarity(left_edge_patches.second, right_edge_patches.first);  //> (A-, B+)
+        // double final_SIM_score = std::max({sim_pp, sim_nn, sim_pn, sim_np});
+        std::cout << "- SIM scores of (pp, nn, pn, np) = (" << sim_pp << ", " << sim_nn << ", " << sim_pn << ", " << sim_np << ")" << std::endl;
+    }    
+}
+
+void consolidate_redundant_edge_hypothesis(Stereo_Edge_Pairs& stereo_frame_edge_pairs)
 {
     std::vector<std::vector<EdgeCluster>> initial_matching_edge_clusters = stereo_frame_edge_pairs.matching_edge_clusters;
     for (int i = 0; i < stereo_frame_edge_pairs.left_edge_indices.size(); i++)
@@ -735,13 +920,28 @@ void get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs& stereo_frame_edg
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Maximal Disparity Filtering", false_negative_indices);
     if (false_negative_indices.empty()) std::cout << "Good!" << std::endl;
 
-    //> Shift edges to the epipolar line and cluster them
-    do_Epipolar_Shift_and_Clustering(stereo_frame_edge_pairs);
-    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Epipolar Shift and Clustering", false_negative_indices);
-    for (const auto& false_negative_index : false_negative_indices)
-    {
-        std::cout << "False negative index: " << false_negative_index << std::endl;
-    }
+    std::vector<int> left_edge_indices_to_false_negatives;
+    std::vector<std::vector<EdgeCluster>> test_false_negative_edge_clusters;
+    std::vector<std::vector<std::pair<cv::Mat, cv::Mat>>> test_false_negative_matching_edge_patches;
+    apply_NCC_Filtering(stereo_frame_edge_pairs, test_false_negative_edge_clusters, test_false_negative_matching_edge_patches, left_edge_indices_to_false_negatives);
+    
+    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "NCC Filtering", false_negative_indices);
+    // debug_NCC_Filtering(stereo_frame_edge_pairs, false_negative_indices);
+    // write_False_Negative_Edge_Clusters_to_file(dataset, left_edge_indices_to_false_negatives, test_false_negative_edge_clusters, frame_idx);
+
+    
+
+
+
+    //> Shift edges to the epipolar line and cluster them to consolidate redundant edge hypothesis
+    // consolidate_redundant_edge_hypothesis(stereo_frame_edge_pairs);
+    // Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Epipolar Shift and Clustering", false_negative_indices);
+    // // for (const auto& false_negative_index : false_negative_indices)
+    // // {
+    // //     std::cout << "False negative index: " << false_negative_index << std::endl;
+    // // }
+
+
 
     //> ============= END OF CH'S EDITIONS =============
 
