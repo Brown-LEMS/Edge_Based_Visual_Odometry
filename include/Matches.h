@@ -26,9 +26,9 @@ EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges = std::vector<cv::Point2d>());
 
 //> The following functions are newly added
-void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT& stereo_frame, const std::vector<Edge> right_edges);
-std::vector<Edge> get_right_edges_close_to_GT_location(Edge target_left_edge, const cv::Point2d GT_location, const std::vector<Edge> constrained_right_edges, const double dist_tol = 1.0) ;
-void augment_Edge_Data(StereoEdgeCorrespondencesGT& stereo_frame, const cv::Mat image);
+void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT &stereo_frame, const std::vector<Edge> &right_edges, bool is_left);
+std::pair<std::vector<int>, int> get_right_edges_close_to_GT_location(Edge target_left_edge, const cv::Point2d GT_location, const std::vector<Edge> constrained_right_edges, const std::vector<Edge> right_edges, const double dist_tol = 1.0);
+void augment_Edge_Data(StereoEdgeCorrespondencesGT &stereo_frame, const cv::Mat image);
 
 void ExtractClusterPatches(
     int patch_size,
@@ -61,9 +61,9 @@ Edge PerformEpipolarShift(
 // checked
 std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
 
-std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, const double dist_tol = 0.5);
+std::vector<int> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, const double dist_tol = 0.5);
 
-std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges);
+std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges, const std::vector<int> &edge_indices);
 
 std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<Edge> &edge_points, double shift_magnitude, Dataset &dataset);
 

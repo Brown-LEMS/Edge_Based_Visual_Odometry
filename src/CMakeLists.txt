@@ -11,19 +11,8 @@ set (control_sources
         EdgeClusterer.cpp
 )
 
-# Conditionally add MATLAB NCC source file
-if(USE_MATLAB_NCC_ENABLED)
-    list(APPEND control_sources MatlabNCCComputer.cpp)
-endif()
-
 add_library( lems_vo_slam ${control_sources} )
 include_directories(/gpfs/data/bkimia/opencv-4.x/build_install/include/opencv4)
-
-# Add MATLAB compile definition and include directories if enabled
-if(USE_MATLAB_NCC_ENABLED)
-    target_compile_definitions(lems_vo_slam PRIVATE USE_MATLAB_NCC)
-    target_include_directories(lems_vo_slam PRIVATE ${Matlab_INCLUDE_DIRS})
-endif()
 
 #> Linking third-party libraries
 target_link_libraries(lems_vo_slam
@@ -46,9 +35,4 @@ if(USE_GLOGS AND GFLAGS_FOUND AND GFLAGS_LIBRARIES)
     if(GFLAGS_INCLUDE_DIRS)
         target_include_directories(lems_vo_slam PUBLIC ${GFLAGS_INCLUDE_DIRS})
     endif()
-endif()
-
-# Add MATLAB libraries if enabled
-if(USE_MATLAB_NCC_ENABLED)
-    target_link_libraries(lems_vo_slam PRIVATE ${Matlab_ENGINE_LIBRARY} ${Matlab_DATAARRAY_LIBRARY})
 endif()

@@ -39,22 +39,22 @@ public:
     typedef std::shared_ptr<Utility> Ptr;
 
     Utility();
-    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y );
-    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y );
-    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection );
-    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection );
+    double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y);
+    double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y);
+    double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection);
+    double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection);
 
     void Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
                                          std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2,
                                          std::vector<cv::DMatch> Good_Matches);
-    
+
     Eigen::Vector3d two_view_linear_triangulation(
         const Eigen::Vector3d gamma1, const Eigen::Vector3d gamma2,
-        const Eigen::Matrix3d K1,     const Eigen::Matrix3d K2,
-        const Eigen::Matrix3d Rel_R,  const Eigen::Vector3d Rel_T);
+        const Eigen::Matrix3d K1, const Eigen::Matrix3d K2,
+        const Eigen::Matrix3d Rel_R, const Eigen::Vector3d Rel_T);
     Eigen::Vector3d multiview_linear_triangulation(
         const int N, const std::vector<Eigen::Vector2d> pts,
-        const std::vector<Eigen::Matrix3d> & Rs, const std::vector<Eigen::Vector3d> & Ts, const Eigen::Matrix3d K);
+        const std::vector<Eigen::Matrix3d> &Rs, const std::vector<Eigen::Vector3d> &Ts, const Eigen::Matrix3d K);
 
     std::string cvMat_Type(int type);
 };
@@ -217,17 +217,19 @@ inline Eigen::Matrix3d ConvertToEigenMatrix(const std::vector<std::vector<double
     return eigen_matrix;
 }
 
-template< typename T >
-T rad_to_deg( T theta ) {
+template <typename T>
+T rad_to_deg(T theta)
+{
     return theta * (180.0 / M_PI);
 }
 
-template< typename T >
-T deg_to_rad( T theta ) {
+template <typename T>
+T deg_to_rad(T theta)
+{
     return theta * (M_PI / 180.0);
 }
 
-inline std::vector<int> find_Unique_Sorted_Numbers( std::vector<int> vec ) 
+inline std::vector<int> find_Unique_Sorted_Numbers(std::vector<int> vec)
 {
     std::vector<int> unique_sorted_vec = vec;
     std::sort(unique_sorted_vec.begin(), unique_sorted_vec.end());
@@ -240,8 +242,6 @@ inline std::vector<int> find_Unique_Sorted_Numbers( std::vector<int> vec )
 
     return unique_sorted_vec;
 }
-
-
 
 // wasn't used in the original code, but kept for reference
 
