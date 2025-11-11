@@ -82,7 +82,7 @@ double get_similarity(const cv::Mat &patch_one, const cv::Mat &patch_two)
     return norm_one.dot(norm_two);
 }
 
-double edge_patch_similarity(const Edge &edge1, const Edge &edge2, cv::Mat gray_img_H1, cv::Mat gray_img_H2)
+double edge_patch_similarity(const Edge &edge1, const Edge &edge2, const cv::Mat &gray_img_H1, const cv::Mat &gray_img_H2)
 {
     Eigen::Vector3d target_edge_H1(edge1.location.x, edge1.location.y, edge1.orientation);
     Eigen::Vector3d target_edge_H2(edge2.location.x, edge2.location.y, edge2.orientation);
@@ -352,53 +352,6 @@ std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_sh
     }
 
     return cluster_centers;
-<<<<<<< HEAD
-
-    // EdgeCluster cluster;
-    //     cluster.center_edge = Edge{avg_point, avg_orientation, false};
-    //     cluster.contributing_edges = cluster_edges;
-
-    // std::vector<std::vector<Edge>> clusters;
-
-    // if (valid_shifted_edges.empty())
-    // {
-    //     return clusters;
-    // }
-
-    // std::sort(valid_shifted_edges.begin(), valid_shifted_edges.end(),
-    //           [](const Edge &a, const Edge &b)
-    //           {
-    //               return a.location.x < b.location.x;
-    //           });
-
-    // std::vector<Edge> current_cluster;
-    // current_cluster.push_back(valid_shifted_edges[0]);
-
-    // for (size_t i = 1; i < valid_shifted_edges.size(); ++i)
-    // {
-    //     double distance = cv::norm(valid_shifted_edges[i].location - valid_shifted_edges[i - 1].location);
-    //     double orientation_difference = std::abs(valid_shifted_edges[i].orientation - valid_shifted_edges[i - 1].orientation);
-
-    //     if (distance <= EDGE_CLUSTER_THRESH && orientation_difference < 5.0)
-    //     {
-    //         current_cluster.push_back(valid_shifted_edges[i]);
-    //     }
-    //     else
-    //     {
-    //         clusters.emplace_back(current_cluster);
-    //         current_cluster.clear();
-    //         current_cluster.push_back(valid_shifted_edges[i]);
-    //     }
-    // }
-
-    // if (!current_cluster.empty())
-    // {
-    //     clusters.emplace_back(current_cluster);
-    // }
-
-    // return clusters;
-=======
->>>>>>> copilot/vscode1760022595288
 }
 
 /*

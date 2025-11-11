@@ -159,64 +159,11 @@ public:
         const std::vector<Edge> &edges,
         int patch_size);
 
-<<<<<<< HEAD
-    std::pair<Eigen::Matrix3d, std::vector<int>> Ransac4EdgeEssential(
-        const std::vector<Edge> &edge1,
-        const std::vector<Edge> &edge2,
-        const Eigen::Matrix3d &K,
-        int num_iterations = 1000,
-        double threshold = 1.0);
-
-    std::pair<Eigen::Matrix3d, Eigen::Vector3d> RelativePoseFromEssential(
-        const Eigen::Matrix3d &E,
-        int inlierCount,
-        const std::vector<Edge> &edge1,
-        const std::vector<Edge> &edge2,
-        double threshold = 1.0);
-
-    Eigen::Vector3d Point3DFromEdge(
-        bool left,
-
-        Edge &edge);
-    Edge GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_frame,
-                   const cv::Mat &disparity_map, const cv::Mat &K_inverse, const cv::Mat &K,
-                   const Edge &edge);
-
-    void GetGTEdges(size_t &frame_idx, StereoFrame &previous_frame, StereoFrame &current_frame,
-                    const std::vector<Edge> &previous_frame_edges,
-                    const cv::Mat &left_ref_map, const cv::Mat &left_calib_inv,
-                    const cv::Mat &left_calib, std::vector<Edge> &gt_edges,
-                    std::unordered_map<Edge, EdgeGTMatchInfo> &left_edges_GT_Info);
-
-    void EvaluateSpatialGridPerformance(const std::unordered_map<Edge, Edge> &gt_correspondences, size_t frame_idx, const std::vector<Edge> &previous_frame_edges);
-    void EvaluateSIFTMatches(const std::vector<cv::DMatch> &matches,
-                             const std::vector<cv::KeyPoint> &previous_keypoints,
-                             const std::vector<cv::KeyPoint> &current_keypoints,
-                             const std::unordered_map<Edge, Edge> &gt_correspondences,
-                             const std::vector<Edge> &previous_frame_edges,
-                             const std::vector<Edge> &current_frame_edges,
-                             const std::unordered_map<int, cv::Mat> &previous_descriptors_cache,
-                             const std::unordered_map<int, cv::Mat> &current_descriptors_cache,
-                             size_t frame_idx,
-                             double distance_threshold = 5.0);
-    void WriteThirdOrderEdgesToFile(size_t frame_idx, const std::string &output_filepath);
-=======
->>>>>>> copilot/vscode1760022595288
     void EvaluateEdgeMatchPerformance(const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
                                       const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
                                       size_t frame_idx,
                                       const std::string &stage_name,
-<<<<<<< HEAD
-                                      double distance_threshold,
-                                      const StereoFrame &previous_frame,
-                                      const StereoFrame &current_frame);
-    void DebugNCCScoresWithGT(const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
-                              const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
-                              size_t frame_idx, const StereoFrame &previous_frame,
-                              const StereoFrame &current_frame);
-=======
                                       double distance_threshold = 3.0);
->>>>>>> copilot/vscode1760022595288
 
 private:
     //> CH: shared pointer to the class of third-order edge detector
