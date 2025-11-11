@@ -26,6 +26,8 @@ struct StereoFrame
 {
     cv::Mat left_image;
     cv::Mat right_image;
+    cv::Mat left_image_undistorted;
+    cv::Mat right_image_undistorted;
     double timestamp;
 
     // Add ground truth if available

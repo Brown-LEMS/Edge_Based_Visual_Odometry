@@ -10,6 +10,7 @@
 
 EBVO::EBVO(YAML::Node config_map) : dataset(config_map) {}
 
+//> MARK: MAIN CODE OF EDGE VO
 void EBVO::PerformEdgeBasedVO()
 {
     // The main processing function that performs edge-based visual odometry on a sequence of stereo image pairs.
@@ -47,6 +48,7 @@ void EBVO::PerformEdgeBasedVO()
     std::vector<RecallMetrics> all_forward_recall_metrics;
     std::vector<BidirectionalMetrics> all_bct_metrics;
 
+    //> load stereo iterator and read disparity
     dataset.load_dataset(dataset.get_dataset_type(), left_ref_disparity_maps, num_pairs);
 
     std::vector<double> left_intr = dataset.left_intr();
@@ -62,24 +64,15 @@ void EBVO::PerformEdgeBasedVO()
 
     LOG_INFO("Start looping over all image pairs");
     // now we change the logic, we will do previous frame and current frame instead
-    StereoFrame previous_frame, current_frame, next_frame;
-    std::vector<cv::KeyPoint> previous_edge_loc, current_edge_loc; // store the edge locations for the previous and current frames
-    std::vector<Edge> previous_frame_edges;                        // Store previous frame edges for spatial grid evaluation
+    StereoFrame previous_frame, current_frame;
+    StereoFrame last_keyframe;
+    //> Initialize
+    StereoEdgeCorrespondencesGT last_keyframe_stereo_left, current_frame_stereo_left;
+    StereoEdgeCorrespondencesGT last_keyframe_stereo_right, current_frame_stereo_right;
 
-    cv::Mat left_calib_inv = left_calib.inv();
-    cv::Mat right_calib_inv = right_calib.inv();
-
-    cv::Mat descriptors_t0, descriptors_t1;
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
 
-    // Get the first frame from the dataset
-
-    // if (!dataset.stereo_iterator->hasNext() ||
-    //     !dataset.stereo_iterator->getNext(current_frame))
-    // {
-    //     LOG_ERROR("Failed to get first frame from dataset");
-    //     return;
-    // }
+    bool b_is_keyframe = true;
 
     size_t frame_idx = 0;
     while (dataset.stereo_iterator->hasNext() && num_pairs - frame_idx >= 0)
@@ -89,14 +82,11 @@ void EBVO::PerformEdgeBasedVO()
             break;
         }
 
-        const cv::Mat &curr_left_img = current_frame.left_image;
-        const cv::Mat &curr_right_img = current_frame.right_image;
-
-        // If the current frame has ground truth, we can use it
+        // If the current frame has ground truth, we can use it (current development: using GT for evaluation)
         if (dataset.has_gt())
         {
         }
-        const cv::Mat &left_ref_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
+        const cv::Mat &left_disparity_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
 
         dataset.ncc_one_vs_err.clear();
         dataset.ncc_two_vs_err.clear();
@@ -106,8 +96,11 @@ void EBVO::PerformEdgeBasedVO()
 
         cv::Mat left_prev_undistorted, right_prev_undistorted, left_cur_undistorted, right_cur_undistorted;
 
-        cv::undistort(curr_left_img, left_cur_undistorted, left_calib, left_dist_coeff_mat);
-        cv::undistort(curr_right_img, right_cur_undistorted, right_calib, right_dist_coeff_mat);
+        cv::undistort(current_frame.left_image, left_cur_undistorted, left_calib, left_dist_coeff_mat);
+        cv::undistort(current_frame.right_image, right_cur_undistorted, right_calib, right_dist_coeff_mat);
+
+        current_frame.left_image_undistorted = left_cur_undistorted;
+        current_frame.right_image_undistorted = right_cur_undistorted;
 
         if (dataset.get_num_imgs() == 0)
         {
@@ -116,8 +109,9 @@ void EBVO::PerformEdgeBasedVO()
 
             TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(dataset.get_height(), dataset.get_width()));
 
-            // Initialize the spatial grid with a cell size of defined GRID_SIZE
-            spatial_grid = SpatialGrid(dataset.get_width(), dataset.get_height(), GRID_SIZE);
+            // Initialize the spatial grids with a cell size of defined GRID_SIZE
+            left_grid = SpatialGrid(dataset.get_width(), dataset.get_height(), GRID_SIZE);
+            right_grid = SpatialGrid(dataset.get_width(), dataset.get_height(), GRID_SIZE);
         }
 
         std::string edge_dir = dataset.get_output_path() + "/edges";
@@ -125,7 +119,7 @@ void EBVO::PerformEdgeBasedVO()
 
         std::string left_edge_path = edge_dir + "/left_edges_" + std::to_string(frame_idx + 1);
         std::string right_edge_path = edge_dir + "/right_edges_" + std::to_string(frame_idx + 1);
-
+        // getting toed edges for left and right images
         ProcessEdges(left_cur_undistorted, left_edge_path, TOED, dataset.left_edges);
         std::cout << "Number of edges on the left image: " << dataset.left_edges.size() << std::endl;
         std::string third_order_edges_file = dataset.get_output_path() + "/third_order_edges_frame_" + std::to_string(frame_idx + 1) + ".txt";
@@ -136,245 +130,109 @@ void EBVO::PerformEdgeBasedVO()
 
         dataset.increment_num_imgs();
 
-        cv::Mat left_edge_map = cv::Mat::zeros(left_cur_undistorted.size(), CV_8UC1);
-        cv::Mat right_edge_map = cv::Mat::zeros(right_cur_undistorted.size(), CV_8UC1);
-
-        // for (const auto &edge : dataset.left_edges)
-        // {
-        //     if (edge.location.x >= 0 && edge.location.x < left_edge_map.cols && edge.location.y >= 0 && edge.location.y < left_edge_map.rows)
-        //     {
-        //         left_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
-        //     }
-        // }
-
-        // for (const auto &edge : dataset.right_edges)
-        // {
-        //     if (edge.location.x >= 0 && edge.location.x < right_edge_map.cols && edge.location.y >= 0 && edge.location.y < right_edge_map.rows)
-        //     {
-        //         right_edge_map.at<uchar>(cv::Point(edge.location.x, edge.location.y)) = 255;
-        //     }
-        // }
-
-        CalculateGTRightEdge(dataset.left_edges, left_ref_map, left_edge_map, right_edge_map);
-        std::cout << "Complete calculating GT right edges..." << std::endl;
-
-        // Declare variables at proper scope level
-        std::vector<cv::DMatch> SIFT_matches;
-        std::unordered_map<int, cv::Mat> current_descriptors_cache;
-        if (frame_idx > 0)
+        if (b_is_keyframe)
         {
-            spatial_grid.reset();
-            current_edge_loc.clear();
-            std::unordered_map<Edge, std::vector<Edge>> Edge_match;
-#pragma omp parallel for schedule(dynamic)
-            for (int current_idx = 0; current_idx < dataset.left_edges.size(); ++current_idx)
-            {
-#pragma omp critical(spatial_grid)
-                {
-                    spatial_grid.addEdge(current_idx, dataset.left_edges[current_idx].location);
-                }
+            //> Update last keyframe
+            last_keyframe = current_frame;
+            kf_edges_left = dataset.left_edges;
+            kf_edges_right = dataset.right_edges;
 
-                Edge &current_edge = dataset.left_edges[current_idx];
-                cv::KeyPoint current_kp(current_edge.location, 1, 180 / M_PI * current_edge.orientation);
-#pragma omp critical(edge_loc)
-                {
-                    current_edge_loc.push_back(current_kp);
-                }
-                std::vector<cv::KeyPoint> edge_kp = {current_kp};
-                cv::Mat edge_desc;
-                sift->compute(current_frame.left_image, edge_kp, edge_desc);
+            //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
+            Find_Stereo_GT_Locations(left_disparity_map, true, last_keyframe_stereo_left, kf_edges_left);
+            std::cout << "Complete calculating GT locations for left edges of the keyframe (previous frame)..." << std::endl;
+            Find_Stereo_GT_Locations(left_disparity_map, false, last_keyframe_stereo_right, kf_edges_right);
+            std::cout << "Complete calculating GT locations for right edges of the keyframe (previous frame)..." << std::endl;
 
-                if (!edge_desc.empty())
-                {
-#pragma omp critical(descriptor_cache)
-                    {
-                        current_descriptors_cache[current_idx] = edge_desc.clone();
-                    }
-                }
-            }
-            std::vector<Edge> gt_edges;
-            std::unordered_map<Edge, EdgeGTMatchInfo> left_edges_GT_Info;
-            GetGTEdges(frame_idx, previous_frame, current_frame, previous_frame_edges,
-                       left_ref_map, left_calib_inv, left_calib, gt_edges, left_edges_GT_Info);
+            //> Construct a GT stereo edge pool
+            get_Stereo_Edge_GT_Pairs(dataset, last_keyframe_stereo_left, kf_edges_right, true);
+            std::cout << "Size of stereo edge correspondences pool = " << last_keyframe_stereo_left.focused_edges.size() << std::endl;
+            get_Stereo_Edge_GT_Pairs(dataset, last_keyframe_stereo_right, kf_edges_left, false);
+            std::cout << "Size of stereo edge correspondences pool = " << last_keyframe_stereo_right.focused_edges.size() << std::endl;
 
-            std::cout << "Stage 1: Populating Edge_match with spatial candidates..." << std::endl;
-#pragma omp parallel for schedule(dynamic)
-            for (int i = 0; i < previous_frame_edges.size(); ++i)
-            {
-                const Edge &prev_edge = previous_frame_edges[i];
-                std::vector<int> indices = spatial_grid.getCandidatesWithinRadius(prev_edge, GRID_SIZE);
-                // Add all spatial candidates to Edge_match
-                for (int idx : indices)
-                {
-                    const Edge &curr_edge = dataset.left_edges[idx];
-#pragma omp critical(edge_match)
-                    {
-                        Edge_match[prev_edge].push_back(curr_edge);
-                    }
-                }
-            }
+            //> construct stereo edge correspondences
 
-            // Evaluate Edge_match after spatial grid stage
-            std::cout << "Evaluating Edge_match after spatial grid stage..." << std::endl;
-            EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "spatial_grid", 5.0, current_frame, previous_frame);
+            //> extract SIFT descriptor for each left and right edge of last_keyframe_stereo
+            augment_Edge_Data(last_keyframe_stereo_left, last_keyframe.left_image_undistorted, true);
+            augment_Edge_Data(last_keyframe_stereo_right, last_keyframe.right_image_undistorted, false);
 
-            // Stage 2: Filter Edge_match based on SIFT descriptors
-            std::cout << "Stage 2: Filtering Edge_match with SIFT descriptors..." << std::endl;
-            std::unordered_map<Edge, std::vector<Edge>> Filtered_Edge_match;
-
-            // Create a vector to store matches from parallel threads
-            std::vector<std::vector<cv::DMatch>> thread_matches(omp_get_max_threads());
-
-#pragma omp parallel for schedule(dynamic)
-            for (int i = 0; i < previous_frame_edges.size(); ++i)
-            {
-                int thread_id = omp_get_thread_num();
-                const Edge &prev_edge = previous_frame_edges[i];
-
-                // Check if we have candidates for this previous edge
-                auto edge_match_it = Edge_match.find(prev_edge);
-                if (edge_match_it == Edge_match.end())
-                {
-                    continue;
-                }
-
-                cv::Mat prev_descriptor = previous_frame_descriptors_cache.at(i);
-                if (prev_descriptor.empty())
-                {
-                    continue; // Skip if descriptor is empty
-                }
-
-                float threshold = 600.0f;
-                std::vector<Edge> filtered_candidates;
-
-                // Apply SIFT filtering to spatial candidates
-                for (const Edge &candidate_edge : edge_match_it->second)
-                {
-                    // Find the index of this candidate edge
-                    int idx = candidate_edge.index; // Assuming Edge has an index field
-
-                    // Check if we have a descriptor for the current frame candidate
-                    if (current_descriptors_cache.find(idx) == current_descriptors_cache.end())
-                    {
-                        continue;
-                    }
-
-                    cv::Mat curr_descriptor = current_descriptors_cache.at(idx);
-                    if (curr_descriptor.empty())
-                    {
-                        continue;
-                    }
-
-                    // Calculate L2 distance between descriptors
-                    float distance = cv::norm(prev_descriptor, curr_descriptor, cv::NORM_L2);
-
-                    if (distance < threshold)
-                    {
-                        filtered_candidates.push_back(candidate_edge);
-
-                        cv::DMatch match;
-                        match.queryIdx = i;   // Previous frame edge index
-                        match.trainIdx = idx; // Current frame edge index
-                        match.distance = distance;
-                        thread_matches[thread_id].push_back(match);
-                    }
-                }
-
-                // Add filtered candidates to the new Edge_match
-                if (!filtered_candidates.empty())
-                {
-#pragma omp critical(filtered_edge_match)
-                    {
-                        Filtered_Edge_match[prev_edge] = filtered_candidates;
-                    }
-                }
-            }
-
-            // Replace Edge_match with filtered version
-            Edge_match = Filtered_Edge_match;
-
-            // Evaluate Edge_match after SIFT filtering
-            std::cout << "Evaluating Edge_match after SIFT filtering..." << std::endl;
-            EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "sift_filtered", 5.0, current_frame, previous_frame);
-
-            // Combine matches from all threads
-            for (const auto &thread_match_vec : thread_matches)
-            {
-                SIFT_matches.insert(SIFT_matches.end(), thread_match_vec.begin(), thread_match_vec.end());
-            }
-
-            if (!SIFT_matches.empty())
-            {
-                // std::vector<cv::DMatch> selected_matches;
-                std::cout << "Found " << SIFT_matches.size() << " raw matches" << std::endl;
-            }
-            std::vector<std::pair<Edge, std::vector<Edge> *>> edge_match_vector;
-            edge_match_vector.reserve(Edge_match.size());
-            for (auto &match : Edge_match)
-            {
-                edge_match_vector.push_back({match.first, &match.second});
-            }
-
-#pragma omp parallel for schedule(dynamic)
-            for (int i = 0; i < edge_match_vector.size(); i++)
-            {
-                const Edge &curr_edge = edge_match_vector[i].first;
-                std::vector<Edge> *candidates_ptr = edge_match_vector[i].second;
-                std::vector<Edge> &candidates = *candidates_ptr;
-
-                std::vector<Edge> filtered_candidates;
-
-                for (const Edge &candidate : candidates)
-                {
-                    double score = edge_patch_similarity(curr_edge, candidate, previous_frame.left_image, current_frame.left_image);
-                    if (!std::isnan(score) && score >= NCC_THRESH_WEAK_BOTH_SIDES)
-                    {
-                        filtered_candidates.push_back(candidate);
-                    }
-                }
-
-                // No need for critical section since each thread works on its own portion of the map
-                candidates = std::move(filtered_candidates);
-            }
-
-            std::cout << "Evaluating Edge_match after patch similarity filtering..." << std::endl;
-            DebugNCCScoresWithGT(left_edges_GT_Info, Edge_match, frame_idx, previous_frame, current_frame);
-            EvaluateEdgeMatchPerformance(Edge_match, left_edges_GT_Info, frame_idx, "ncc_filtered", 5.0, current_frame, previous_frame);
-
-            // Update caches for next iteration
-            previous_frame_descriptors_cache.clear();
-            previous_frame_descriptors_cache = std::move(current_descriptors_cache);
-
-            // Update previous edge locations for next iteration
-            previous_edge_loc = current_edge_loc;
-            previous_frame_edges = dataset.left_edges; // Store current edges as previous for next iteration
+            if (!last_keyframe_stereo_left.b_is_size_consistent())
+                last_keyframe_stereo_left.print_size_consistency();
+            if (!last_keyframe_stereo_right.b_is_size_consistent())
+                last_keyframe_stereo_right.print_size_consistency();
+            b_is_keyframe = false;
         }
         else
         {
-            // Initialize for first frame
-            for (int i = 0; i < dataset.left_edges.size(); ++i)
-            {
-                const Edge &edge = dataset.left_edges[i];
-                previous_edge_loc.push_back(cv::KeyPoint(edge.location, 1, 180 / M_PI * edge.orientation));
-                spatial_grid.addEdge(i, edge.location);
+            cf_edges_left = dataset.left_edges;
+            cf_edges_right = dataset.right_edges;
+            //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
+            Find_Stereo_GT_Locations(left_disparity_map, true, current_frame_stereo_left, cf_edges_left);
+            std::cout << "Complete calculating GT locations for left edges of the current frame..." << std::endl;
+            Find_Stereo_GT_Locations(left_disparity_map, false, current_frame_stereo_right, cf_edges_right);
+            std::cout << "Complete calculating GT locations for right edges of the current frame..." << std::endl;
 
-                // Compute and cache descriptor for first frame
-                std::vector<cv::KeyPoint> edge_kp = {cv::KeyPoint(edge.location, 1, 180 / M_PI * edge.orientation)};
-                cv::Mat edge_desc;
-                sift->compute(current_frame.left_image, edge_kp, edge_desc);
+            //> Construct a GT stereo edge pool
+            get_Stereo_Edge_GT_Pairs(dataset, current_frame_stereo_left, cf_edges_right, true);
+            std::cout << "Size of stereo edge correspondences pool for left edges= " << current_frame_stereo_left.focused_edges.size() << std::endl;
+            get_Stereo_Edge_GT_Pairs(dataset, current_frame_stereo_right, cf_edges_left, false);
+            std::cout << "Size of stereo edge correspondences pool for right edges= " << current_frame_stereo_right.focused_edges.size() << std::endl;
 
-                if (!edge_desc.empty())
-                {
-                    previous_frame_descriptors_cache[i] = edge_desc.clone();
-                }
-            }
-            previous_frame_edges = dataset.left_edges; // Store first frame edges
+            //> extract SIFT descriptor for each left edge of current_frame_stereo
+            augment_Edge_Data(current_frame_stereo_left, current_frame.left_image_undistorted, true);
+            augment_Edge_Data(current_frame_stereo_right, current_frame.right_image_undistorted, false);
+
+            if (!current_frame_stereo_left.b_is_size_consistent())
+                current_frame_stereo_left.print_size_consistency();
+            if (!current_frame_stereo_right.b_is_size_consistent())
+                current_frame_stereo_right.print_size_consistency();
+
+            add_edges_to_spatial_grid(current_frame_stereo_left, left_grid, cf_edges_left);
+            add_edges_to_spatial_grid(current_frame_stereo_right, right_grid, cf_edges_right);
+            //> Construct correspondences structure between last keyframe and the current frame
+            KF_CF_EdgeCorrespondenceMap KF_CF_edge_pairs_left, KF_CF_edge_pairs_right;
+            Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, last_keyframe, current_frame, left_grid, true);
+            Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, last_keyframe, current_frame, right_grid, false);
+
+            std::cout << "Size of veridical edge pairs (left) = " << KF_CF_edge_pairs_left.size() << std::endl;
+            std::cout << "Size of veridical edge pairs (right) = " << KF_CF_edge_pairs_right.size() << std::endl;
+
+            //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
+            //> Stage 1: Apply spatial grid to the current frame
+            apply_spatial_grid_filtering(KF_CF_edge_pairs_left, last_keyframe_stereo_left, kf_edges_left, left_grid, 1.0);
+            apply_spatial_grid_filtering(KF_CF_edge_pairs_right, last_keyframe_stereo_right, kf_edges_right, right_grid, 1.0);
+
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Spatial Grid");
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, frame_idx, "Spatial Grid");
+
+            //> Stage 3: Do NCC
+            apply_NCC_filtering(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, 0.25, last_keyframe.left_image, current_frame.left_image, true);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "NCC Filtering");
+
+            apply_NCC_filtering(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, 0.25, last_keyframe.right_image, current_frame.right_image, false);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, frame_idx, "NCC Filtering");
+            //> Stage 2: Do SIFT descriptor comparison between the last keyframe and the current frame from the KC_edge_correspondences
+            apply_SIFT_filtering(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, 700.0);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "SIFT Filtering");
+
+            apply_SIFT_filtering(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, 700.0, false);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, frame_idx, "SIFT Filtering");
+
+            //> Stage 4: Stereo consistency filtering
+            apply_stereo_filtering(KF_CF_edge_pairs_left, KF_CF_edge_pairs_right,
+                                   last_keyframe_stereo_left, current_frame_stereo_left,
+                                   last_keyframe_stereo_right, current_frame_stereo_right,
+                                   frame_idx);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Stereo Consistency Filtering");
+            // Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, frame_idx, "Stereo Consistency Filtering");
+
+            // StereoMatchResult match_result = get_Stereo_Edge_Pairs(
+            //     left_cur_undistorted,
+            //     right_cur_undistorted,
+            //     last_keyframe_stereo_left,
+            //     dataset, frame_idx);
+
+            break;
         }
-
-        // StereoMatchResult match_result = get_Stereo_Edge_Pairs(
-        //     left_undistorted,
-        //     right_undistorted,
-        //     dataset, frame_idx);
 
         frame_idx++;
         if (frame_idx > 1)
@@ -382,8 +240,60 @@ void EBVO::PerformEdgeBasedVO()
             break;
         }
 
-        previous_frame = current_frame;
+        // previous_frame = current_frame;
         // previous_edge_loc is now updated in the frame_idx > 0 block above
+    }
+}
+// void EBCO::bidirection_check(){
+
+// }
+void EBVO::augment_Edge_Data(StereoEdgeCorrespondencesGT &stereo_frame, const cv::Mat image, bool is_left)
+{
+    //> Pre-allocate thread-local storage based on number of threads
+    int num_threads = omp_get_max_threads();
+    std::vector<std::vector<cv::KeyPoint>> thread_local_keypoints(num_threads);
+    std::vector<cv::KeyPoint> edge_keypoints;
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+
+#pragma omp parallel
+    {
+        const int thread_id = omp_get_thread_num();
+#pragma omp for schedule(dynamic)
+        for (const auto &i : stereo_frame.focused_edges)
+        {
+            const Edge &le = is_left ? dataset.left_edges[i] : dataset.right_edges[i];
+            cv::KeyPoint edge_kp(le.location, 1, 180 / M_PI * le.orientation);
+            thread_local_keypoints[thread_id].push_back(edge_kp);
+        }
+    }
+
+    //> Merge all thread-local keypoints
+    for (const auto &local_keypoints : thread_local_keypoints)
+    {
+        edge_keypoints.insert(edge_keypoints.end(), local_keypoints.begin(), local_keypoints.end());
+    }
+
+    //> Compute SIFT descriptors for all left edges
+    cv::Mat edge_desc;
+    sift->compute(image, edge_keypoints, edge_desc);
+
+    //> Loop over all the rows of edge_desc and assign each to the stereo_frame.edge_descriptors
+    for (int i = 0; i < edge_desc.rows; ++i)
+    {
+        stereo_frame.edge_descriptors.push_back(edge_desc.row(i));
+    }
+
+    // std::cout << "Descriptors matrix size: " << edge_desc.rows << " x " << edge_desc.cols << std::endl;
+}
+
+void EBVO::add_edges_to_spatial_grid(StereoEdgeCorrespondencesGT &stereo_frame, SpatialGrid &spatial_grid, const std::vector<Edge> &edges)
+{
+    //> Add left edges to spatial grid. This is done on the current image only.
+    // TODO: check if this can be done in parallel for faster computation
+    for (int i = 0; i < stereo_frame.focused_edges.size(); ++i)
+    {
+        int grid_index = spatial_grid.add_edge_to_grids(stereo_frame.focused_edges[i], edges[stereo_frame.focused_edges[i]].location);
+        stereo_frame.grid_indices.push_back(grid_index);
     }
 }
 
@@ -462,755 +372,526 @@ std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2
     return {selected_points, selected_orientations, selected_ground_truth_points};
 }
 
-void EBVO::CalculateGTRightEdge(const std::vector<Edge> &edges, const cv::Mat &disparity_map, const cv::Mat &left_image, const cv::Mat &right_image)
+Eigen::Vector3d two2three(const Edge &e, bool left, double d, Dataset &dataset)
 {
-    dataset.forward_gt_data.clear();
-
-    static size_t total_rows_written = 0;
-    static int file_index = 1;
-    static std::ofstream csv_file;
-    static const size_t max_rows_per_file = 1'000'000;
-
-    if (!csv_file.is_open())
+    // FIXME:: if doing bidirectional, need to careful with the disparity, which is redo the bilinear interpolation!
+    //> Convert cv::Point2d to Eigen::Vector3d
+    Eigen::Vector3d e_location_eigen(e.location.x, e.location.y, 1.0);
+    double focal_length, baseline;
+    Eigen::Matrix3d calib_matrix;
+    if (left)
     {
-        std::string filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
-        csv_file.open(filename, std::ios::out);
+        focal_length = dataset.get_left_focal_length();
+        baseline = dataset.get_left_baseline();
+        calib_matrix = dataset.get_left_calib_matrix();
+    }
+    else
+    {
+        focal_length = dataset.get_right_focal_length();
+        baseline = dataset.get_right_baseline();
+        calib_matrix = dataset.get_right_calib_matrix();
     }
 
-    for (const Edge &e : edges)
+    double rho = focal_length * baseline / d;
+    double rho_1 = (rho < 0.0) ? (-rho) : (rho);
+    Eigen::Vector3d gamma_1 = calib_matrix.inverse() * e_location_eigen;
+    Eigen::Vector3d Gamma_1 = rho_1 * gamma_1;
+
+    return Gamma_1;
+}
+
+void EBVO::Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, bool left, StereoEdgeCorrespondencesGT &prev_stereo_frame, const std::vector<Edge> &left_edges)
+{
+    Utility util;
+
+    // left_edges here are actually the focused edges (change it after)
+    for (int i = 0; i < left_edges.size(); ++i)
     {
-        double disparity = Bilinear_Interpolation(disparity_map, e.location);
+        const Edge &e = left_edges[i];
+        double disparity = Bilinear_Interpolation(left_disparity_map, e.location);
 
         if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
         {
             continue;
         }
+        double x_loc = left ? e.location.x - disparity : e.location.x + disparity;
+        cv::Point2d GT_location(x_loc, e.location.y);
 
-        cv::Point2d right_edge(e.location.x - disparity, e.location.y);
-        dataset.forward_gt_data.emplace_back(e.location, right_edge, e.orientation);
+        //> Insert the data to the structure
+        prev_stereo_frame.focused_edges.push_back(i);
+        prev_stereo_frame.GT_locations_from_disparity.push_back(GT_location);
 
-        if (total_rows_written >= max_rows_per_file)
+        //> Convert cv::Point2d to Eigen::Vector3d
+        Eigen::Vector3d GT_location_eigen(GT_location.x, GT_location.y, 1.0);
+
+        Eigen::Vector3d Gamma_1 = two2three(e, left, disparity, dataset);
+
+        //> Compute the corresponding 3D point locations under the left camera coordinate
+        // Eigen::Vector3d triangulated_point = util.two_view_linear_triangulation(
+        //     e_location_eigen, GT_location_eigen,
+        //     dataset.get_left_calib_matrix(), dataset.get_right_calib_matrix(),
+        //     dataset.get_relative_rot_right_to_left(), dataset.get_relative_transl_right_to_left());
+
+        prev_stereo_frame.Gamma_in_cam_coord.push_back(Gamma_1);
+    }
+#if WRITE_KF_CF_GT_EDGE_PAIRS
+    std::string left_str = left ? "left" : "right";
+
+    std::string stereo_gt_filename = dataset.get_output_path() + "/stereo_GT_loc_" + left_str + ".txt";
+    std::cout << "Writing Stereo GT to : " << stereo_gt_filename << std::endl;
+    std::ofstream stereo_gt_file(stereo_gt_filename);
+    int gt_edge_idx = 0;
+    stereo_gt_file << "#Stereo_frame_edge_indx\tEdge_index\tEdge_X\tEdge_Y\tEdge_Orientation\tGT_Edge_X\tGT_Edge_Y\tGamma_X\tGamma_Y\tGamma_Z\n";
+    for (int i = 0; i < prev_stereo_frame.focused_edges.size(); i++)
+    {
+        const Edge &e = left_edges[i];
+        stereo_gt_file << gt_edge_idx << "\t"
+                       << prev_stereo_frame.focused_edges[i] << "\t"
+                       << e.location.x << "\t"
+                       << e.location.y << "\t"
+                       << e.orientation << "\t"
+                       << prev_stereo_frame.GT_locations_from_disparity[i].x << "\t"
+                       << prev_stereo_frame.GT_locations_from_disparity[i].y << "\n";
+        stereo_gt_file << prev_stereo_frame.Gamma_in_cam_coord[i].x() << "\t"
+                       << prev_stereo_frame.Gamma_in_cam_coord[i].y() << "\t"
+                       << prev_stereo_frame.Gamma_in_cam_coord[i].z() << "\n";
+        gt_edge_idx++;
+    }
+    stereo_gt_file.close();
+#endif
+}
+
+void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs,
+                                                     StereoEdgeCorrespondencesGT &last_keyframe_stereo, StereoEdgeCorrespondencesGT &current_frame_stereo,
+                                                     StereoFrame &last_keyframe, StereoFrame &current_frame, SpatialGrid &spatial_grid, bool is_left, double gt_dist_threshold)
+{
+    //> Ground-truth relative pose of the current frame with respect to the keyframe
+    Eigen::Matrix3d R1 = last_keyframe.gt_rotation;
+    Eigen::Vector3d t1 = last_keyframe.gt_translation;
+    Eigen::Matrix3d R2 = current_frame.gt_rotation;
+    Eigen::Vector3d t2 = current_frame.gt_translation;
+
+    Eigen::Matrix3d R21 = R2 * R1.transpose();
+    Eigen::Vector3d t21 = t2 - R2 * R1.transpose() * t1;
+    std::vector<Edge> &current_kf_edges = is_left ? kf_edges_left : kf_edges_right;
+    std::vector<Edge> &current_cf_edges = is_left ? cf_edges_left : cf_edges_right;
+    std::vector<Edge> &other_keyframe_edges = is_left ? kf_edges_right : kf_edges_left;
+    //> For each left edge in the keyframe, find the GT location on the current image
+    for (int i = 0; i < last_keyframe_stereo.focused_edges.size(); ++i)
+    {
+        Eigen::Matrix3d calib_matrix;
+        if (is_left)
         {
-            csv_file.close();
-            ++file_index;
-            total_rows_written = 0;
-            std::string next_filename = "valid_disparities_part_" + std::to_string(file_index) + ".csv";
-            csv_file.open(next_filename, std::ios::out);
+            calib_matrix = dataset.get_left_calib_matrix();
         }
-
-        csv_file << disparity << "\n";
-        ++total_rows_written;
-    }
-
-    csv_file.flush();
-}
-
-void EBVO::ReadEdgesFromBinary(const std::string &filepath,
-                               std::vector<Edge> &edges)
-{
-    std::ifstream ifs(filepath, std::ios::binary);
-    if (!ifs.is_open())
-    {
-        std::cerr << "ERROR: Could not open binary file for reading: " << filepath << std::endl;
-        return;
-    }
-
-    size_t size = 0;
-    ifs.read(reinterpret_cast<char *>(&size), sizeof(size));
-
-    edges.resize(size);
-    ifs.read(reinterpret_cast<char *>(edges.data()), sizeof(Edge) * size);
-}
-
-void EBVO::WriteEdgesToBinary(const std::string &filepath,
-                              const std::vector<Edge> &edges)
-{
-    std::ofstream ofs(filepath, std::ios::binary);
-    if (!ofs.is_open())
-    {
-        std::cerr << "ERROR: Could not open binary file for writing: " << filepath << std::endl;
-        return;
-    }
-
-    size_t size = edges.size();
-    ofs.write(reinterpret_cast<const char *>(&size), sizeof(size));
-    ofs.write(reinterpret_cast<const char *>(edges.data()), sizeof(Edge) * size);
-}
-void EBVO::WriteThirdOrderEdgesToFile(size_t frame_idx, const std::string &output_filepath)
-{
-    if (dataset.left_edges.empty())
-    {
-        std::cerr << "No edges available for current frame." << std::endl;
-        return;
-    }
-
-    std::ofstream output_file(output_filepath);
-    if (!output_file.is_open())
-    {
-        std::cerr << "Error opening output file: " << output_filepath << std::endl;
-        return;
-    }
-
-    // Write third-order edges to the file in the same format as toed.txt
-    for (const Edge &edge : dataset.left_edges)
-    {
-        output_file << std::fixed << std::setprecision(5)
-                    << edge.location.x << "\t"
-                    << edge.location.y << "\t"
-                    << edge.orientation << std::endl;
-    }
-
-    output_file.close();
-    std::cout << "Wrote " << dataset.left_edges.size() << " third-order edges to " << output_filepath << std::endl;
-}
-void EBVO::WriteEdgeMatchResult(StereoMatchResult &match_result,
-                                std::vector<double> &max_disparity_values,
-                                std::vector<double> &per_image_avg_before_epi,
-                                std::vector<double> &per_image_avg_after_epi,
-                                std::vector<double> &per_image_avg_before_disp,
-                                std::vector<double> &per_image_avg_after_disp,
-                                std::vector<double> &per_image_avg_before_shift,
-                                std::vector<double> &per_image_avg_after_shift,
-                                std::vector<double> &per_image_avg_before_clust,
-                                std::vector<double> &per_image_avg_after_clust,
-                                std::vector<double> &per_image_avg_before_patch,
-                                std::vector<double> &per_image_avg_after_patch,
-                                std::vector<double> &per_image_avg_before_ncc,
-                                std::vector<double> &per_image_avg_after_ncc,
-                                std::vector<double> &per_image_avg_before_lowe,
-                                std::vector<double> &per_image_avg_after_lowe,
-                                std::vector<double> &per_image_avg_before_bct,
-                                std::vector<double> &per_image_avg_after_bct,
-                                std::vector<RecallMetrics> &all_forward_recall_metrics,
-                                std::vector<BidirectionalMetrics> &all_bct_metrics)
-{
-    const RecallMetrics &forward_metrics = match_result.forward_match.recall_metrics;
-    all_forward_recall_metrics.push_back(forward_metrics);
-
-    const BidirectionalMetrics &bidirectional_metrics = match_result.bidirectional_metrics;
-    all_bct_metrics.push_back(bidirectional_metrics);
-
-    double avg_before_epi = ComputeAverage(forward_metrics.epi_input_counts);
-    double avg_after_epi = ComputeAverage(forward_metrics.epi_output_counts);
-
-    double avg_before_disp = ComputeAverage(forward_metrics.disp_input_counts);
-    double avg_after_disp = ComputeAverage(forward_metrics.disp_output_counts);
-
-    double avg_before_shift = ComputeAverage(forward_metrics.shift_input_counts);
-    double avg_after_shift = ComputeAverage(forward_metrics.shift_output_counts);
-
-    double avg_before_clust = ComputeAverage(forward_metrics.clust_input_counts);
-    double avg_after_clust = ComputeAverage(forward_metrics.clust_output_counts);
-
-    double avg_before_patch = ComputeAverage(forward_metrics.patch_input_counts);
-    double avg_after_patch = ComputeAverage(forward_metrics.patch_output_counts);
-
-    double avg_before_ncc = ComputeAverage(forward_metrics.ncc_input_counts);
-    double avg_after_ncc = ComputeAverage(forward_metrics.ncc_output_counts);
-
-    double avg_before_lowe = ComputeAverage(forward_metrics.lowe_input_counts);
-    double avg_after_lowe = ComputeAverage(forward_metrics.lowe_output_counts);
-
-    // Fix: Use bidirectional_metrics instead of forward_metrics for BCT counts
-    double avg_before_bct = bidirectional_metrics.matches_before_bct;
-    double avg_after_bct = bidirectional_metrics.matches_after_bct;
-
-    per_image_avg_before_epi.push_back(avg_before_epi);
-    per_image_avg_after_epi.push_back(avg_after_epi);
-
-    per_image_avg_before_disp.push_back(avg_before_disp);
-    per_image_avg_after_disp.push_back(avg_after_disp);
-
-    per_image_avg_before_shift.push_back(avg_before_shift);
-    per_image_avg_after_shift.push_back(avg_after_shift);
-
-    per_image_avg_before_clust.push_back(avg_before_clust);
-    per_image_avg_after_clust.push_back(avg_after_clust);
-
-    per_image_avg_before_patch.push_back(avg_before_patch);
-    per_image_avg_after_patch.push_back(avg_after_patch);
-
-    per_image_avg_before_ncc.push_back(avg_before_ncc);
-    per_image_avg_after_ncc.push_back(avg_after_ncc);
-
-    per_image_avg_before_lowe.push_back(avg_before_lowe);
-    per_image_avg_after_lowe.push_back(avg_after_lowe);
-
-    per_image_avg_before_bct.push_back(match_result.bidirectional_metrics.matches_before_bct);
-    per_image_avg_after_bct.push_back(match_result.bidirectional_metrics.matches_after_bct);
-
-    double total_epi_recall = 0.0;
-    double total_disp_recall = 0.0;
-    double total_shift_recall = 0.0;
-    double total_cluster_recall = 0.0;
-    double total_ncc_recall = 0.0;
-    double total_lowe_recall = 0.0;
-    double total_bct_recall = 0.0;
-
-    double total_epi_precision = 0.0;
-    double total_disp_precision = 0.0;
-    double total_shift_precision = 0.0;
-    double total_cluster_precision = 0.0;
-    double total_ncc_precision = 0.0;
-    double total_lowe_precision = 0.0;
-    double total_bct_precision = 0.0;
-
-    double total_epi_time = 0.0;
-    double total_disp_time = 0.0;
-    double total_shift_time = 0.0;
-    double total_clust_time = 0.0;
-    double total_patch_time = 0.0;
-    double total_ncc_time = 0.0;
-    double total_lowe_time = 0.0;
-    double total_image_time = 0.0;
-    double total_bct_time = 0.0;
-
-    for (const RecallMetrics &m : all_forward_recall_metrics)
-    {
-        total_epi_recall += m.epi_distance_recall;
-        total_disp_recall += m.max_disparity_recall;
-        total_shift_recall += m.epi_shift_recall;
-        total_cluster_recall += m.epi_cluster_recall;
-        total_ncc_recall += m.ncc_recall;
-        total_lowe_recall += m.lowe_recall;
-
-        total_epi_precision += m.per_image_epi_precision;
-        total_disp_precision += m.per_image_disp_precision;
-        total_shift_precision += m.per_image_shift_precision;
-        total_cluster_precision += m.per_image_clust_precision;
-        total_ncc_precision += m.per_image_ncc_precision;
-        total_lowe_precision += m.per_image_lowe_precision;
-
-        total_epi_time += m.per_image_epi_time;
-        total_disp_time += m.per_image_disp_time;
-        total_shift_time += m.per_image_shift_time;
-        total_clust_time += m.per_image_clust_time;
-        total_patch_time += m.per_image_patch_time;
-        total_ncc_time += m.per_image_ncc_time;
-        total_lowe_time += m.per_image_lowe_time;
-        total_image_time += m.per_image_total_time;
-    }
-
-    for (const BidirectionalMetrics &m : all_bct_metrics)
-    {
-        total_bct_recall += m.per_image_bct_recall;
-        total_bct_precision += m.per_image_bct_precision;
-        total_bct_time += m.per_image_bct_time;
-    }
-
-    int total_images = static_cast<int>(all_forward_recall_metrics.size());
-
-    double avg_epi_recall = (total_images > 0) ? total_epi_recall / total_images : 0.0;
-    double avg_disp_recall = (total_images > 0) ? total_disp_recall / total_images : 0.0;
-    double avg_shift_recall = (total_images > 0) ? total_shift_recall / total_images : 0.0;
-    double avg_cluster_recall = (total_images > 0) ? total_cluster_recall / total_images : 0.0;
-    double avg_ncc_recall = (total_images > 0) ? total_ncc_recall / total_images : 0.0;
-    double avg_lowe_recall = (total_images > 0) ? total_lowe_recall / total_images : 0.0;
-    double avg_bct_recall = (total_images > 0) ? total_bct_recall / total_images : 0.0;
-
-    double avg_epi_precision = (total_images > 0) ? total_epi_precision / total_images : 0.0;
-    double avg_disp_precision = (total_images > 0) ? total_disp_precision / total_images : 0.0;
-    double avg_shift_precision = (total_images > 0) ? total_shift_precision / total_images : 0.0;
-    double avg_cluster_precision = (total_images > 0) ? total_cluster_precision / total_images : 0.0;
-    double avg_ncc_precision = (total_images > 0) ? total_ncc_precision / total_images : 0.0;
-    double avg_lowe_precision = (total_images > 0) ? total_lowe_precision / total_images : 0.0;
-    double avg_bct_precision = (total_images > 0) ? total_bct_precision / total_images : 0.0;
-
-    double avg_epi_time = (total_images > 0) ? total_epi_time / total_images : 0.0;
-    double avg_disp_time = (total_images > 0) ? total_disp_time / total_images : 0.0;
-    double avg_shift_time = (total_images > 0) ? total_shift_time / total_images : 0.0;
-    double avg_clust_time = (total_images > 0) ? total_clust_time / total_images : 0.0;
-    double avg_patch_time = (total_images > 0) ? total_patch_time / total_images : 0.0;
-    double avg_ncc_time = (total_images > 0) ? total_ncc_time / total_images : 0.0;
-    double avg_lowe_time = (total_images > 0) ? total_lowe_time / total_images : 0.0;
-    double avg_total_time = (total_images > 0) ? total_image_time / total_images : 0.0;
-    double avg_bct_time = (total_images > 0) ? total_bct_time / total_images : 0.0;
-
-    std::string edge_stat_dir = dataset.get_output_path() + "/edge_stats";
-    std::filesystem::create_directories(edge_stat_dir);
-
-    std::ofstream recall_csv(edge_stat_dir + "/recall_metrics.csv");
-    recall_csv << "ImageIndex,EpiDistanceRecall,MaxDisparityRecall,EpiShiftRecall,EpiClusterRecall,NCCRecall,LoweRecall,BidirectionalRecall\n";
-
-    std::ofstream time_elapsed_csv(edge_stat_dir + "/time_elapsed_metrics.csv");
-    time_elapsed_csv << "ImageIndex,EpiDistanceTime,MaxDisparityTime,EpiShiftTime,EpiClusterTime,PatchTime,NCCTime,LoweTime,TotalLoopTime,BidirectionalTime\n";
-
-    for (size_t i = 0; i < all_forward_recall_metrics.size(); i++)
-    {
-        const auto &m = all_forward_recall_metrics[i];
-        const auto &bct = all_bct_metrics[i];
-        recall_csv << i << ","
-                   << std::fixed << std::setprecision(4) << m.epi_distance_recall * 100 << ","
-                   << std::fixed << std::setprecision(4) << m.max_disparity_recall * 100 << ","
-                   << std::fixed << std::setprecision(4) << m.epi_shift_recall * 100 << ","
-                   << std::fixed << std::setprecision(4) << m.epi_cluster_recall * 100 << ","
-                   << std::fixed << std::setprecision(4) << m.ncc_recall * 100 << ","
-                   << std::fixed << std::setprecision(4) << m.lowe_recall * 100 << ","
-                   << std::fixed << std::setprecision(4) << bct.per_image_bct_recall * 100 << "\n";
-    }
-
-    recall_csv << "Average,"
-               << std::fixed << std::setprecision(4) << avg_epi_recall * 100 << ","
-               << std::fixed << std::setprecision(4) << avg_disp_recall * 100 << ","
-               << std::fixed << std::setprecision(4) << avg_shift_recall * 100 << ","
-               << std::fixed << std::setprecision(4) << avg_cluster_recall * 100 << ","
-               << std::fixed << std::setprecision(4) << avg_ncc_recall * 100 << ","
-               << std::fixed << std::setprecision(4) << avg_lowe_recall * 100 << ","
-               << std::fixed << std::setprecision(4) << avg_bct_recall * 100 << "\n";
-
-    for (size_t i = 0; i < all_forward_recall_metrics.size(); i++)
-    {
-        const auto &m = all_forward_recall_metrics[i];
-        const auto &bct = all_bct_metrics[i];
-        time_elapsed_csv << i << ","
-                         << std::fixed << std::setprecision(4) << m.per_image_epi_time << ","
-                         << std::fixed << std::setprecision(4) << m.per_image_disp_time << ","
-                         << std::fixed << std::setprecision(4) << m.per_image_shift_time << ","
-                         << std::fixed << std::setprecision(4) << m.per_image_clust_time << ","
-                         << std::fixed << std::setprecision(4) << m.per_image_patch_time << ","
-                         << std::fixed << std::setprecision(4) << m.per_image_ncc_time << ","
-                         << std::fixed << std::setprecision(4) << m.per_image_lowe_time << ","
-                         << std::fixed << std::setprecision(4) << m.per_image_total_time << ","
-                         << std::fixed << std::setprecision(4) << bct.per_image_bct_time << "\n";
-    }
-
-    time_elapsed_csv << "Average,"
-                     << std::fixed << std::setprecision(4) << avg_epi_time << ","
-                     << std::fixed << std::setprecision(4) << avg_disp_time << ","
-                     << std::fixed << std::setprecision(4) << avg_shift_time << ","
-                     << std::fixed << std::setprecision(4) << avg_clust_time << ","
-                     << std::fixed << std::setprecision(4) << avg_patch_time << ","
-                     << std::fixed << std::setprecision(4) << avg_ncc_time << ","
-                     << std::fixed << std::setprecision(4) << avg_lowe_time << ","
-                     << std::fixed << std::setprecision(4) << avg_total_time << ","
-                     << std::fixed << std::setprecision(4) << avg_bct_time << "\n";
-
-    std::ofstream count_csv(edge_stat_dir + "/count_metrics.csv");
-    count_csv
-        << "before_epi_distance,after_epi_distance,average_before_epi_distance,average_after_epi_distance,"
-        << "before_max_disp,after_max_disp,average_before_max_disp,average_after_max_disp,"
-        << "before_epi_shift,after_epi_shift,average_before_epi_shift,average_after_epi_shift,"
-        << "before_epi_cluster,after_epi_cluster,average_before_epi_cluster,average_after_epi_cluster,"
-        << "before_patch, after_patch, average_before_patch, average_after_patch,"
-        << "before_ncc,after_ncc,average_before_ncc,average_after_ncc,"
-        << "before_lowe,after_lowe,average_before_lowe,after_after_lowe,"
-        << "before_bct (PER IMAGE),after_bct (PER IMAGE),average_before_bct (PER IMAGE),after_after_bct (PER IMAGE)\n";
-
-    double total_avg_before_epi = 0.0;
-    double total_avg_after_epi = 0.0;
-
-    double total_avg_before_disp = 0.0;
-    double total_avg_after_disp = 0.0;
-
-    double total_avg_before_shift = 0.0;
-    double total_avg_after_shift = 0.0;
-
-    double total_avg_before_clust = 0.0;
-    double total_avg_after_clust = 0.0;
-
-    double total_avg_before_patch = 0.0;
-    double total_avg_after_patch = 0.0;
-
-    double total_avg_before_ncc = 0.0;
-    double total_avg_after_ncc = 0.0;
-
-    double total_avg_before_lowe = 0.0;
-    double total_avg_after_lowe = 0.0;
-
-    double total_avg_before_bct = 0.0;
-    double total_avg_after_bct = 0.0;
-
-    size_t num_rows = per_image_avg_before_epi.size();
-
-    for (size_t i = 0; i < num_rows; ++i)
-    {
-        total_avg_before_epi += per_image_avg_before_epi[i];
-        total_avg_after_epi += per_image_avg_after_epi[i];
-
-        total_avg_before_disp += per_image_avg_before_disp[i];
-        total_avg_after_disp += per_image_avg_after_disp[i];
-
-        total_avg_before_shift += per_image_avg_before_shift[i];
-        total_avg_after_shift += per_image_avg_after_shift[i];
-
-        total_avg_before_clust += per_image_avg_before_clust[i];
-        total_avg_after_clust += per_image_avg_after_clust[i];
-
-        total_avg_before_patch += per_image_avg_before_patch[i];
-        total_avg_after_patch += per_image_avg_after_patch[i];
-
-        total_avg_before_ncc += per_image_avg_before_ncc[i];
-        total_avg_after_ncc += per_image_avg_after_ncc[i];
-
-        total_avg_before_lowe += per_image_avg_before_lowe[i];
-        total_avg_after_lowe += per_image_avg_after_lowe[i];
-
-        total_avg_before_bct += per_image_avg_before_bct[i];
-        total_avg_after_bct += per_image_avg_after_bct[i];
-
-        count_csv
-            << static_cast<int>(std::ceil(per_image_avg_before_epi[i])) << ","
-            << static_cast<int>(std::ceil(per_image_avg_after_epi[i])) << ","
-            << ","
-            << ","
-            << static_cast<int>(std::ceil(per_image_avg_before_disp[i])) << ","
-            << static_cast<int>(std::ceil(per_image_avg_after_disp[i])) << ","
-            << ","
-            << ","
-            << static_cast<int>(std::ceil(per_image_avg_before_shift[i])) << ","
-            << static_cast<int>(std::ceil(per_image_avg_after_shift[i])) << ","
-            << ","
-            << ","
-            << static_cast<int>(std::ceil(per_image_avg_before_clust[i])) << ","
-            << static_cast<int>(std::ceil(per_image_avg_after_clust[i])) << ","
-            << ","
-            << ","
-            << static_cast<int>(std::ceil(per_image_avg_before_patch[i])) << ","
-            << static_cast<int>(std::ceil(per_image_avg_after_patch[i])) << ","
-            << ","
-            << ","
-            << static_cast<int>(std::ceil(per_image_avg_before_ncc[i])) << ","
-            << static_cast<int>(std::ceil(per_image_avg_after_ncc[i])) << ","
-            << ","
-            << ","
-            << static_cast<int>(std::ceil(per_image_avg_before_lowe[i])) << ","
-            << static_cast<int>(std::ceil(per_image_avg_after_lowe[i])) << ","
-            << ","
-            << ","
-            << static_cast<int>(std::ceil(per_image_avg_before_bct[i])) << ","
-            << static_cast<int>(std::ceil(per_image_avg_after_bct[i])) << ","
-            << "\n";
-    }
-
-    int avg_of_avgs_before_epi = 0;
-    int avg_of_avgs_after_epi = 0;
-
-    int avg_of_avgs_before_disp = 0;
-    int avg_of_avgs_after_disp = 0;
-
-    int avg_of_avgs_before_shift = 0;
-    int avg_of_avgs_after_shift = 0;
-
-    int avg_of_avgs_before_clust = 0;
-    int avg_of_avgs_after_clust = 0;
-
-    int avg_of_avgs_before_patch = 0;
-    int avg_of_avgs_after_patch = 0;
-
-    int avg_of_avgs_before_ncc = 0;
-    int avg_of_avgs_after_ncc = 0;
-
-    int avg_of_avgs_before_lowe = 0;
-    int avg_of_avgs_after_lowe = 0;
-
-    int avg_of_avgs_before_bct = 0;
-    int avg_of_avgs_after_bct = 0;
-
-    if (num_rows > 0)
-    {
-        avg_of_avgs_before_epi = std::ceil(total_avg_before_epi / num_rows);
-        avg_of_avgs_after_epi = std::ceil(total_avg_after_epi / num_rows);
-
-        avg_of_avgs_before_disp = std::ceil(total_avg_before_disp / num_rows);
-        avg_of_avgs_after_disp = std::ceil(total_avg_after_disp / num_rows);
-
-        avg_of_avgs_before_shift = std::ceil(total_avg_before_shift / num_rows);
-        avg_of_avgs_after_shift = std::ceil(total_avg_after_shift / num_rows);
-
-        avg_of_avgs_before_clust = std::ceil(total_avg_before_clust / num_rows);
-        avg_of_avgs_after_clust = std::ceil(total_avg_after_clust / num_rows);
-
-        avg_of_avgs_before_patch = std::ceil(total_avg_before_patch / num_rows);
-        avg_of_avgs_after_patch = std::ceil(total_avg_after_patch / num_rows);
-
-        avg_of_avgs_before_ncc = std::ceil(total_avg_before_ncc / num_rows);
-        avg_of_avgs_after_ncc = std::ceil(total_avg_after_ncc / num_rows);
-
-        avg_of_avgs_before_lowe = std::ceil(total_avg_before_lowe / num_rows);
-        avg_of_avgs_after_lowe = std::ceil(total_avg_after_lowe / num_rows);
-
-        avg_of_avgs_before_bct = std::ceil(total_avg_before_bct / num_rows);
-        avg_of_avgs_after_bct = std::ceil(total_avg_after_bct / num_rows);
-    }
-
-    count_csv
-        << ","
-        << ","
-        << avg_of_avgs_before_epi << ","
-        << avg_of_avgs_after_epi << ","
-        << ","
-        << ","
-        << avg_of_avgs_before_disp << ","
-        << avg_of_avgs_after_disp << ","
-        << ","
-        << ","
-        << avg_of_avgs_before_shift << ","
-        << avg_of_avgs_after_shift << ","
-        << ","
-        << ","
-        << avg_of_avgs_before_clust << ","
-        << avg_of_avgs_after_clust << ","
-        << ","
-        << ","
-        << avg_of_avgs_before_patch << ","
-        << avg_of_avgs_after_patch << ","
-        << ","
-        << ","
-        << avg_of_avgs_before_ncc << ","
-        << avg_of_avgs_after_ncc << ","
-        << ","
-        << ","
-        << avg_of_avgs_before_lowe << ","
-        << avg_of_avgs_after_lowe << ","
-        << ","
-        << ","
-        << avg_of_avgs_before_bct << ","
-        << avg_of_avgs_after_bct << "\n";
-
-    std::ofstream precision_csv(edge_stat_dir + "/precision_metrics.csv");
-    precision_csv << "ImageIndex,EpiDistancePrecision,MaxDisparityPrecision,EpiShiftPrecision,EpiClusterPrecision,NCCPrecision,LowePrecision,BidirectionalPrecision\n";
-
-    for (size_t i = 0; i < all_forward_recall_metrics.size(); i++)
-    {
-        const auto &m = all_forward_recall_metrics[i];
-        const auto &bct = all_bct_metrics[i];
-        precision_csv << i << ","
-                      << std::fixed << std::setprecision(4) << m.per_image_epi_precision * 100 << ","
-                      << std::fixed << std::setprecision(4) << m.per_image_disp_precision * 100 << ","
-                      << std::fixed << std::setprecision(4) << m.per_image_shift_precision * 100 << ","
-                      << std::fixed << std::setprecision(4) << m.per_image_clust_precision * 100 << ","
-                      << std::fixed << std::setprecision(4) << m.per_image_ncc_precision * 100 << ","
-                      << std::fixed << std::setprecision(4) << m.per_image_lowe_precision * 100 << ","
-                      << std::fixed << std::setprecision(4) << bct.per_image_bct_precision * 100 << "\n";
-    }
-
-    precision_csv << "Average,"
-                  << std::fixed << std::setprecision(4) << avg_epi_precision * 100 << ","
-                  << std::fixed << std::setprecision(4) << avg_disp_precision * 100 << ","
-                  << std::fixed << std::setprecision(4) << avg_shift_precision * 100 << ","
-                  << std::fixed << std::setprecision(4) << avg_cluster_precision * 100 << ","
-                  << std::fixed << std::setprecision(4) << avg_ncc_precision * 100 << ","
-                  << std::fixed << std::setprecision(4) << avg_lowe_precision * 100 << ","
-                  << std::fixed << std::setprecision(4) << avg_bct_precision * 100 << "\n";
-}
-
-Edge EBVO::GetGTEdge(bool left, StereoFrame &current_frame, StereoFrame &next_frame,
-                     const cv::Mat &disparity_map, const cv::Mat &K_inverse, const cv::Mat &K,
-                     const Edge &edge)
-{
-    double disparity = Bilinear_Interpolation(disparity_map, edge.location);
-    if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
-    {
-        // std::cout << "Invalid disparity value: " << disparity << " for edge at location: " << edge.location << std::endl;
-        return Edge(); // Return an empty edge if disparity is invalid
-    }
-
-    double rho = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
-    double rho_1 = (rho < 0.0) ? (-rho) : (rho);
-
-    // Convert cv::Mat to Eigen::Matrix3d
-    Eigen::Matrix3d K_inverse_eigen, K_eigen;
-    cv::cv2eigen(K_inverse, K_inverse_eigen);
-    cv::cv2eigen(K, K_eigen);
-
-    Eigen::Vector3d gamma_1 = K_inverse_eigen * Eigen::Vector3d(edge.location.x, edge.location.y, 1.0);
-    Eigen::Vector3d Gamma_1 = rho_1 * gamma_1;
-
-    Eigen::Matrix3d R1 = current_frame.gt_rotation;
-    Eigen::Matrix3d R2 = next_frame.gt_rotation;
-    Eigen::Vector3d t1 = current_frame.gt_translation;
-    Eigen::Vector3d t2 = next_frame.gt_translation;
-
-    Eigen::Vector3d Gamma_2 = (R2 * R1.transpose()) * Gamma_1 + t2 - R2 * R1.transpose() * t1;
-    Eigen::Vector3d homogeneous_point = K_eigen * Gamma_2;
-    Eigen::Vector2d projected_point = homogeneous_point.head<2>() / homogeneous_point.z();
-
-    Edge gt_edge;
-    gt_edge.location = cv::Point2d(projected_point.x(), projected_point.y());
-    gt_edge.orientation = edge.orientation; // orientation shouldn't change that much.
-    gt_edge.b_isEmpty = false;
-
-    return gt_edge;
-}
-
-void EBVO::GetGTEdges(size_t &frame_idx, StereoFrame &previous_frame, StereoFrame &current_frame,
-                      const std::vector<Edge> &previous_frame_edges,
-                      const cv::Mat &left_ref_map, const cv::Mat &left_calib_inv,
-                      const cv::Mat &left_calib, std::vector<Edge> &gt_edges,
-                      std::unordered_map<Edge, EdgeGTMatchInfo> &left_edges_GT_Info)
-{
-    std::string output_dir = dataset.get_output_path();
-    std::string csv_filename = output_dir + "/gt_correspondences_frame_" + std::to_string(frame_idx) + ".csv";
-    std::ofstream gt_csv(csv_filename);
-
-    // Write CSV header
-    gt_csv << "edge_index,prev_x,prev_y,curr_x,curr_y,orientation\n";
-    left_edges_GT_Info.clear();
-
-    for (int i = 0; i < previous_frame_edges.size(); ++i)
-    {
-
-        Edge GTEdge = GetGTEdge(true, previous_frame, current_frame,
-                                left_ref_map, left_calib_inv, left_calib,
-                                previous_frame_edges[i]);
-        if (GTEdge.b_isEmpty)
-            continue;
         else
         {
-            std::vector<int> edge_idx = spatial_grid.getCandidatesWithinRadius(GTEdge, 1);
+            calib_matrix = dataset.get_right_calib_matrix();
+        }
+        Eigen::Vector3d projected_point = calib_matrix * (R21 * last_keyframe_stereo.Gamma_in_cam_coord[i] + t21);
+        projected_point /= projected_point.z();
+        cv::Point2d projected_point_cv(projected_point.x(), projected_point.y());
 
-            EdgeGTMatchInfo match_info;
-            double avg_orientation;
-            match_info.edge = previous_frame_edges[i];
-            match_info.gt_edge = GTEdge;
-            for (int idx : edge_idx)
+        if (projected_point.x() > 10 && projected_point.y() > 10 && projected_point.x() < dataset.get_width() - 10 && projected_point.y() < dataset.get_height() - 10)
+        {
+            std::vector<int> current_candidate_edge_indices;
+            current_candidate_edge_indices = spatial_grid.getCandidatesWithinRadius(current_kf_edges[last_keyframe_stereo.focused_edges[i]].location, 1); // clear: we use the kf edge stereoframe order, to get the candaiates
+            std::vector<int> CF_veridical_edges_indices;
+            for (const auto &curr_e_index : current_candidate_edge_indices)
             {
-                if (std::abs(dataset.left_edges[idx].location.x - GTEdge.location.x) < 1.0 && std::abs(dataset.left_edges[idx].location.y - GTEdge.location.y) < 1.0)
+                //> Check if the Euclidean distance is less than some threshold
+                if (cv::norm(current_cf_edges[curr_e_index].location - projected_point_cv) < gt_dist_threshold)
                 {
-                    match_info.vertical_edges.push_back(dataset.left_edges[idx]);
-                    avg_orientation += dataset.left_edges[idx].orientation;
+                    CF_veridical_edges_indices.push_back(curr_e_index);
                 }
             }
-            if (match_info.vertical_edges.size() == 0)
-                continue;
+            if (!CF_veridical_edges_indices.empty())
+            {
+                EdgeCorrespondenceData edge_pair;
+                edge_pair.stereo_frame_idx = i;
+                edge_pair.gt_location_on_cf = projected_point_cv;
+                edge_pair.veridical_cf_edges_indices = CF_veridical_edges_indices;
 
-            avg_orientation /= match_info.vertical_edges.size();
-            match_info.gt_edge.orientation = avg_orientation;
-            left_edges_GT_Info[previous_frame_edges[i]] = match_info;
-
-            const Edge &prev_edge = previous_frame_edges[i];
-            gt_csv << i << ","
-                   << std::fixed << std::setprecision(2) << prev_edge.location.x << ","
-                   << std::fixed << std::setprecision(2) << prev_edge.location.y << ","
-                   << std::fixed << std::setprecision(2) << GTEdge.location.x << ","
-                   << std::fixed << std::setprecision(2) << GTEdge.location.y << ","
-                   << std::fixed << std::setprecision(4) << prev_edge.orientation << "\n";
+                //> FIXME: This should be obtained from the stereo edge matching result
+                // edge_pair.veridical_stereo_right_edges_for_cf.push_back(current_frame_stereo.GT_corresponding_edges[curr_e_index]);
+                // edge_pair.veridical_stereo_right_edges_for_kf.push_back(last_keyframe_stereo.GT_corresponding_edges[i]);
+                KF_CF_edge_pairs[last_keyframe_stereo.focused_edges[i]] = edge_pair;
+            }
         }
     }
-    gt_csv.close();
-    std::cout << "Saved ground truth correspondences to: " << csv_filename << std::endl;
+#if WRITE_KF_CF_GT_EDGE_PAIRS
+    std::string left = is_left ? "left" : "right";
+    std::string kf_cf_gt_edge_pairs_last_kf_filename = dataset.get_output_path() + "/kf_cf_gt_edge_pairs_" + left + "_KF.txt";
+    std::cout << "Writing KF-CF-GT edge pairs for KF to: " << kf_cf_gt_edge_pairs_last_kf_filename << std::endl;
+    std::ofstream kf_cf_gt_edge_pairs_kf_file(kf_cf_gt_edge_pairs_last_kf_filename);
+    int gt_edge_idx = 0;
+    kf_cf_gt_edge_pairs_kf_file << "#Stereo_frame_edge_indx\tEdge_index\tKF_Edge_X\tKF_Edge_Y\tKF_Edge_Orientation\tDouble_check_frame_idx\tStereo_GT_index\tStereo_GT_X\tStereo_GT_Y\tCF_GT_Location_X\tCF_GT_Location_Y\n";
+    for (const auto &[kf_edge_index, ep] : KF_CF_edge_pairs)
+    {
+        int other_kf_idx = last_keyframe_stereo.GT_corresponding_edges[ep.stereo_frame_idx][last_keyframe_stereo.Closest_GT_veridical_edges[ep.stereo_frame_idx]];
+        Edge &other_kf_edge = other_keyframe_edges[other_kf_idx];
+        kf_cf_gt_edge_pairs_kf_file << gt_edge_idx << "\t"
+                                    << kf_edge_index << "\t"
+                                    << current_kf_edges[kf_edge_index].location.x << "\t"
+                                    << current_kf_edges[kf_edge_index].location.y << "\t"
+                                    << current_kf_edges[kf_edge_index].orientation << "\t"
+                                    << ep.stereo_frame_idx << "\t"
+                                    << other_kf_idx << "\t"
+                                    << other_kf_edge.location.x << "\t" << other_kf_edge.location.y << "\t"
 
-    std::cout << left_edges_GT_Info.size() << std::endl;
+                                    << ep.gt_location_on_cf.x << "\t"
+                                    << ep.gt_location_on_cf.y << "\n";
+        gt_edge_idx++;
+    }
+    kf_cf_gt_edge_pairs_kf_file.close();
+
+    std::string kf_cf_gt_edge_pairs_curr_kf_filename = dataset.get_output_path() + "/kf_cf_gt_edge_pairs_" + left + "_CF.txt";
+    std::cout << "Writing KF-CF-GT edge pairs for CF to: " << kf_cf_gt_edge_pairs_curr_kf_filename << std::endl;
+    std::ofstream kf_cf_gt_edge_pairs_cf_file(kf_cf_gt_edge_pairs_curr_kf_filename);
+    gt_edge_idx = 0;
+    for (const auto &[kf_edge_index, ep] : KF_CF_edge_pairs)
+    {
+        kf_cf_gt_edge_pairs_cf_file << "#GT_Edge_Index_on_KF\tCF_Edge_X\tCF_Edge_Y\tCF_Edge_Orientation\n";
+        for (const auto &v_edge_idx : ep.veridical_cf_edges_indices)
+        {
+            kf_cf_gt_edge_pairs_cf_file << gt_edge_idx << "\t"
+                                        << current_cf_edges[v_edge_idx].location.x << "\t"
+                                        << current_cf_edges[v_edge_idx].location.y << "\t"
+                                        << current_cf_edges[v_edge_idx].orientation << "\n";
+        }
+        gt_edge_idx++;
+    }
+    kf_cf_gt_edge_pairs_cf_file.close();
+#endif
 }
 
-void EBVO::DebugNCCScoresWithGT(const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
-                                const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
-                                size_t frame_idx, const StereoFrame &previous_frame,
-                                const StereoFrame &current_frame)
+// void EBVO::Right_Edges_Stereo_Reconstruction(const StereoEdgeCorrespondencesGT &stereo_left, StereoEdgeCorrespondencesGT &stereo_right, StereoFrame &current_frame)
+// {
+//     stereo_right.clear_all();
+
+//     if (stereo_left.focused_edges.empty())
+//     {
+//         std::cerr << "Warning: No focused edges in left stereo data" << std::endl;
+//         return;
+//     }
+
+//     const size_t num_edges = stereo_left.focused_edges.size();
+//     stereo_right.focused_edges.reserve(num_edges);
+//     stereo_right.GT_locations_from_disparity.reserve(num_edges);
+//     stereo_right.GT_corresponding_edges.reserve(num_edges);
+//     stereo_right.Closest_GT_veridical_edges.reserve(num_edges);
+//     stereo_right.Gamma_in_cam_coord.reserve(num_edges);
+
+//     for (size_t i = 0; i < num_edges; ++i)
+//     {
+//         // Bounds checking
+//         if (i >= stereo_left.Closest_GT_veridical_edges.size() ||
+//             i >= stereo_left.GT_corresponding_edges.size() ||
+//             i >= stereo_left.Gamma_in_cam_coord.size())
+//         {
+//             std::cerr << "Index out of bounds at i=" << i << std::endl;
+//             continue;
+//         }
+
+//         if (stereo_left.GT_corresponding_edges[i].empty())
+//         {
+//             std::cerr << "Empty GT_corresponding_edges for edge " << i << std::endl;
+//             continue;
+//         }
+
+//         int closest_ind = stereo_left.Closest_GT_veridical_edges[i];
+
+//         // Validate closest_ind
+//         if (closest_ind < 0 ||
+//             static_cast<size_t>(closest_ind) >= stereo_left.GT_corresponding_edges[i].size())
+//         {
+//             std::cerr << "Invalid closest_ind=" << closest_ind
+//                       << " for edge " << i
+//                       << " (GT_corresponding_edges size: " << stereo_left.GT_corresponding_edges[i].size() << ")" << std::endl;
+//             continue;
+//         }
+
+//         const Edge &focus_edge = stereo_left.GT_corresponding_edges[i][closest_ind];
+
+//         stereo_right.focused_edges.push_back(focus_edge);
+//         stereo_right.GT_locations_from_disparity.push_back(stereo_left.focused_edges[i].location);
+//         stereo_right.GT_corresponding_edges.push_back({stereo_left.focused_edges[i]});
+//         stereo_right.Closest_GT_veridical_edges.push_back(0);
+//         stereo_right.Gamma_in_cam_coord.push_back(stereo_left.Gamma_in_cam_coord[i]);
+//     }
+//     if (!stereo_right.focused_edges.empty())
+//     {
+//         try
+//         {
+//             std::cout << "Extracting SIFT descriptors for right edges..." << std::endl;
+//             augment_Edge_Data(stereo_right, current_frame.right_image_undistorted);
+//         }
+//         catch (const std::exception &e)
+//         {
+//             std::cerr << "Error in augment_Edge_Data: " << e.what() << std::endl;
+//             return;
+//         }
+//     }
+// }
+
+void EBVO::apply_spatial_grid_filtering(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT &keyframe_stereo, const std::vector<Edge> &edges, SpatialGrid &spatial_grid, double grid_radius)
 {
-    std::string output_dir = dataset.get_output_path();
-    // Create two distinctly named files
-    std::string debug_filename = output_dir + "/ncc_scores_gt_debug_frame_" + std::to_string(frame_idx) + ".csv";
-
-    std::ofstream debug_csv(debug_filename);
-
-    // Write CSV header
-    debug_csv << "prev_edge_idx,prev_x,prev_y,prev_orientation,candidate_type,candidate_idx,candidate_x,candidate_y,candidate_orientation,gt_x,gt_y,ncc_score,is_gt_match\n";
-
-    int prev_edge_idx = 0;
-    int gt_matches_found = 0;
-    int total_matches_with_high_ncc = 0;
-    int total_gt_with_high_ncc = 0;
-
-    for (const auto &gt_pair : gt_correspondences)
+    //> For each edge in the keyframe, find candidate edges in the current frame using spatial grid
+    // #pragma omp parallel for schedule(dynamic)
+    for (auto it = KF_CF_edge_pairs.begin(); it != KF_CF_edge_pairs.end(); ++it)
     {
-        const Edge &prev_edge = gt_pair.first;
-        const EdgeGTMatchInfo &match_info = gt_pair.second;
-        const Edge &gt_edge = match_info.gt_edge;
-        const std::vector<Edge> &vertical_edges = match_info.vertical_edges;
+        int kf_edge_idx = it->first;
+        EdgeCorrespondenceData &edge_data = it->second;
+        edge_data.matching_cf_edges_indices = spatial_grid.getCandidatesWithinRadius(edges[kf_edge_idx], grid_radius);
+    }
+}
 
-        // Compute NCC score for the ground truth match
-        double gt_ncc_score = edge_patch_similarity(prev_edge, gt_edge,
-                                                    previous_frame.left_image,
-                                                    current_frame.left_image);
-
-        // Record the ground truth match
-        debug_csv << prev_edge_idx << ","
-                  << std::fixed << std::setprecision(3)
-                  << prev_edge.location.x << ","
-                  << prev_edge.location.y << ","
-                  << prev_edge.orientation << ","
-                  << "GT" << "," // This is a ground truth match
-                  << "-1" << "," // No candidate index for GT
-                  << gt_edge.location.x << ","
-                  << gt_edge.location.y << ","
-                  << gt_edge.orientation << ","
-                  << gt_edge.location.x << "," // GT coords are the same
-                  << gt_edge.location.y << ","
-                  << gt_ncc_score << ","
-                  << "1" << "\n"; // is_gt_match = true
-
-        // If GT has good NCC score, count it
-        if (!std::isnan(gt_ncc_score) && gt_ncc_score >= NCC_THRESH_WEAK_BOTH_SIDES)
-        {
-            total_gt_with_high_ncc++;
-        }
-        //> CH TODO: Avoid using OpenCV to visualize. Use Python or MATLAB instead.
-        // Now check all vertical edges
-        int candidate_idx = 0;
-        bool found_gt_among_candidates = false;
-
-        for (const Edge &candidate : vertical_edges)
-        {
-            double distance_to_gt = cv::norm(candidate.location - gt_edge.location);
-            bool is_gt_match = (distance_to_gt < 2.0); // Consider matches within 2 pixels as "the same as GT"
-
-            double ncc_score = edge_patch_similarity(prev_edge, candidate,
-                                                     previous_frame.left_image,
-                                                     current_frame.left_image);
-
-            // Record the candidate match
-            debug_csv << prev_edge_idx << ","
-                      << std::fixed << std::setprecision(3)
-                      << prev_edge.location.x << ","
-                      << prev_edge.location.y << ","
-                      << prev_edge.orientation << ","
-                      << "Candidate" << ","
-                      << candidate_idx << ","
-                      << candidate.location.x << ","
-                      << candidate.location.y << ","
-                      << candidate.orientation << ","
-                      << gt_edge.location.x << ","
-                      << gt_edge.location.y << ","
-                      << ncc_score << ","
-                      << (is_gt_match ? "1" : "0") << "\n";
-
-            // Track matches that have good NCC scores
-            if (!std::isnan(ncc_score) && ncc_score >= NCC_THRESH_WEAK_BOTH_SIDES)
-            {
-                total_matches_with_high_ncc++;
-                if (is_gt_match)
-                {
-                    found_gt_among_candidates = true;
-                }
-            }
-
-            candidate_idx++;
-        }
-
-        if (found_gt_among_candidates)
-        {
-            gt_matches_found++;
-        }
-
-        prev_edge_idx++;
+void EBVO::apply_SIFT_filtering(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT &keyframe_stereo, const StereoEdgeCorrespondencesGT &current_stereo, double sift_dist_threshold, bool is_left)
+{
+    //> for each edge in the keyframe, compare its SIFT descriptor with the SIFT descriptors of the edges in the current frame
+    // #pragma omp parallel for schedule(dynamic)
+    std::unordered_map<int, int> edge_to_stereo_idx;
+    for (int i = 0; i < current_stereo.focused_edges.size(); ++i)
+    {
+        edge_to_stereo_idx[current_stereo.focused_edges[i]] = i;
     }
 
-    debug_csv.close();
+    for (auto it = KF_CF_edge_pairs.begin(); it != KF_CF_edge_pairs.end(); ++it)
+    {
+        int kf_edge_idx = it->first;
+        EdgeCorrespondenceData &edge_data = it->second;
+        std::vector<int> filtered_cf_edges_indices;
+        for (auto &m_edge_idx : edge_data.matching_cf_edges_indices)
+        {
+            auto stereo_it = edge_to_stereo_idx.find(m_edge_idx);
+            if (stereo_it != edge_to_stereo_idx.end())
+            {
+                int stereo_frame_index = stereo_it->second;
+                double sift_desc_distance = cv::norm(keyframe_stereo.edge_descriptors[edge_data.stereo_frame_idx], current_stereo.edge_descriptors[stereo_frame_index], cv::NORM_L2);
+                if (sift_desc_distance < sift_dist_threshold)
+                {
+                    filtered_cf_edges_indices.push_back(m_edge_idx);
+                }
+            }
+        }
+        edge_data.matching_cf_edges_indices = filtered_cf_edges_indices;
+    }
+#if WRITE_KF_CF_GT_EDGE_PAIRS
+    std::string left = is_left ? "left" : "right";
+    std::vector<Edge> &current_cf_edges = is_left ? cf_edges_left : cf_edges_right;
+    std::string kf_cf_gt_edge_pairs_curr_kf_filename = dataset.get_output_path() + "/kf_cf_gt_edge_pairs_after_SIFT_" + left + "_CF.txt";
+    std::cout << "Writing KF-CF-GT edge pairs for CF after SIFT filtering to: " << kf_cf_gt_edge_pairs_curr_kf_filename << std::endl;
+    std::ofstream kf_cf_gt_edge_pairs_cf_file(kf_cf_gt_edge_pairs_curr_kf_filename);
+    int gt_edge_idx = 0;
+    for (const auto &[kf_edge_index, ep] : KF_CF_edge_pairs)
+    {
+        for (const auto &v_edge_idx : ep.veridical_cf_edges_indices)
+        {
+            kf_cf_gt_edge_pairs_cf_file << gt_edge_idx << "\t"
+                                        << kf_edge_index << "\t"
+                                        << current_stereo.focused_edges[ep.stereo_frame_idx] << "\t"
+                                        << current_cf_edges[v_edge_idx].location.x << "\t"
+                                        << current_cf_edges[v_edge_idx].location.y << "\t"
+                                        << current_cf_edges[v_edge_idx].orientation << "\n";
+        }
+        gt_edge_idx++;
+    }
+    kf_cf_gt_edge_pairs_cf_file.close();
+#endif
+}
+void EBVO::apply_NCC_filtering(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT &keyframe_stereo, const StereoEdgeCorrespondencesGT &current_stereo, double ncc_val_threshold,
+                               const cv::Mat &keyframe_image, const cv::Mat &current_image, bool is_left)
+{
 
-    // Print summary statistics
-    std::cout << "\n=== NCC SCORE DEBUG ANALYSIS FRAME " << frame_idx << " ===" << std::endl;
-    std::cout << "Total GT correspondences analyzed: " << gt_correspondences.size() << std::endl;
-    std::cout << "GT correspondences with high NCC scores: " << total_gt_with_high_ncc
-              << " (" << std::fixed << std::setprecision(2)
-              << (gt_correspondences.size() > 0 ? 100.0 * total_gt_with_high_ncc / gt_correspondences.size() : 0)
-              << "%)" << std::endl;
-    std::cout << "GT matches found among candidates with high NCC: " << gt_matches_found
-              << " (" << std::fixed << std::setprecision(2)
-              << (gt_correspondences.size() > 0 ? 100.0 * gt_matches_found / gt_correspondences.size() : 0)
-              << "%)" << std::endl;
-    std::cout << "Total candidates with high NCC scores: " << total_matches_with_high_ncc << std::endl;
-    std::cout << "NCC score analysis saved to: " << debug_filename << std::endl;
+    //> for each edge in the keyframe, compute the NCC score with the edges in the current frame
+    // #pragma omp parallel for schedule(dynamic)
+    for (auto it = KF_CF_edge_pairs.begin(); it != KF_CF_edge_pairs.end(); ++it)
+    {
+        int kf_edge_idx = it->first;
+        EdgeCorrespondenceData &edge_data = it->second;
+        std::vector<int> filtered_cf_edges_indices;
+        for (auto &m_edge_idx : edge_data.matching_cf_edges_indices)
+        {
+            const Edge &kf_edge = is_left ? kf_edges_left[kf_edge_idx]
+                                          : kf_edges_right[kf_edge_idx];
+            const Edge &cf_edge = is_left ? cf_edges_left[m_edge_idx]
+                                          : cf_edges_right[m_edge_idx];
+
+            double ncc_score = edge_patch_similarity(kf_edge, cf_edge, keyframe_image, current_image);
+            // std::cout << "NCC score between KF edge at (" << kf_edge.location.x << ", " << kf_edge.location.y << ") and CF edge at (" << cf_edge.location.x << ", " << cf_edge.location.y << ") is: " << ncc_score << std::endl;
+            if (ncc_score > ncc_val_threshold)
+            {
+                filtered_cf_edges_indices.push_back(m_edge_idx);
+            }
+        }
+        edge_data.matching_cf_edges_indices = filtered_cf_edges_indices;
+    }
+}
+
+void EBVO::apply_stereo_filtering(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs_left, KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs_right,
+                                  const StereoEdgeCorrespondencesGT &last_keyframe_stereo_left, const StereoEdgeCorrespondencesGT &current_frame_stereo_left,
+                                  const StereoEdgeCorrespondencesGT &last_keyframe_stereo_right, const StereoEdgeCorrespondencesGT &current_frame_stereo_right,
+                                  size_t frame_idx)
+{
+    std::unordered_map<int, int> right_edge_to_stereo_idx;
+    for (int i = 0; i < current_frame_stereo_right.focused_edges.size(); ++i)
+    {
+        right_edge_to_stereo_idx[current_frame_stereo_right.focused_edges[i]] = i;
+    }
+    // we do the same thing to the stereo right edges: use keyframe_stereo.GT_corresponding_edges, apply spatial grid, sift, ncc to filter the right edges
+    std::string output_dir = dataset.get_output_path();
+    std::filesystem::create_directories(output_dir);
+    std::string stereo_filter_filename = output_dir + "/stereo_filtering_debug_frame_" + std::to_string(frame_idx) + ".csv";
+    std::ofstream stereo_csv(stereo_filter_filename);
+    // stereo_csv << "examining the 1000th KF-CF pair in left frames\n";
+    // std::cout << "Applying stereo filtering on KF-CF edge correspondences..." << std::endl;
+    auto write_edge_pair_to_csv = [&](const std::string &stage, int pair_idx, int edge_index, const EdgeCorrespondenceData &edge_pair)
+    {
+        stereo_csv << "kf_edge_index,gt_location_x,gt_location_y\n";
+        stereo_csv << edge_index << ","
+                   << std::fixed << std::setprecision(2) << edge_pair.gt_location_on_cf.x << ","
+                   << std::fixed << std::setprecision(2) << edge_pair.gt_location_on_cf.y << "\n";
+        stereo_csv << "number of veridical CF edges\n";
+        stereo_csv << edge_pair.veridical_cf_edges_indices.size() << "\n";
+        stereo_csv << "number of matching CF edges after " << stage << "\n";
+        stereo_csv << edge_pair.matching_cf_edges_indices.size() << "\n";
+
+        stereo_csv << "veridical_cf_edges_indices\n";
+        // Write veridical indices
+        for (size_t i = 0; i < edge_pair.veridical_cf_edges_indices.size(); ++i)
+        {
+            if (i > 0)
+                stereo_csv << ";";
+            if (i % 10 == 0 && i > 0)
+                stereo_csv << "\n"; // New line every 10 entries for readability
+            stereo_csv << edge_pair.veridical_cf_edges_indices[i];
+        }
+        stereo_csv << "\nmatching_cf_edges_indices\n";
+
+        // Write matching indices
+        for (size_t i = 0; i < edge_pair.matching_cf_edges_indices.size(); ++i)
+        {
+            if (i > 0)
+                stereo_csv << ";";
+            if (i % 10 == 0 && i > 0)
+                stereo_csv << "\n"; // New line every 10 entries for readability
+            stereo_csv << edge_pair.matching_cf_edges_indices[i];
+        }
+        stereo_csv << "\n";
+    };
+    try
+    {
+        int i = 0;
+
+        for (auto it = KF_CF_edge_pairs_left.begin(); it != KF_CF_edge_pairs_left.end(); ++it)
+        {
+            bool debug = (i == 587);
+            std::unordered_set<int> stereo_left_to_right_mapping;
+            int left_kf_edge_index = it->first; // represents the 3rd order edge index in the keyframe left image
+            EdgeCorrespondenceData *left_pair_it = &it->second;
+            if (debug)
+            {
+                // std::cout << "trying logging initial left edge pair state before stereo filtering..." << std::endl;
+                write_edge_pair_to_csv("initial", i, it->first, it->second);
+            }
+
+            // for each left edge in the keyframe, we find the closest corresponding right stereo edge
+            int right_closest_kf_edge_index = last_keyframe_stereo_left.GT_corresponding_edges[left_pair_it->stereo_frame_idx][last_keyframe_stereo_left.Closest_GT_veridical_edges[left_pair_it->stereo_frame_idx]];
+            std::vector<int> &matching_cf_right = KF_CF_edge_pairs_right[right_closest_kf_edge_index].matching_cf_edges_indices;
+            if (debug)
+            {
+                std::cout << "Matching CF right edges size: " << matching_cf_right.size() << std::endl;
+                write_edge_pair_to_csv("initial_right", i, right_closest_kf_edge_index, KF_CF_edge_pairs_right[right_closest_kf_edge_index]);
+            }
+            for (const auto &right_cf_edge_index : matching_cf_right)
+            {
+                auto stereo_it = right_edge_to_stereo_idx.find(right_cf_edge_index);
+                if (stereo_it != right_edge_to_stereo_idx.end())
+                {
+                    int stereo_frame_idx = stereo_it->second;
+                    const std::vector<int> &right_veridical_edges = current_frame_stereo_right.GT_corresponding_edges[stereo_frame_idx];
+
+                    for (auto &veridical_edge : right_veridical_edges)
+                    {
+                        stereo_left_to_right_mapping.insert(veridical_edge);
+                    }
+                }
+
+                if (debug)
+                {
+                    std::cout << "Matching CF right edges size: " << matching_cf_right.size() << std::endl;
+                }
+            }
+            // std::cout << "Number of mapped right edges from left edges: " << stereo_left_to_right_mapping.size() << std::endl;
+            std::vector<int> filtered_cf_left_edges;
+            for (const auto &left_cf_edge_index : left_pair_it->matching_cf_edges_indices)
+            {
+                if (stereo_left_to_right_mapping.find(left_cf_edge_index) != stereo_left_to_right_mapping.end())
+                {
+                    filtered_cf_left_edges.push_back(left_cf_edge_index);
+                }
+            }
+            left_pair_it->matching_cf_edges_indices = filtered_cf_left_edges;
+            if (debug)
+            {
+                write_edge_pair_to_csv("stereo_filtering", i, left_kf_edge_index, *left_pair_it);
+            }
+            i++;
+        }
+
+        stereo_csv.close();
+        std::cout << "Stereo filtering debug data saved to: " << stereo_filter_filename << std::endl;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Exception in apply_stereo_filtering: " << e.what() << std::endl;
+        throw;
+    }
+    catch (...)
+    {
+        std::cerr << "Unknown exception in apply_stereo_filtering" << std::endl;
+        throw;
+    }
+}
+
+void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs,
+                                               StereoEdgeCorrespondencesGT &keyframe_stereo, StereoEdgeCorrespondencesGT &current_stereo,
+                                               size_t frame_idx, const std::string &stage_name)
+{
+    //> FIXME: Write the results to a file
+    // std::string output_dir = dataset.get_output_path();
+    // std::string eval_filename = output_dir + "/edge_match_evaluation_" + stage_name + "_frame_" + std::to_string(frame_idx) + ".txt";
+    // std::ofstream eval_PR(eval_filename);
+
+    //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame
+    int total_num_of_true_positives = 0;
+    std::vector<double> num_of_cf_edges_per_kf_edge;
+    std::vector<double> precision_per_edge;
+    num_of_cf_edges_per_kf_edge.reserve(KF_CF_edge_pairs.size());
+    precision_per_edge.reserve(KF_CF_edge_pairs.size());
+    for (const auto &[edge_idx, edge_pair] : KF_CF_edge_pairs)
+    {
+        //> Find if there is at least one edge index in edge_pair.matching_cf_edges_indices is found in edge_pair.veridical_cf_edges_indices
+        for (const auto &v_edge_idx : edge_pair.veridical_cf_edges_indices)
+        {
+            if (std::find(edge_pair.matching_cf_edges_indices.begin(), edge_pair.matching_cf_edges_indices.end(), v_edge_idx) != edge_pair.matching_cf_edges_indices.end())
+            {
+                total_num_of_true_positives++;
+                precision_per_edge.push_back(static_cast<double>(edge_pair.veridical_cf_edges_indices.size()) / static_cast<double>(edge_pair.matching_cf_edges_indices.size()));
+                break;
+            }
+        }
+        num_of_cf_edges_per_kf_edge.push_back(edge_pair.matching_cf_edges_indices.size());
+    }
+
+    double recall_per_image = static_cast<double>(total_num_of_true_positives) / KF_CF_edge_pairs.size();
+    double precision_per_image = std::accumulate(precision_per_edge.begin(), precision_per_edge.end(), 0.0) / precision_per_edge.size();
+    double num_of_cf_edges_per_kf_edge_avg = std::accumulate(num_of_cf_edges_per_kf_edge.begin(), num_of_cf_edges_per_kf_edge.end(), 0.0) / num_of_cf_edges_per_kf_edge.size();
+
+    std::cout << "Stage: " << stage_name << " | Frame: " << frame_idx << std::endl;
+    std::cout << "- Recall rate:       " << std::fixed << std::setprecision(8) << recall_per_image << std::endl;
+    std::cout << "- Precision rate:    " << std::fixed << std::setprecision(8) << precision_per_image << std::endl;
+    std::cout << "- Average ambiguity: " << std::fixed << std::setprecision(8) << num_of_cf_edges_per_kf_edge_avg << std::endl;
     std::cout << "========================================================\n"
               << std::endl;
 }

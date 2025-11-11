@@ -526,6 +526,7 @@ int ThirdOrderEdgeDetectionCPU::non_maximum_suppresion()
     cv::Point2d edge_location;
     Edge edge;
     edge_pt_list_idx = 0;
+    int subset_edge_pt_list_idx = 0;
     for (int i = 10; i < interp_img_height - 10; i++)
     {
         for (int j = 10; j < interp_img_width - 10; j++)
@@ -549,14 +550,19 @@ int ThirdOrderEdgeDetectionCPU::non_maximum_suppresion()
                 subpix_edge_pts_final(edge_pt_list_idx, 3) = subpix_grad_mag_map(i, j);
                 // TOED_edges(edge_pt_list_idx, 3) = subpix_grad_mag_map(i, j);
 
-                //> returning the structure used by the odometry
-                edge_location.x = subpix_edge_pts_final(edge_pt_list_idx, 0);
-                edge_location.y = subpix_edge_pts_final(edge_pt_list_idx, 1);
+                if (subpix_edge_pts_final(edge_pt_list_idx, 0) > 10 && subpix_edge_pts_final(edge_pt_list_idx, 0) < img_width-10 && \
+                    subpix_edge_pts_final(edge_pt_list_idx, 1) > 10 && subpix_edge_pts_final(edge_pt_list_idx, 1) < img_height-10)
+                {
+                    //> returning the structure used by the odometry
+                    edge_location.x = subpix_edge_pts_final(edge_pt_list_idx, 0);
+                    edge_location.y = subpix_edge_pts_final(edge_pt_list_idx, 1);
 
-                edge.location = edge_location;
-                edge.orientation = subpix_edge_pts_final(edge_pt_list_idx, 2);
-                edge.index = edge_pt_list_idx;
-                toed_edges.push_back(edge);
+                    edge.location = edge_location;
+                    edge.orientation = subpix_edge_pts_final(edge_pt_list_idx, 2);
+                    edge.index = subset_edge_pt_list_idx;
+                    toed_edges.push_back(edge);
+                    subset_edge_pt_list_idx++;
+                }
 
                 // -- 5) add up the edge point list index --
                 edge_pt_list_idx++;

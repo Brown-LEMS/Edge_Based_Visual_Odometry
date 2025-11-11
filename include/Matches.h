@@ -5,6 +5,10 @@ class Dataset;
 struct StereoMatchResult;
 struct EdgeMatchResult;
 
+#include <opencv2/opencv.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/xfeatures2d.hpp>
+
 #include "definitions.h"
 #include "utility.h"
 #include "Dataset.h"
@@ -14,12 +18,23 @@ std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Eigen::V
 void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
                                 cv::Mat &patch_coord_x, cv::Mat &patch_coord_y,
                                 cv::Mat &patch_val, const cv::Mat img);
+<<<<<<< HEAD
 double get_similarity(const cv::Mat &patch_one, const cv::Mat &patch_two);
 double edge_patch_similarity(const Edge &edge1, const Edge &edge2, cv::Mat gray_img_H1, cv::Mat gray_img_H2);
 StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, Dataset &dataset, int idx);
+=======
+double get_similarity(const cv::Mat patch_one, const cv::Mat patch_two);
+double edge_patch_similarity(const Edge target_edge_H1, const Edge target_edge_H2, const cv::Mat gray_img_H1, const cv::Mat gray_img_H2);
+StereoMatchResult get_Stereo_Edge_Pairs(const cv::Mat &left_image, const cv::Mat &right_image, StereoEdgeCorrespondencesGT prev_stereo_frame, Dataset &dataset, int idx);
+>>>>>>> copilot/vscode1760022595288
 EdgeMatchResult CalculateMatches(const std::vector<Edge> &selected_primary_edges, const std::vector<Edge> &secondary_edges,
                                  const std::vector<cv::Mat> &primary_patch_set_one, const std::vector<cv::Mat> &primary_patch_set_two, const std::vector<Eigen::Vector3d> &epipolar_lines_secondary,
                                  const cv::Mat &secondary_image, Dataset &dataset, const std::vector<cv::Point2d> &selected_ground_truth_edges = std::vector<cv::Point2d>());
+
+//> The following functions are newly added
+void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT &stereo_frame, const std::vector<Edge> &right_edges, bool is_left);
+std::pair<std::vector<int>, int> get_right_edges_close_to_GT_location(Edge target_left_edge, const cv::Point2d GT_location, const std::vector<Edge> constrained_right_edges, const std::vector<Edge> right_edges, const double dist_tol = 1.0);
+void augment_Edge_Data(StereoEdgeCorrespondencesGT &stereo_frame, const cv::Mat image);
 
 void ExtractClusterPatches(
     int patch_size,
@@ -52,9 +67,9 @@ Edge PerformEpipolarShift(
 // checked
 std::vector<EdgeCluster> ClusterEpipolarShiftedEdges(std::vector<Edge> &valid_shifted_edges);
 
-std::vector<Edge> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, double distance_threshold);
+std::vector<int> ExtractEpipolarEdges(const Eigen::Vector3d &epipolar_line, const std::vector<Edge> &edges, const double dist_tol = 0.5);
 
-std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges);
+std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges, const std::vector<int> &edge_indices);
 
 std::pair<std::vector<cv::Point2d>, std::vector<cv::Point2d>> CalculateOrthogonalShifts(const std::vector<Edge> &edge_points, double shift_magnitude, Dataset &dataset);
 

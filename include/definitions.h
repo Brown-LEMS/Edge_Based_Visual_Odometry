@@ -1,5 +1,8 @@
 //> Macro definitions
+// USE_GLOGS is now defined by CMake based on glog/gflags availability
+#ifndef USE_GLOGS
 #define USE_GLOGS (false)
+#endif
 
 #define USE_CPP17 (true)
 
@@ -22,27 +25,25 @@
 #define NCC_THRESH_STRONG_ONE_SIDE (0.65)
 #define MATCH_TOL (3) //> in pixels
 
-#define EPIP_TANGENCY_DISPL_THRESH      (3)         //> in pixels
-#define LOCATION_PERTURBATION           (0.4)         //> in pixels
-#define ORIENT_PERTURBATION             (0.174533)  //> in radians. 0.174533 is 10 degrees
-#define CLUSTER_DIST_THRESH             (1)         //> τc, in pixels
-#define CLUSTER_ORIENT_THRESH           (20.0)      //> in degrees
-#define MAX_CLUSTER_SIZE                (10)        //> max number of edges per cluster
-#define CLUSTER_ORIENT_GAUSS_SIGMA      (2.0)
+#define EPIP_TANGENCY_DISPL_THRESH (3) //> in pixels
+#define LOCATION_PERTURBATION (0.4)    //> in pixels
+#define ORIENT_PERTURBATION (0.174533) //> in radians. 0.174533 is 10 degrees
+#define CLUSTER_DIST_THRESH (1)        //> τc, in pixels
+#define CLUSTER_ORIENT_THRESH (20.0)   //> in degrees
+#define MAX_CLUSTER_SIZE (10)          //> max number of edges per cluster
+#define CLUSTER_ORIENT_GAUSS_SIGMA (2.0)
+
+#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
+#define GRID_SIZE (10)     //> Size of the spatial grid cells in pixels
 
 #define MEASURE_TIMINGS (false)
-#define DISPLAY_STERO_EDGE_MATCHES (false)
-
-//> Define output file folder
-#define OUTPUT_WRITE_PATH std::string("../output_files/")
-#define OUTPUT_DATA_TYPE std::string("TUM") //> Either TUM or KITTI
 
 //> For quick processing
 #define WRITE_TOED_EDGES (true)
 #define READ_TOED_EDGES_FROM_FILES (false)
 
-//> Use for the TUM type dataset
-#define ASSOCIATION_FILE_NAME std::string("associate.txt")
+//> Writing some intermediate data for debugging
+#define WRITE_KF_CF_GT_EDGE_PAIRS (true)
 
 //> Generic definitions
 #define RANSAC_NUM_OF_ITERATIONS (500)
@@ -62,6 +63,7 @@
 #define WRITE_CORRESPONDENCES_TO_FILE (false)
 #define OPENCV_DISPLAY_FEATURES (false)
 #define OPENCV_DISPLAY_CORRESPONDENCES (false)
+//> ----------------------------------------------
 
 //> Third-Order Edge Detection Parameters
 #define TOED_KERNEL_SIZE (17)
@@ -87,5 +89,3 @@
                                       "options:\n"                                             \
                                       "  -h, --help         show this help message and exit\n" \
                                       "  -c, --config_file  path to the the configuration file\n");
-#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
-#define GRID_SIZE (40)     //> Size of the spatial grid cells in pixels
