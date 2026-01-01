@@ -34,7 +34,7 @@
 #define CLUSTER_ORIENT_GAUSS_SIGMA (2.0)
 
 #define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
-#define GRID_SIZE (10)     //> Size of the spatial grid cells in pixels
+#define GRID_SIZE (15)     //> Size of the spatial grid cells in pixels
 
 #define MEASURE_TIMINGS (false)
 

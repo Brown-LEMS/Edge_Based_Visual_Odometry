@@ -472,11 +472,27 @@ void get_Stereo_Edge_GT_Pairs(Dataset &dataset, StereoEdgeCorrespondencesGT &ste
             const auto e_coeffs = epip_line_coeffs[left_edge_index];
             std::vector<int> right_candidate_edges = ExtractEpipolarEdges(e_coeffs, right_edges, 0.5);
             auto [right_candidate_edges_filtered, right_idx] = get_right_edges_close_to_GT_location(target_edges[stereo_frame.focused_edges[left_edge_index]], stereo_frame.GT_locations_from_disparity[left_edge_index], right_candidate_edges, right_edges, 1.0);
+
             if (right_candidate_edges_filtered.empty())
             {
                 thread_local_indices_to_remove[thread_id].push_back(left_edge_index);
             }
 
+            if (stereo_frame.focused_edges[left_edge_index] == 50198 && is_left)
+            {
+                std::cout << "Debugging left edge index 50198:" << std::endl;
+                std::cout << "Loc: " << target_edges[stereo_frame.focused_edges[left_edge_index]].location.x << ", " << target_edges[stereo_frame.focused_edges[left_edge_index]].location.y << std::endl;
+                if (!right_candidate_edges_filtered.empty())
+                {
+                    std::cout << "Indices of filtered right candidate edges: ";
+                    for (const auto &idx : right_candidate_edges_filtered)
+                    {
+                        std::cout << idx << ":(" << right_edges[idx].location.x << ", " << right_edges[idx].location.y << ") ";
+                    }
+                    std::cout << std::endl;
+                    std::cout << "Index of closest GT veridical edge: " << right_idx << std::endl;
+                }
+            }
             //> Direct assignment to pre-allocated vector to prevent race condition
             stereo_frame.GT_corresponding_edges[left_edge_index] = right_candidate_edges_filtered;
             stereo_frame.Closest_GT_veridical_edges[left_edge_index] = right_idx;

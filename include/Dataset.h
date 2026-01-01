@@ -29,6 +29,29 @@
 //> (c) LEMS, Brown University
 //> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu), Jue Han (jhan192@brown.edu)
 // =======================================================================================================
+struct Edge3D
+{
+    Eigen::Vector3d location;
+    Eigen::Vector3d orientation; // unit 3D vector T
+
+    bool b_isEmpty;   //> check if this struct is value-assigned
+    int frame_source; //> which frame this edge is constructed from
+    int index;        //> index of the edge in the original edge list
+    Edge3D() : location(Eigen::Vector3d(-1.0, -1.0, -1.0)), orientation(Eigen::Vector3d(-100, -100, -100)), b_isEmpty(true), frame_source(-1), index(-1) {}
+    Edge3D(Eigen::Vector3d location, Eigen::Vector3d orientation, bool b_isEmpty, int frame_source) : location(location), orientation(orientation), b_isEmpty(b_isEmpty), frame_source(frame_source) {}
+
+    bool operator==(const Edge3D &other) const
+    {
+
+        return location.x() == other.location.x() &&
+               location.y() == other.location.y() &&
+               location.z() == other.location.z() &&
+               orientation.x() == other.orientation.x() &&
+               orientation.y() == other.orientation.y() &&
+               orientation.z() == other.orientation.z() &&
+               b_isEmpty == other.b_isEmpty;
+    }
+};
 
 struct FileInfo
 {
@@ -157,6 +180,7 @@ struct StereoEdgeCorrespondencesGT
     // std::unordered_map<int, cv::Mat> edge_SIFT_descriptors; //> SIFT descriptors of all left edges
     std::vector<cv::Mat> edge_descriptors;
     std::vector<int> grid_indices;
+    std::unordered_map<int, int> edge_idx_to_stereo_frame_idx; //> Fast lookup: edge_index -> index in focused_edges vector (O(1) instead of O(n) search)
 
     bool b_is_size_consistent()
     {
@@ -183,6 +207,7 @@ struct StereoEdgeCorrespondencesGT
         Gamma_in_cam_coord.clear();
         edge_descriptors.clear();
         grid_indices.clear();
+        edge_idx_to_stereo_frame_idx.clear();
     }
 };
 
@@ -206,29 +231,13 @@ struct Keyframe_CurrentFrame_EdgeCorrespondencesGT
 struct EdgeCorrespondenceData
 {
     int stereo_frame_idx;
-    cv::Point2d gt_location_on_cf;                        // the ground truth correspondence edge in the current frame
+    cv::Point2d gt_location_on_cf; // the ground truth correspondence edge in the current frame
+    double gt_orientation_on_cf;
     std::vector<int> veridical_cf_edges_indices;          // corresponding vertical edges in the current frame
     std::vector<int> matching_cf_edges_indices;           // corresponding edge indices in the current frame after filtering
     std::vector<int> matching_cf_edges_indices_in_GTindx; // SIFT descriptor distances for the matching edges
 };
 using KF_CF_EdgeCorrespondenceMap = std::unordered_map<int, EdgeCorrespondenceData>;
-
-struct KF_CF_Edge_Correspondences
-{
-    //> Maybe use index instead of the edge itself?
-    int kf_edge_index;
-
-    //>>>>>>>>>> This block is a pool of GT data >>>>>>>>>
-    cv::Point2d gt_location_on_cf;               // the ground truth correspondence edge in the current frame
-    std::vector<int> veridical_cf_edges_indices; // corresponding vertical edges in the current frame
-
-    //> FIXME: This should be obtained from the stereo edge matching result
-    // std::vector<Edge> veridical_stereo_right_edges_for_kf;                  // corresponding edges in the stereo frame for the keyframe
-    // std::vector<std::vector<Edge>> veridical_stereo_right_edges_for_cf;     // corresponding edges in the stereo frame for the current frame
-    //>>>>>>>>>> This block is a pool of GT data >>>>>>>>>
-
-    std::vector<int> matching_cf_edges_indices; // corresponding edge indices in the current frame
-};
 
 extern cv::Mat merged_visualization_global;
 class Dataset
@@ -239,7 +248,8 @@ public:
     Dataset(YAML::Node);
     std::unique_ptr<StereoIterator> stereo_iterator;
 
-    void load_dataset(const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps, int num_pairs);
+    void load_dataset(const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps,
+                      std::vector<cv::Mat> &left_occlusion_masks, int num_pairs);
 
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
@@ -318,6 +328,8 @@ private:
     //    std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
 
     std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
+
+    std::vector<cv::Mat> LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left = true);
 
     //    std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
 

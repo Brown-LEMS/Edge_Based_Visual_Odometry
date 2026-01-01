@@ -8,7 +8,7 @@ function interactive_edge_comparison(frame_idx, edge_idx)
     % Set paths
     source_dataset_folder = "/gpfs/data/bkimia/Datasets/ETH3D/";
     dataset_sequence_path = "stereo/delivery_area/stereo_pairs/";
-    output_dir = sprintf('/oscar/data/bkimia/jhan192/jue_dev_ebvo/Edge_Based_Visual_Odometry/test/ncc_debug_frame%d_edge%d', frame_idx, edge_idx);
+    output_dir = sprintf('/oscar/data/bkimia/jhan192/jue_dev_ebvo/Edge_Based_Visual_Odometry/test/match_debug_frame%d_edge%d', frame_idx, edge_idx);
     
     % Create output directory if it doesn't exist
     if ~exist(output_dir, 'dir')
@@ -535,4 +535,49 @@ function match_type = find_best_match_type(ncc_scores)
     [~, max_idx] = max(ncc_scores);
     match_types = {'++', '--', '+-', '-+'};
     match_type = match_types{max_idx};
+end
+
+% Utility: mark specific edges on left/right images and save annotated outputs
+% Usage:
+%   mark_edges_on_images('/path/to/left.png', '/path/to/right.png');
+%   mark_edges_on_images('/path/to/left.png', '/path/to/right.png', 'outputs');
+function mark_edges_on_images(leftImagePath, rightImagePath, outDir)
+    if nargin < 3
+        outDir = 'outputs';
+    end
+    if ~exist(outDir, 'dir')
+        mkdir(outDir);
+    end
+
+    % Requested edge coordinates
+    leftPt  = [136.00, 465.51];
+    rightPt = [900.01, 463.92];
+
+    % Load images
+    leftImg  = imread(leftImagePath);
+    rightImg = imread(rightImagePath);
+
+    % Annotate left image
+    f1 = figure('Visible', 'off');
+    imshow(leftImg);
+    hold on;
+    plot(leftPt(1), leftPt(2), 'ro', 'MarkerSize', 10, 'LineWidth', 2);
+    text(leftPt(1)+5, leftPt(2)-10, sprintf('(%.2f, %.2f)', leftPt(1), leftPt(2)), ...
+        'Color', 'red', 'FontSize', 10, 'FontWeight', 'bold');
+    title(sprintf('Left edge at (%.2f, %.2f)', leftPt(1), leftPt(2)));
+    saveas(f1, fullfile(outDir, 'left_marked.png'));
+    close(f1);
+
+    % Annotate right image
+    f2 = figure('Visible', 'off');
+    imshow(rightImg);
+    hold on;
+    plot(rightPt(1), rightPt(2), 'go', 'MarkerSize', 10, 'LineWidth', 2);
+    text(rightPt(1)+5, rightPt(2)-10, sprintf('(%.2f, %.2f)', rightPt(1), rightPt(2)), ...
+        'Color', 'green', 'FontSize', 10, 'FontWeight', 'bold');
+    title(sprintf('Right edge at (%.2f, %.2f)', rightPt(1), rightPt(2)));
+    saveas(f2, fullfile(outDir, 'right_marked.png'));
+    close(f2);
+
+    fprintf('Saved annotated images to %s\n', outDir);
 end

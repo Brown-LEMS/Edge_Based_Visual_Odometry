@@ -132,13 +132,15 @@ public:
                       std::vector<Edge> &edges);
     void augment_Edge_Data(StereoEdgeCorrespondencesGT &stereo_frame, const cv::Mat image, bool is_left);
     // void Find_Stereo_GT_Locations(const std::vector<Edge> left_edges, const cv::Mat left_disparity_map, StereoEdgeCorrespondencesGT& prev_stereo_frame);
-    void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, bool left, StereoEdgeCorrespondencesGT &prev_stereo_frame, const std::vector<Edge> &left_edges);
+    void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::Mat occlusion_mask, bool left, StereoEdgeCorrespondencesGT &prev_stereo_frame, const std::vector<Edge> &left_edges);
 
     void add_edges_to_spatial_grid(StereoEdgeCorrespondencesGT &stereo_frame, SpatialGrid &spatial_grid, const std::vector<Edge> &edges);
     void Right_Edges_Stereo_Reconstruction(const StereoEdgeCorrespondencesGT &stereo_left, StereoEdgeCorrespondencesGT &stereo_right, StereoFrame &current_frame);
 
     //> filtering methods
     void apply_spatial_grid_filtering(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT &keyframe_stereo, const std::vector<Edge> &edges, SpatialGrid &spatial_grid, double grid_radius = 1.0);
+    void apply_orientation_filtering(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT &keyframe_stereo, const StereoEdgeCorrespondencesGT &current_stereo, double orientation_threshold, bool is_left);
+
     void apply_SIFT_filtering(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT &keyframe_stereo, const StereoEdgeCorrespondencesGT &current_stereo, double sift_dist_threshold = 600.0, bool is_left = true);
     void apply_NCC_filtering(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs, const StereoEdgeCorrespondencesGT &keyframe_stereo, const StereoEdgeCorrespondencesGT &current_stereo, double ncc_val_threshold,
                              const cv::Mat &keyframe_image, const cv::Mat &current_image, bool is_left);
@@ -146,6 +148,7 @@ public:
                                 const StereoEdgeCorrespondencesGT &last_keyframe_stereo_left, const StereoEdgeCorrespondencesGT &current_frame_stereo_left,
                                 const StereoEdgeCorrespondencesGT &last_keyframe_stereo_right, const StereoEdgeCorrespondencesGT &current_frame_stereo_right,
                                 size_t frame_idx);
+
     void Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs, StereoEdgeCorrespondencesGT &last_keyframe_stereo, StereoEdgeCorrespondencesGT &current_frame_stereo, StereoFrame &last_keyframe, StereoFrame &current_frame, SpatialGrid &spatial_grid, bool is_left, double gt_dist_threshold = 1.0);
     //> Evaluations
     void Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs,
@@ -164,6 +167,7 @@ public:
                                       size_t frame_idx,
                                       const std::string &stage_name,
                                       double distance_threshold = 3.0);
+    void debug_veridical(int edge_idx, const KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs_left, const KF_CF_EdgeCorrespondenceMap &KF_CF_edge_pairs_right, const StereoEdgeCorrespondencesGT &keyframe_stereo, const StereoEdgeCorrespondencesGT &current_stereo_left, const StereoEdgeCorrespondencesGT &current_stereo_right, bool is_left);
 
 private:
     //> CH: shared pointer to the class of third-order edge detector

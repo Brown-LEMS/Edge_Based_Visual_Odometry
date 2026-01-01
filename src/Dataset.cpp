@@ -96,10 +96,10 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         camera_info.left.intrinsics = left_cam["intrinsics"].as<std::vector<double>>();
         camera_info.left.distortion = left_cam["distortion_coefficients"].as<std::vector<double>>();
         Eigen::Matrix3d calib_left = Eigen::Matrix3d::Identity();
-        calib_left(0,0) = camera_info.left.intrinsics[0];
-        calib_left(0,2) = camera_info.left.intrinsics[2];
-        calib_left(1,1) = camera_info.left.intrinsics[1];
-        calib_left(1,2) = camera_info.left.intrinsics[3];
+        calib_left(0, 0) = camera_info.left.intrinsics[0];
+        calib_left(0, 2) = camera_info.left.intrinsics[2];
+        calib_left(1, 1) = camera_info.left.intrinsics[1];
+        calib_left(1, 2) = camera_info.left.intrinsics[3];
         camera_info.left.K = calib_left;
 
         // Right camera
@@ -107,10 +107,10 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         camera_info.right.intrinsics = right_cam["intrinsics"].as<std::vector<double>>();
         camera_info.right.distortion = right_cam["distortion_coefficients"].as<std::vector<double>>();
         Eigen::Matrix3d calib_right = Eigen::Matrix3d::Identity();
-        calib_right(0,0) = camera_info.right.intrinsics[0];
-        calib_right(0,2) = camera_info.right.intrinsics[2];
-        calib_right(1,1) = camera_info.right.intrinsics[1];
-        calib_right(1,2) = camera_info.right.intrinsics[3];
+        calib_right(0, 0) = camera_info.right.intrinsics[0];
+        calib_right(0, 2) = camera_info.right.intrinsics[2];
+        calib_right(1, 1) = camera_info.right.intrinsics[1];
+        calib_right(1, 2) = camera_info.right.intrinsics[3];
         camera_info.right.K = calib_right;
 
         // Stereo right-from-left (R21, T21, F21)
@@ -176,6 +176,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
 
 void Dataset::load_dataset(const std::string &dataset_type,
                            std::vector<cv::Mat> &left_ref_disparity_maps,
+                           std::vector<cv::Mat> &left_occlusion_masks,
                            int num_pairs)
 {
     if (dataset_type == "EuRoC")
@@ -198,7 +199,48 @@ void Dataset::load_dataset(const std::string &dataset_type,
         std::string stereo_pairs_path = file_info.dataset_path + "/" + file_info.sequence_name + "/stereo_pairs";
         stereo_iterator = Iterators::createETH3DIterator(stereo_pairs_path);
         left_ref_disparity_maps = LoadETH3DLeftReferenceMaps(stereo_pairs_path, num_pairs);
+        left_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, true);
     }
+}
+
+std::vector<cv::Mat> Dataset::LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left)
+{
+    std::vector<cv::Mat> occlusion_masks;
+    std::vector<std::string> stereo_folders;
+
+    for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path))
+    {
+        if (entry.is_directory())
+        {
+            stereo_folders.push_back(entry.path().string());
+        }
+    }
+
+    std::sort(stereo_folders.begin(), stereo_folders.end());
+
+    for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++)
+    {
+        std::string folder_path = stereo_folders[i];
+        std::string mask_filename = left ? "mask0nocc.png" : "mask1nocc.png";
+        std::string mask_path = folder_path + "/" + mask_filename;
+
+        cv::Mat mask;
+        if (std::filesystem::exists(mask_path))
+        {
+            mask = cv::imread(mask_path, cv::IMREAD_GRAYSCALE);
+            if (mask.empty())
+            {
+                std::cerr << "Warning: Could not load occlusion mask: " << mask_path << std::endl;
+            }
+        }
+        else
+        {
+            std::cerr << "Warning: Occlusion mask not found: " << mask_path << std::endl;
+        }
+        occlusion_masks.push_back(mask);
+    }
+
+    return occlusion_masks;
 }
 
 std::vector<cv::Mat> Dataset::LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps)
@@ -472,7 +514,8 @@ void Dataset::PrintDatasetInfo()
 
     std::cout << "\nStereo Camera Parameters: \n";
     std::cout << "Focal Length: " << camera_info.focal_length << " pixels" << std::endl;
-    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl << std::endl;
+    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl
+              << std::endl;
 }
 
 #endif
