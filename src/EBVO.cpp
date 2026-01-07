@@ -535,23 +535,10 @@ void EBVO::Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::
 {
     Utility util;
 
-    // Statistics counters for analyzing why edges don't have GT
-    int total_edges = left_edges.size();
-    int valid_gt_edges = 0;
-    int invalid_disparity_edges = 0;   // nan, inf, or negative disparity
-    int occluded_edges = 0;            // valid disparity but occluded (mask != 255)
-    int both_invalid_and_occluded = 0; // both invalid disparity and occluded
-
-    // Thread-local storage for parallel accumulation
     int num_threads = omp_get_max_threads();
-    // std::cout << "Find_Stereo_GT_Locations: Processing " << total_edges << " edges with " << num_threads << " threads" << std::endl;
     std::vector<std::vector<int>> thread_focused_edges(num_threads);
     std::vector<std::vector<cv::Point2d>> thread_gt_locations(num_threads);
     std::vector<std::vector<Eigen::Vector3d>> thread_gamma(num_threads);
-    std::vector<int> thread_valid(num_threads, 0);
-    std::vector<int> thread_invalid_disp(num_threads, 0);
-    std::vector<int> thread_occluded(num_threads, 0);
-    std::vector<int> thread_both(num_threads, 0);
 
     // Parallel loop over edges
 #pragma omp parallel
@@ -563,40 +550,7 @@ void EBVO::Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::
             const Edge &e = left_edges[i];
             double disparity = Bilinear_Interpolation(left_disparity_map, e.location);
 
-            // Check occlusion mask at this edge location
-            bool is_occluded = false;
-            if (!occlusion_mask.empty())
-            {
-                int px = static_cast<int>(std::round(e.location.x));
-                int py = static_cast<int>(std::round(e.location.y));
-                if (px >= 0 && px < occlusion_mask.cols && py >= 0 && py < occlusion_mask.rows)
-                {
-                    uchar mask_val = occlusion_mask.at<uchar>(py, px);
-                    is_occluded = (mask_val != 255); // 255 = not occluded, other values = occluded
-                }
-            }
-
             bool has_invalid_disparity = std::isnan(disparity) || std::isinf(disparity) || disparity < 0;
-
-            // Track statistics
-            if (has_invalid_disparity && is_occluded)
-            {
-                thread_both[tid]++;
-                continue;
-            }
-            else if (has_invalid_disparity)
-            {
-                thread_invalid_disp[tid]++;
-                continue;
-            }
-            else if (is_occluded)
-            {
-                thread_occluded[tid]++;
-                continue;
-            }
-
-            // Valid edge with GT
-            thread_valid[tid]++;
 
             double x_loc = left ? e.location.x - disparity : e.location.x + disparity;
             cv::Point2d GT_location(x_loc, e.location.y);
@@ -612,10 +566,6 @@ void EBVO::Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::
     // Merge thread-local results
     for (int tid = 0; tid < num_threads; ++tid)
     {
-        valid_gt_edges += thread_valid[tid];
-        invalid_disparity_edges += thread_invalid_disp[tid];
-        occluded_edges += thread_occluded[tid];
-        both_invalid_and_occluded += thread_both[tid];
 
         prev_stereo_frame.focused_edges.insert(prev_stereo_frame.focused_edges.end(),
                                                thread_focused_edges[tid].begin(), thread_focused_edges[tid].end());
@@ -624,25 +574,6 @@ void EBVO::Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::
         prev_stereo_frame.Gamma_in_cam_coord.insert(prev_stereo_frame.Gamma_in_cam_coord.end(),
                                                     thread_gamma[tid].begin(), thread_gamma[tid].end());
     }
-
-    // NOTE: Do NOT build edge_idx_to_stereo_frame_idx map here!
-    // get_Stereo_Edge_GT_Pairs() will remove edges from focused_edges, invalidating indices.
-    // Map must be built AFTER get_Stereo_Edge_GT_Pairs() completes.
-
-    // Print occlusion analysis statistics
-    // std::string side_str = left ? "LEFT" : "RIGHT";
-    // std::cout << "\n=== Occlusion Analysis for " << side_str << " edges ===" << std::endl;
-    // std::cout << "Total edges: " << total_edges << std::endl;
-    // std::cout << "Valid GT edges: " << valid_gt_edges << " (" << std::fixed << std::setprecision(1)
-    //           << (100.0 * valid_gt_edges / total_edges) << "%)" << std::endl;
-    // std::cout << "Invalid disparity (nan/inf/neg): " << invalid_disparity_edges << " ("
-    //           << std::fixed << std::setprecision(1) << (100.0 * invalid_disparity_edges / total_edges) << "%)" << std::endl;
-    // std::cout << "Occluded (mask != 255): " << occluded_edges << " ("
-    //           << std::fixed << std::setprecision(1) << (100.0 * occluded_edges / total_edges) << "%)" << std::endl;
-    // std::cout << "Both invalid & occluded: " << both_invalid_and_occluded << " ("
-    //           << std::fixed << std::setprecision(1) << (100.0 * both_invalid_and_occluded / total_edges) << "%)" << std::endl;
-    // std::cout << "============================================\n"
-    //           << std::endl;
 
 #if WRITE_KF_CF_GT_EDGE_PAIRS
     std::string left_str = left ? "left" : "right";
@@ -696,16 +627,6 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondenceMap
     // Record distances between KF location and projected point for proximity analysis
     std::vector<double> kf_to_projection_distances;
 
-    // // debugging:
-    // std::unordered_map<int, int> cf_edge_to_stereo_idx;
-    // for (int i = 0; i < current_frame_stereo.focused_edges.size(); ++i)
-    // {
-    //     cf_edge_to_stereo_idx[current_frame_stereo.focused_edges[i]] = i;
-    // }
-    // std::string debug_filename = dataset.get_output_path() + "/debug_on_right_KF.txt";
-    // std::ofstream debug_file(debug_filename);
-    //
-
     // Thread-local storage for parallel correspondence accumulation
     int num_threads_corr = omp_get_max_threads();
     // std::cout << "Find_Veridical_Edge_Correspondences_on_CF: Processing " << last_keyframe_stereo.focused_edges.size()
@@ -750,8 +671,6 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondenceMap
             if (projected_point.x() > 10 && projected_point.y() > 10 && projected_point.x() < dataset.get_width() - 10 && projected_point.y() < dataset.get_height() - 10)
             {
                 std::vector<int> current_candidate_edge_indices;
-                // Search radius = grid cell size (15) + threshold to ensure all veridical edges are candidates
-                // Larger radius compensates for grid discretization (edges at cell boundaries)
                 double search_radius = 15.0 + gt_dist_threshold + 3.0; // +3 for safety margin
                 current_candidate_edge_indices = spatial_grid.getCandidatesWithinRadius(projected_point_cv, search_radius);
 
