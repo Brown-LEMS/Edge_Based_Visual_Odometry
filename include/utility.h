@@ -109,7 +109,68 @@ inline double Bilinear_Interpolation(const cv::Mat &meshGrid, cv::Point2d P)
     double f_x_y2 = ((Q21.x - P.x) / (Q21.x - Q11.x)) * fQ12 + ((P.x - Q11.x) / (Q21.x - Q11.x)) * fQ22;
     return ((Q12.y - P.y) / (Q12.y - Q11.y)) * f_x_y1 + ((P.y - Q11.y) / (Q12.y - Q11.y)) * f_x_y2;
 }
+inline void util_compute_Img_Gradients(const cv::Mat I, cv::Mat &gx, cv::Mat &gy)
+{
+    // Utility util = Utility();
+    // std::cout << "Image type: " << util.cvMat_Type(I.type()) << std::endl;
 
+    // convert the image to 32F
+    cv::Mat I_32F;
+    I.convertTo(I_32F, CV_32F);
+    cv::Sobel(I_32F, gx, CV_32F, 1, 0, 3, 1.0 / 8.0);
+    cv::Sobel(I_32F, gy, CV_32F, 0, 1, 3, 1.0 / 8.0);
+}
+
+inline void util_make_rotated_patch_coords(const cv::Point2d &c, double theta, std::vector<cv::Point2d> &coords)
+{
+    coords.clear();
+    coords.reserve(PATCH_SIZE * PATCH_SIZE);
+    int half = PATCH_SIZE / 2;
+    double ct = std::cos(theta);
+    double st = std::sin(theta);
+    for (int i = -half; i <= half; ++i)
+    {
+        for (int j = -half; j <= half; ++j)
+        {
+            coords.emplace_back(c.x + ct * i - st * j, c.y + st * i + ct * j);
+        }
+    }
+}
+
+inline float util_bilinear_Sample_F(const cv::Mat &I, double x, double y)
+{
+    int w = I.cols, h = I.rows;
+    x = std::clamp(x, 0.0, (double)w - 1.0);
+    y = std::clamp(y, 0.0, (double)h - 1.0);
+    int x0 = (int)floor(x), y0 = (int)floor(y);
+    int x1 = std::min(x0 + 1, w - 1), y1 = std::min(y0 + 1, h - 1);
+    double a = x - x0, b = y - y0;
+    float v00 = I.at<float>(y0, x0);
+    float v10 = I.at<float>(y0, x1);
+    float v01 = I.at<float>(y1, x0);
+    float v11 = I.at<float>(y1, x1);
+    return (1 - a) * (1 - b) * v00 + a * (1 - b) * v10 + (1 - a) * b * v01 + a * b * v11;
+}
+
+inline void util_sample_patch_at_coords(const cv::Mat &I, const std::vector<cv::Point2d> &coords, std::vector<double> &vals)
+{
+    vals.resize(coords.size());
+    for (size_t k = 0; k < coords.size(); ++k)
+    {
+        vals[k] = static_cast<double>(util_bilinear_Sample_F(I, coords[k].x, coords[k].y));
+    }
+}
+
+template <typename T>
+inline T util_vector_mean(const std::vector<T> &v)
+{
+    T sum = 0;
+    for (T x : v)
+    {
+        sum += x;
+    }
+    return sum / v.size();
+}
 /*
     Average computation for a vector of integers.
 */

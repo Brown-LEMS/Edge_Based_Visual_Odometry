@@ -20,10 +20,13 @@
 #define EDGE_CLUSTER_THRESH (0.3) //> in pixels
 #define ORTHOGONAL_SHIFT_MAG (5)  //> in pixels
 #define PATCH_SIZE (7)            //> in pixels
+#define NCC_THRESH (0.6)
+
 #define NCC_THRESH_STRONG_BOTH_SIDES (0.5)
 #define NCC_THRESH_WEAK_BOTH_SIDES (0.25)
 #define NCC_THRESH_STRONG_ONE_SIDE (0.65)
 #define MATCH_TOL (3) //> in pixels
+#define MAX_DISPARITY (23.0063)
 
 #define EPIP_TANGENCY_DISPL_THRESH (3) //> in pixels
 #define LOCATION_PERTURBATION (0.4)    //> in pixels
@@ -32,6 +35,13 @@
 #define CLUSTER_ORIENT_THRESH (20.0)   //> in degrees
 #define MAX_CLUSTER_SIZE (10)          //> max number of edges per cluster
 #define CLUSTER_ORIENT_GAUSS_SIGMA (2.0)
+#define BNB_SIFT (0.4)
+#define BNB_NCC (0.9)
+#define HUBER_DELTA (1.0) //> Huber threshold
+
+#define SIFT_THRESHOLD (500.0)
+//> precision-recall experiments
+#define DIST_TO_GT_THRESH (1.0) //> in pixels
 
 #define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
 #define GRID_SIZE (15)     //> Size of the spatial grid cells in pixels

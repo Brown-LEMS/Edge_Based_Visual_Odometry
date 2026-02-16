@@ -6,6 +6,7 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+#include <map>
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -29,6 +30,100 @@
 //> (c) LEMS, Brown University
 //> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu), Jue Han (jhan192@brown.edu)
 // =======================================================================================================
+struct SpatialGrid
+{
+    int cell_size;
+    int grid_width, grid_height;
+    std::vector<std::vector<int>> grid;
+
+    // Default constructor
+    SpatialGrid() : cell_size(30), grid_width(0), grid_height(0) {}
+
+    SpatialGrid(int img_width, int img_height, int cell_sz = 30)
+        : cell_size(cell_sz)
+    {
+        grid_width = (img_width + cell_size - 1) / cell_size;
+        grid_height = (img_height + cell_size - 1) / cell_size;
+        grid.resize(grid_width * grid_height);
+    }
+
+    void addEdge(int edge_idx, cv::Point2f location)
+    {
+        int grid_x = static_cast<int>(location.x) / cell_size;
+        int grid_y = static_cast<int>(location.y) / cell_size;
+        if (grid_x >= 0 && grid_x < grid_width && grid_y >= 0 && grid_y < grid_height)
+        {
+            grid[grid_y * grid_width + grid_x].push_back(edge_idx); // push back the 3rd order edge index
+        }
+    }
+
+    //> Add edge to grids and return the grid index
+    int add_edge_to_grids(int edge_idx, cv::Point2f location)
+    {
+        int grid_x = static_cast<int>(location.x) / cell_size;
+        int grid_y = static_cast<int>(location.y) / cell_size;
+        if (grid_x >= 0 && grid_x < grid_width && grid_y >= 0 && grid_y < grid_height)
+        {
+            grid[grid_y * grid_width + grid_x].push_back(edge_idx);
+        }
+        return grid_y * grid_width + grid_x;
+    }
+
+    void reset()
+    {
+        for (auto &cell : grid)
+        {
+            cell.clear();
+        }
+    }
+
+    std::vector<int> getCandidatesWithinRadius(Edge Edge, double radius)
+    {
+        std::vector<int> candidates;
+        int grid_x = static_cast<int>(Edge.location.x) / cell_size;
+        int grid_y = static_cast<int>(Edge.location.y) / cell_size;
+        int search_radius = static_cast<int>(std::ceil(radius / cell_size));
+        for (int dy = -search_radius; dy <= search_radius; ++dy)
+        {
+            for (int dx = -search_radius; dx <= search_radius; ++dx)
+            {
+                int neighbor_x = grid_x + dx;
+                int neighbor_y = grid_y + dy;
+                if (neighbor_x >= 0 && neighbor_x < grid_width &&
+                    neighbor_y >= 0 && neighbor_y < grid_height)
+                {
+                    const auto &cell = grid[neighbor_y * grid_width + neighbor_x];
+                    candidates.insert(candidates.end(), cell.begin(), cell.end());
+                }
+            }
+        }
+        return candidates;
+    }
+
+    std::vector<int> getCandidatesWithinRadius(cv::Point2d e_location, double radius)
+    {
+        std::vector<int> candidates;
+        int grid_x = static_cast<int>(e_location.x) / cell_size;
+        int grid_y = static_cast<int>(e_location.y) / cell_size;
+        int search_radius = static_cast<int>(std::ceil(radius / cell_size));
+        for (int dy = -search_radius; dy <= search_radius; ++dy)
+        {
+            for (int dx = -search_radius; dx <= search_radius; ++dx)
+            {
+                int neighbor_x = grid_x + dx;
+                int neighbor_y = grid_y + dy;
+                if (neighbor_x >= 0 && neighbor_x < grid_width &&
+                    neighbor_y >= 0 && neighbor_y < grid_height)
+                {
+                    const auto &cell = grid[neighbor_y * grid_width + neighbor_x];
+                    candidates.insert(candidates.end(), cell.begin(), cell.end());
+                }
+            }
+        }
+        return candidates;
+    }
+};
+
 struct Edge3D
 {
     Eigen::Vector3d location;
@@ -92,6 +187,10 @@ struct EdgeCluster
 {
     Edge center_edge;
     std::vector<Edge> contributing_edges;
+    std::vector<int> contributing_edges_toed_indices;
+
+    int paired_left_edge_index;
+    bool b_is_TP = false;
 };
 
 struct EdgeMatch
@@ -100,6 +199,16 @@ struct EdgeMatch
     double final_score;
 
     std::vector<Edge> contributing_edges;
+};
+
+struct Evaluation_Statistics
+{
+    std::map<std::string, std::vector<EdgeCluster>> edge_clusters_in_each_step;
+    std::vector<double> refine_final_scores;
+    std::vector<double> refine_confidences;
+    std::vector<double> refine_validities;
+    std::vector<double> FN_dist_error_to_GT;
+    std::vector<EdgeCluster> false_negative_edge_clusters;
 };
 
 struct RecallMetrics
@@ -152,21 +261,121 @@ struct EdgeMatchResult
     std::vector<std::pair<Edge, EdgeMatch>> edge_to_cluster_matches;
 };
 
-struct BidirectionalMetrics
+struct Stereo_Matching_Edge_Clusters
 {
-    int matches_before_bct;
-    int matches_after_bct;
-    double per_image_bct_recall;
-    double per_image_bct_precision;
-    double per_image_bct_time;
+    std::vector<EdgeCluster> edge_clusters;
+    std::vector<std::pair<cv::Mat, cv::Mat>> matching_edge_patches;
+
+    //> This block is a pool of refinement results
+    std::vector<double> refine_final_scores;
+    std::vector<double> refine_confidences;
+    std::vector<bool> refine_validities;
 };
 
-struct StereoMatchResult
+struct Stereo_Edge_Pairs
 {
-    EdgeMatchResult forward_match;
-    EdgeMatchResult reverse_match;
-    std::vector<std::pair<Edge, Edge>> confirmed_matches;
-    BidirectionalMetrics bidirectional_metrics;
+    //> For bi-directional purposes, which we only do it for testing, the left and right are relative to the stereo frame
+    const StereoFrame *stereo_frame; //> pointer to StereoFrame without owning the data of StereoFrame
+    cv::Mat left_disparity_map;
+    cv::Mat right_disparity_map;
+    std::vector<int> focused_edge_indices;                          //> indices into source edges (left for left->right, right for right->left)
+    std::vector<int> candidate_edge_indices;                        //> indices into candidate edges
+    std::vector<cv::Point2d> GT_locations_from_left_edges;          //> GT locations of the source edges on the candidate image
+    std::vector<std::vector<int>> veridical_right_edges_indices;    //> indices into candidate edges that are veridical to the source edges
+    std::vector<Eigen::Vector3d> Gamma_in_left_cam_coord;           //> 3D points under the left camera coordinate
+    std::vector<std::pair<cv::Mat, cv::Mat>> left_edge_descriptors; //> SIFT descriptors of source edges on both sides
+    std::vector<int> grid_indices;                                  //> grid indices of source edges
+    std::vector<Eigen::Vector3d> epip_line_coeffs_of_left_edges;    //> epipolar line coefficients of source edges
+    std::vector<std::pair<cv::Mat, cv::Mat>> left_edge_patches;     //> patches on the two sides of the source edges
+    std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
+    bool is_left_to_right = true;
+    //> Matching edge clusters for each left edge
+    std::vector<Stereo_Matching_Edge_Clusters> matching_edge_clusters;
+
+    // std::vector<cv::Point2d> GT_locations_from_right_edges;
+
+    //> Constructor: defining which StereoFrame it points to
+    Stereo_Edge_Pairs(const StereoFrame *stereo_frame_ptr) : stereo_frame(stereo_frame_ptr) {}
+    Stereo_Edge_Pairs() : stereo_frame(nullptr) {}
+
+    void clean_up_vector_data_structures()
+    {
+        focused_edge_indices.clear();
+        candidate_edge_indices.clear();
+        GT_locations_from_left_edges.clear();
+        veridical_right_edges_indices.clear();
+        Gamma_in_left_cam_coord.clear();
+        left_edge_descriptors.clear();
+        grid_indices.clear();
+        epip_line_coeffs_of_left_edges.clear();
+        left_edge_patches.clear();
+        matching_edge_clusters.clear();
+    }
+
+    void construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map()
+    {
+        for (int i = 0; i < focused_edge_indices.size(); ++i)
+            toed_left_id_to_Stereo_Edge_Pairs_left_id_map[focused_edge_indices[i]] = i;
+    }
+
+    //> Access left and right edges by logical index (through mapping)
+    Edge get_left_edge_by_StereoFrame_index(size_t i) const
+    {
+        if (i >= stereo_frame->left_edges.size())
+        {
+            std::cerr << "ERROR: left edge index " << i << " out of bounds!" << std::endl;
+            return Edge();
+        }
+        return stereo_frame->left_edges[i];
+    }
+    Edge get_focused_edge_by_Stereo_Edge_Pairs_index(size_t i) const { return is_left_to_right ? stereo_frame->left_edges[focused_edge_indices[i]] : stereo_frame->right_edges[focused_edge_indices[i]]; }
+
+    //> Return the number of left and right edge pairs
+    size_t size() const { return focused_edge_indices.size(); }
+
+    //> Return a full vector of left edges (in the form of Edge objects)
+    std::vector<Edge> get_focused_edges() const
+    {
+        std::vector<Edge> subset;
+        subset.reserve(focused_edge_indices.size());
+        for (int idx : focused_edge_indices)
+            subset.push_back(is_left_to_right ? stereo_frame->left_edges[idx] : stereo_frame->right_edges[idx]);
+        return subset;
+    }
+
+    //> Return a full vector of right edges (in the form of Edge objects)
+    std::vector<Edge> get_candidate_edges() const
+    {
+        std::vector<Edge> subset;
+        subset.reserve(candidate_edge_indices.size());
+        for (int idx : candidate_edge_indices)
+            subset.push_back(is_left_to_right ? stereo_frame->right_edges[idx] : stereo_frame->left_edges[idx]);
+        return subset;
+    }
+
+    //> getters
+    int get_focused_toed_edge_index(size_t i) const { return focused_edge_indices[i]; }
+    int get_Stereo_Edge_Pairs_left_id_index(int toed_left_id) const
+    {
+        auto it = toed_left_id_to_Stereo_Edge_Pairs_left_id_map.find(toed_left_id);
+        return (it != toed_left_id_to_Stereo_Edge_Pairs_left_id_map.end()) ? it->second : -1;
+    }
+    int get_focused_edge_indices_size() const { return focused_edge_indices.size(); }
+
+    bool b_is_size_consistent()
+    {
+        return focused_edge_indices.size() == GT_locations_from_left_edges.size() && focused_edge_indices.size() == veridical_right_edges_indices.size() && focused_edge_indices.size() == Gamma_in_left_cam_coord.size() && focused_edge_indices.size() == left_edge_descriptors.size();
+    }
+
+    void print_size_consistency()
+    {
+        std::cout << "The sizes of the Stereo_Edge_Pairs are not consistent!" << std::endl;
+        std::cout << "- Size of the focused_edge_indices = " << focused_edge_indices.size() << std::endl;
+        std::cout << "- Size of the GT_locations_from_left_edges = " << GT_locations_from_left_edges.size() << std::endl;
+        std::cout << "- Size of the veridical_right_edges_indices = " << veridical_right_edges_indices.size() << std::endl;
+        std::cout << "- Size of the Gamma_in_left_cam_coord = " << Gamma_in_left_cam_coord.size() << std::endl;
+        std::cout << "- Size of the left_edge_descriptors = " << left_edge_descriptors.size() << std::endl;
+    }
 };
 
 //> This struct defines a pool of GT edge correspondences in a stereo image pair
@@ -211,33 +420,19 @@ struct StereoEdgeCorrespondencesGT
     }
 };
 
-struct Keyframe_CurrentFrame_EdgeCorrespondencesGT
+struct KF_CF_EdgeCorrespondence
 {
-    StereoEdgeCorrespondencesGT last_keyframe;
-    StereoEdgeCorrespondencesGT current_frame;
 
-    //>>>>>>>>>> This block is a pool of GT data >>>>>>>>>
-    std::vector<cv::Point2d> GT_locations_on_current_image;
-    std::vector<std::vector<Edge>> GT_current_edges;
-    // std::vector<std::vector<cv::Mat>> GT_current_edge_descriptors; //> currently not in use
-    std::vector<int> GT_pair_indices_for_last_keyframe;
-    //>>>>>>>>>> This block is a pool of GT data >>>>>>>>>
+    std::vector<int> kf_edges; //> stores the 3rd order edges
+    std::vector<double> gt_orientation_on_cf;
+    std::vector<cv::Point2d> gt_location_on_cf;
 
-    //>>>>>>>>>> This block is a pool of edge matching data >>>>>>>>>
-    std::vector<std::vector<Edge>> matching_current_edges;
-    //>>>>>>>>>> This block is a pool of edge matching data >>>>>>>>>
+    const StereoFrame *key_frame;
+    const StereoFrame *current_frame;
+
+    std::vector<std::vector<int>> veridical_cf_edges_indices; // corresponding vertical edges in the current frame
+    std::vector<std::vector<int>> matching_cf_edges_indices;  // corresponding edge indices in the current frame after filtering
 };
-
-struct EdgeCorrespondenceData
-{
-    int stereo_frame_idx;
-    cv::Point2d gt_location_on_cf; // the ground truth correspondence edge in the current frame
-    double gt_orientation_on_cf;
-    std::vector<int> veridical_cf_edges_indices;          // corresponding vertical edges in the current frame
-    std::vector<int> matching_cf_edges_indices;           // corresponding edge indices in the current frame after filtering
-    std::vector<int> matching_cf_edges_indices_in_GTindx; // SIFT descriptor distances for the matching edges
-};
-using KF_CF_EdgeCorrespondenceMap = std::unordered_map<int, EdgeCorrespondenceData>;
 
 extern cv::Mat merged_visualization_global;
 class Dataset
@@ -248,8 +443,8 @@ public:
     Dataset(YAML::Node);
     std::unique_ptr<StereoIterator> stereo_iterator;
 
-    void load_dataset(const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps,
-                      std::vector<cv::Mat> &left_occlusion_masks, int num_pairs);
+    void load_dataset(const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps, std::vector<cv::Mat> &right_ref_disparity_maps,
+                      std::vector<cv::Mat> &left_occlusion_masks, std::vector<cv::Mat> &right_occlusion_masks, int num_pairs);
 
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
@@ -299,6 +494,47 @@ public:
     std::vector<double> left_dist_coeffs() { return camera_info.left.distortion; };
     std::vector<double> right_dist_coeffs() { return camera_info.right.distortion; };
 
+    /**
+     * Read PFM (Portable Float Map) file into cv::Mat
+     *
+     * @param file_path Path to the .pfm file
+     * @return cv::Mat containing the float data (CV_32F, single channel or 3 channels)
+     * @throws std::runtime_error if file cannot be read or is malformed
+     */
+    cv::Mat readPFM(const std::string &file_path);
+
+    /**
+     * Read Middlebury disparity file (disp0GT.pfm) with non-occlusion mask
+     *
+     * @param disp_file_path Path to disp0GT.pfm file
+     * @param disparity Output disparity map (CV_32F, single channel)
+     * @param valid_mask Output validity mask (CV_8U, 0 or 255)
+     * @return true if successful, false otherwise
+     */
+    bool readDispMiddlebury(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask);
+
+    /**
+     * Read ETH3D disparity file (disp0GT.pfm)
+     * Uses readPFM and reads mask0nocc.png separately
+     *
+     * @param disp_file_path Path to disp0GT.pfm file
+     * @param disparity Output disparity map (CV_32F, single channel)
+     * @param valid_mask Output validity mask (CV_8U, 0 or 255)
+     * @return true if successful, false otherwise
+     */
+    bool readDispETH3D(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask);
+
+    /**
+     * Read third-order edge data from a text file.
+     * File format: x y orientation disparity (space or tab separated)
+     *
+     * @param file_path Path to the text file containing edge data
+     * @param edges Output vector of Edge objects (left_edges)
+     * @param edge_disparity_map Output map from edge index to ground-truth disparity
+     * @return true if successful, false otherwise
+     */
+    bool read_edges_and_disparities_from_file(const std::string &file_path, std::vector<Edge> &edges, std::vector<double> &edge_disparities);
+
     // setters
     void increment_num_imgs() { Total_Num_Of_Imgs++; };
     void set_height(int height) { img_height = height; };
@@ -332,6 +568,8 @@ private:
     std::vector<cv::Mat> LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left = true);
 
     //    std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
+
+    void LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int num_maps, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps);
 
     void WriteDisparityToBinary(const std::string &filepath, const cv::Mat &disparity_map);
 
