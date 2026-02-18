@@ -23,7 +23,6 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
 double get_similarity(const cv::Mat &patch_one, const cv::Mat &patch_two);
 double edge_patch_similarity(const Edge &edge1, const Edge &edge2, const cv::Mat &gray_img_H1, const cv::Mat &gray_img_H2);
 
-//> ========== START OF CH'S EDITIONS ==========
 //> The following functions are newly added
 void Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat left_disparity_map, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
 void Find_Stereo_GT_Locations(Dataset &dataset, const std::vector<double> &edge_disparities, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
@@ -62,8 +61,6 @@ void record_correspondences_for_visualization(const Stereo_Edge_Pairs &stereo_fr
                                               const std::string &output_dir,
                                               size_t frame_idx,
                                               int num_samples = 10);
-
-//> ========== END OF CH'S EDITIONS ==========
 
 std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges);
 

@@ -219,23 +219,6 @@ inline double ComputeNCC(const cv::Mat &patch_one, const cv::Mat &patch_two)
 }
 
 /*
-    Write the NCC values to files for each image index.
-    The output file will be named "ncc_vs_err/img_<img_index>.txt".
-*/
-inline void write_ncc_vals_to_files(int img_index, std::vector<std::pair<double, double>> &ncc_one_vs_err,
-                                    std::vector<std::pair<double, double>> &ncc_two_vs_err)
-{
-    std::string file_path = "../output_files/ncc_vs_err/img_" + std::to_string(img_index) + ".txt";
-    std::ofstream ncc_vs_err_file_out(file_path);
-    for (unsigned i = 0; i < ncc_one_vs_err.size(); i++)
-    {
-        ncc_vs_err_file_out << ncc_one_vs_err[i].first << "\t" << ncc_one_vs_err[i].second << "\t"
-                            << ncc_two_vs_err[i].first << "\t" << ncc_two_vs_err[i].second << "\n";
-    }
-    ncc_vs_err_file_out.close();
-}
-
-/*
     Build image pyramids for the current and next left/right images.
     The pyramids are built using OpenCV's buildPyramid function.
 */

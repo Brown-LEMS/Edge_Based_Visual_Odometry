@@ -449,15 +449,6 @@ public:
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
 
-    // should we make it edge pairs?
-    std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> forward_gt_data;
-    std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> reverse_gt_data;
-
-    std::vector<std::pair<double, double>> ncc_one_vs_err;
-    std::vector<std::pair<double, double>> ncc_two_vs_err;
-
-    std::vector<cv::Point2d> ground_truth_right_edges_after_lowe;
-
     // getters
     bool has_gt() { return file_info.has_gt; };
 

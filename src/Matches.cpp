@@ -180,21 +180,6 @@ void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
 
 double get_patch_similarity(const cv::Mat patch_one, const cv::Mat patch_two)
 {
-    // //> Perform zero-mean normalised cross-correlation (ZNCC)
-    // cv::Scalar mean_one, stddev_one;
-    // cv::Scalar mean_two, stddev_two;
-    // cv::meanStdDev(patch_one, mean_one, stddev_one);
-    // cv::meanStdDev(patch_two, mean_two, stddev_two);
-
-    // const double epsilon = 1e-10;
-    // if (stddev_one[0] < epsilon || stddev_two[0] < epsilon)
-    // {
-    //     return -1.0;
-    // }
-
-    // cv::Mat norm_one = (patch_one - mean_one[0]) / stddev_one[0];
-    // cv::Mat norm_two = (patch_two - mean_two[0]) / stddev_two[0];
-    // return norm_one.dot(norm_two);
     double mean_one = (cv::mean(patch_one))[0];
     double mean_two = (cv::mean(patch_two))[0];
     double sum_of_squared_one = (cv::sum((patch_one - mean_one).mul(patch_one - mean_one))).val[0];
@@ -1519,7 +1504,6 @@ void consolidate_redundant_edge_hypothesis(Stereo_Edge_Pairs &stereo_frame_edge_
                 shifted_edge_cluster.center_edge = shifted_edge;
                 shifted_edge_clusters.push_back(shifted_edge_cluster);
             }
-            // debug_recall_drop_refine("Epipolar Shift", stereo_frame_edge_pairs, shifted_edge_clusters, "output_files", true, i, frame_idx);
             stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = shifted_edge_clusters;
         }
         else
@@ -1795,8 +1779,6 @@ Frame_Evaluation_Metrics get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pai
 
     double recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg;
     double recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right;
-
-    //> ============= START OF CH'S EDITIONS =============
 
     //> Apply epipolar line distance filtering (must be first to extract candidates)
     //> Set num_random_edges_for_distribution to 5-10 to record ALL right edges for random subset of left edges (shows pre-filtering distribution)
