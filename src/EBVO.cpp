@@ -166,6 +166,8 @@ void EBVO::PerformEdgeBasedVO()
             last_keyframe_stereo_left.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
             last_keyframe_stereo_right.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
 
+            Frame_Evaluation_Metrics metrics = get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_left, frame_idx);
+
             //> extract SIFT descriptor for each left and right edge of last_keyframe_stereo
             augment_Edge_Data(last_keyframe_stereo_left, true);
             augment_Edge_Data(last_keyframe_stereo_right, false);
@@ -580,48 +582,12 @@ void EBVO::apply_spatial_grid_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pai
     // Pre-allocate the matching_cf_edges_indices vector to avoid segfault
     KF_CF_edge_pairs.matching_cf_edges_indices.resize(KF_CF_edge_pairs.kf_edges.size());
 
-    // Storage for spatial distances
-    std::vector<double> spatial_distances;
-    std::vector<int> is_veridical;
-
-#pragma omp parallel
-    {
-        // Thread-local storage for spatial distances
-        std::vector<double> thread_local_spatial_distances;
-        std::vector<int> thread_local_is_veridical;
-
 #pragma omp for schedule(dynamic, 64)
-        for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
-        {
-            Edge kf_edge = KF_CF_edge_pairs.get_kf_edge_by_index(i);
-            std::vector<int> candidates = spatial_grid.getCandidatesWithinRadius(kf_edge.location, grid_radius);
-            KF_CF_edge_pairs.matching_cf_edges_indices[i] = candidates;
-
-            // Record distances for all candidates
-            for (int cf_edge_idx : candidates)
-            {
-                Edge cf_edge = KF_CF_edge_pairs.get_cf_edge_by_index(cf_edge_idx);
-                double distance = cv::norm(kf_edge.location - cf_edge.location);
-                thread_local_spatial_distances.push_back(distance);
-
-                // Check if this candidate is veridical (close to GT location)
-                double gt_distance = cv::norm(cf_edge.location - KF_CF_edge_pairs.gt_location_on_cf[i]);
-                bool veridical = (gt_distance < 1.0); // Same threshold as evaluation
-                thread_local_is_veridical.push_back(veridical ? 1 : 0);
-            }
-        }
-
-#pragma omp critical
-        {
-            spatial_distances.insert(spatial_distances.end(), thread_local_spatial_distances.begin(), thread_local_spatial_distances.end());
-            is_veridical.insert(is_veridical.end(), thread_local_is_veridical.begin(), thread_local_is_veridical.end());
-        }
-    }
-
-    // Record spatial distance distribution if output directory is provided
-    if (!output_dir.empty() && !spatial_distances.empty())
+    for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
     {
-        record_Filter_Distribution("spatial_grid", spatial_distances, is_veridical, output_dir, frame_idx);
+        Edge kf_edge = KF_CF_edge_pairs.get_kf_edge_by_index(i);
+        std::vector<int> candidates = spatial_grid.getCandidatesWithinRadius(kf_edge.location, grid_radius);
+        KF_CF_edge_pairs.matching_cf_edges_indices[i] = candidates;
     }
 }
 
@@ -1062,10 +1028,10 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
     std::vector<double> precision_per_edge;
     std::vector<double> precision_pair_edge;
     //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame
-    bool debug = (stage_name == "Mate consistency Filtering");
+    bool debug = (stage_name == "Spatial Grid");
     std::cout << "is it debugging? " << debug << std::endl;
-    num_of_target_edges_per_source_edge.reserve(keyframe_stereo.focused_edge_indices.size()); //> compailable to both left and right edges
-    precision_per_edge.reserve(keyframe_stereo.focused_edge_indices.size());
+    num_of_target_edges_per_source_edge.reserve(KF_CF_edge_pairs.kf_edges.size()); //> compailable to both left and right edges
+    precision_per_edge.reserve(KF_CF_edge_pairs.kf_edges.size());
 
     for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
     {
@@ -1097,16 +1063,50 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
             {
                 total_num_of_true_positives_for_recall++;
             }
+            else
+            {
+                if (debug)
+                {
+                    stereo_csv << "KF Edge Index: " << KF_CF_edge_pairs.kf_edges[i] << " (Location: (" << KF_CF_edge_pairs.get_kf_edge_by_index(i).location.x << ", " << KF_CF_edge_pairs.get_kf_edge_by_index(i).location.y << ")"
+                               << ", GT Location on CF: (" << KF_CF_edge_pairs.gt_location_on_cf[i].x << ", " << KF_CF_edge_pairs.gt_location_on_cf[i].y << ")"
+                               << ")\n No matched edges passed the filter.\n";
+                }
+            }
             precision_per_edge.push_back(static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_candidates));
             precision_pair_edge.push_back(static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_candidates));
             num_of_target_edges_per_source_edge.push_back(total_num_of_candidates);
         }
     }
 
-    double recall_per_image = static_cast<double>(total_num_of_true_positives_for_recall) / keyframe_stereo.focused_edge_indices.size();
+    double recall_per_image = static_cast<double>(total_num_of_true_positives_for_recall) / KF_CF_edge_pairs.kf_edges.size();
     double precision_per_image = std::accumulate(precision_per_edge.begin(), precision_per_edge.end(), 0.0) / precision_per_edge.size();
     double precision_pair_per_image = std::accumulate(precision_pair_edge.begin(), precision_pair_edge.end(), 0.0) / precision_pair_edge.size();
     double num_of_target_edges_per_source_edge_avg = std::accumulate(num_of_target_edges_per_source_edge.begin(), num_of_target_edges_per_source_edge.end(), 0.0) / num_of_target_edges_per_source_edge.size();
+
+    // Debug: Check for edges with no correspondences or empty matching lists
+    if (debug)
+    {
+        std::set<int> kf_edge_set(KF_CF_edge_pairs.kf_edges.begin(), KF_CF_edge_pairs.kf_edges.end());
+        for (int focused_idx : keyframe_stereo.focused_edge_indices)
+        {
+            if (kf_edge_set.find(focused_idx) == kf_edge_set.end())
+            {
+                stereo_csv << "Focused edge " << focused_idx << " has no correspondences at all.\n";
+            }
+            else
+            {
+                auto it = std::find(KF_CF_edge_pairs.kf_edges.begin(), KF_CF_edge_pairs.kf_edges.end(), focused_idx);
+                if (it != KF_CF_edge_pairs.kf_edges.end())
+                {
+                    int idx = it - KF_CF_edge_pairs.kf_edges.begin();
+                    if (KF_CF_edge_pairs.matching_cf_edges_indices[idx].empty())
+                    {
+                        stereo_csv << "Focused edge " << focused_idx << " has empty matching list.\n";
+                    }
+                }
+            }
+        }
+    }
 
     std::cout << "Stereo Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx << std::endl;
     std::cout << "- Recall rate:       " << std::fixed << std::setprecision(8) << recall_per_image << std::endl;
