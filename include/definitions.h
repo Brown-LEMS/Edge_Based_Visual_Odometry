@@ -40,6 +40,8 @@
 #define BNB_NCC (0.9)
 #define HUBER_DELTA (1.0) //> Huber threshold
 
+#define BIDIRECTIONAL_FILTERING (false)
+
 #define SIFT_THRESHOLD (500.0)
 //> precision-recall experiments
 #define DIST_TO_GT_THRESH (1.0) //> in pixels
