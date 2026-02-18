@@ -39,22 +39,22 @@ public:
     typedef std::shared_ptr<Utility> Ptr;
 
     Utility();
-    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y );
-    double getNormalDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y );
-    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection );
-    double getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection );
+    double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y);
+    double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y);
+    double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection);
+    double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection);
 
     void Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
                                          std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2,
                                          std::vector<cv::DMatch> Good_Matches);
-    
+
     Eigen::Vector3d two_view_linear_triangulation(
         const Eigen::Vector3d gamma1, const Eigen::Vector3d gamma2,
-        const Eigen::Matrix3d K1,     const Eigen::Matrix3d K2,
-        const Eigen::Matrix3d Rel_R,  const Eigen::Vector3d Rel_T);
+        const Eigen::Matrix3d K1, const Eigen::Matrix3d K2,
+        const Eigen::Matrix3d Rel_R, const Eigen::Vector3d Rel_T);
     Eigen::Vector3d multiview_linear_triangulation(
         const int N, const std::vector<Eigen::Vector2d> pts,
-        const std::vector<Eigen::Matrix3d> & Rs, const std::vector<Eigen::Vector3d> & Ts, const Eigen::Matrix3d K);
+        const std::vector<Eigen::Matrix3d> &Rs, const std::vector<Eigen::Vector3d> &Ts, const Eigen::Matrix3d K);
 
     std::string cvMat_Type(int type);
 };
@@ -62,7 +62,6 @@ public:
 template <typename T>
 double Bilinear_Interpolation(cv::Mat meshGrid, cv::Point2d P)
 {
-
     //> y2 Q12--------Q22
     //      |          |
     //      |    P     |
@@ -74,11 +73,16 @@ double Bilinear_Interpolation(cv::Mat meshGrid, cv::Point2d P)
     cv::Point2d Q11(floor(P.x), ceil(P.y));
     cv::Point2d Q21(ceil(P.x), ceil(P.y));
 
+    if (Q11.x < 0 || Q11.y < 0 || Q21.x >= meshGrid.cols || Q21.y >= meshGrid.rows ||
+        Q12.x < 0 || Q12.y < 0 || Q22.x >= meshGrid.cols || Q22.y >= meshGrid.rows)
+    {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
     double f_x_y1 = ((Q21.x - P.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q11.y, Q11.x) + ((P.x - Q11.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q21.y, Q21.x);
     double f_x_y2 = ((Q21.x - P.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q12.y, Q12.x) + ((P.x - Q11.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q22.y, Q22.x);
     return ((Q12.y - P.y) / (Q12.y - Q11.y)) * f_x_y1 + ((P.y - Q11.y) / (Q12.y - Q11.y)) * f_x_y2;
 }
-
 /*
     Other version of Bilinear interpolation for a point P in a mesh grid.
     Returns NaN if the point is out of bounds.
@@ -105,7 +109,68 @@ inline double Bilinear_Interpolation(const cv::Mat &meshGrid, cv::Point2d P)
     double f_x_y2 = ((Q21.x - P.x) / (Q21.x - Q11.x)) * fQ12 + ((P.x - Q11.x) / (Q21.x - Q11.x)) * fQ22;
     return ((Q12.y - P.y) / (Q12.y - Q11.y)) * f_x_y1 + ((P.y - Q11.y) / (Q12.y - Q11.y)) * f_x_y2;
 }
+inline void util_compute_Img_Gradients(const cv::Mat I, cv::Mat &gx, cv::Mat &gy)
+{
+    // Utility util = Utility();
+    // std::cout << "Image type: " << util.cvMat_Type(I.type()) << std::endl;
 
+    // convert the image to 32F
+    cv::Mat I_32F;
+    I.convertTo(I_32F, CV_32F);
+    cv::Sobel(I_32F, gx, CV_32F, 1, 0, 3, 1.0 / 8.0);
+    cv::Sobel(I_32F, gy, CV_32F, 0, 1, 3, 1.0 / 8.0);
+}
+
+inline void util_make_rotated_patch_coords(const cv::Point2d &c, double theta, std::vector<cv::Point2d> &coords)
+{
+    coords.clear();
+    coords.reserve(PATCH_SIZE * PATCH_SIZE);
+    int half = PATCH_SIZE / 2;
+    double ct = std::cos(theta);
+    double st = std::sin(theta);
+    for (int i = -half; i <= half; ++i)
+    {
+        for (int j = -half; j <= half; ++j)
+        {
+            coords.emplace_back(c.x + ct * i - st * j, c.y + st * i + ct * j);
+        }
+    }
+}
+
+inline float util_bilinear_Sample_F(const cv::Mat &I, double x, double y)
+{
+    int w = I.cols, h = I.rows;
+    x = std::clamp(x, 0.0, (double)w - 1.0);
+    y = std::clamp(y, 0.0, (double)h - 1.0);
+    int x0 = (int)floor(x), y0 = (int)floor(y);
+    int x1 = std::min(x0 + 1, w - 1), y1 = std::min(y0 + 1, h - 1);
+    double a = x - x0, b = y - y0;
+    float v00 = I.at<float>(y0, x0);
+    float v10 = I.at<float>(y0, x1);
+    float v01 = I.at<float>(y1, x0);
+    float v11 = I.at<float>(y1, x1);
+    return (1 - a) * (1 - b) * v00 + a * (1 - b) * v10 + (1 - a) * b * v01 + a * b * v11;
+}
+
+inline void util_sample_patch_at_coords(const cv::Mat &I, const std::vector<cv::Point2d> &coords, std::vector<double> &vals)
+{
+    vals.resize(coords.size());
+    for (size_t k = 0; k < coords.size(); ++k)
+    {
+        vals[k] = static_cast<double>(util_bilinear_Sample_F(I, coords[k].x, coords[k].y));
+    }
+}
+
+template <typename T>
+inline T util_vector_mean(const std::vector<T> &v)
+{
+    T sum = 0;
+    for (T x : v)
+    {
+        sum += x;
+    }
+    return sum / v.size();
+}
 /*
     Average computation for a vector of integers.
 */
@@ -217,17 +282,19 @@ inline Eigen::Matrix3d ConvertToEigenMatrix(const std::vector<std::vector<double
     return eigen_matrix;
 }
 
-template< typename T >
-T rad_to_deg( T theta ) {
+template <typename T>
+T rad_to_deg(T theta)
+{
     return theta * (180.0 / M_PI);
 }
 
-template< typename T >
-T deg_to_rad( T theta ) {
+template <typename T>
+T deg_to_rad(T theta)
+{
     return theta * (M_PI / 180.0);
 }
 
-inline std::vector<int> find_Unique_Sorted_Numbers( std::vector<int> vec ) 
+inline std::vector<int> find_Unique_Sorted_Numbers(std::vector<int> vec)
 {
     std::vector<int> unique_sorted_vec = vec;
     std::sort(unique_sorted_vec.begin(), unique_sorted_vec.end());
@@ -240,8 +307,6 @@ inline std::vector<int> find_Unique_Sorted_Numbers( std::vector<int> vec )
 
     return unique_sorted_vec;
 }
-
-
 
 // wasn't used in the original code, but kept for reference
 

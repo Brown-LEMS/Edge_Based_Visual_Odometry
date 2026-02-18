@@ -11,13 +11,15 @@
 #include "../include/definitions.h"
 
 #include "test_include/test_third_order_edges.hpp"
-#include "test_include/test_NCC.hpp"
+// #include "test_include/test_NCC.hpp"
+#include "test_include/test_NCC_patch.hpp"
 
 //> Activate the tests here
-#define TEST_TOED_EDGES             (false)
-#define TEST_NCC                    (true)
-#define TEST_GRADIENT_DEPTHS        (false)
-#define TEST_RELATIVE_POSE          (false)
+#define TEST_TOED_EDGES (false)
+// #define TEST_NCC (false)
+#define TEST_NCC_PATCH (true)
+#define TEST_GRADIENT_DEPTHS (false)
+#define TEST_RELATIVE_POSE (false)
 
 int main(int argc, char **argv)
 {
@@ -25,8 +27,11 @@ int main(int argc, char **argv)
     f_TEST_TOED();
 #endif
 
-#if TEST_NCC
-    f_TEST_NCC();
+// #if TEST_NCC
+//     f_TEST_NCC();
+// #endif
+#if TEST_NCC_PATCH
+    f_TEST_NCC_PATCH();
 #endif
 
 #if TEST_RELATIVE_POSE
