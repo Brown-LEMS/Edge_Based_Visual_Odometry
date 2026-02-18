@@ -2,134 +2,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// Refactored: Takes both pre- and post-filter clusters, logs only if recall drops
-void debug_recall_drop(const std::string &stage_name,
-                       const Stereo_Edge_Pairs &stereo_frame_edge_pairs,
-                       const std::vector<EdgeCluster> &post_filter_clusters,
-                       const std::string &output_dir,
-                       bool continue_file,
-                       size_t edge_idx,
-                       size_t frame_idx)
-{
-
-    const std::vector<int> &veridical_edges = stereo_frame_edge_pairs.veridical_right_edges_indices[edge_idx];
-    std::string dir = output_dir + "/debug_recall_drop";
-    std::string filename = dir + "/frame_" + std::to_string(frame_idx) + "_recall_drop.txt";
-    std::ofstream outfile;
-    if (!continue_file)
-    {
-        outfile.open(filename, std::ios::trunc); // clear file
-    }
-    else
-    {
-        outfile.open(filename, std::ios::app); // append
-    }
-    // Check if veridical edge is present after filtering
-    bool is_veridical_present = false;
-    for (const auto &cluster : post_filter_clusters)
-    {
-        for (int idx : cluster.contributing_edges_toed_indices)
-        {
-            if (std::find(veridical_edges.begin(), veridical_edges.end(), idx) != veridical_edges.end())
-            {
-                is_veridical_present = true;
-                break;
-            }
-        }
-        if (is_veridical_present)
-            break;
-    }
-    if (!is_veridical_present)
-    {
-        // Check if veridical edge was present before filtering
-        const std::vector<EdgeCluster> &pre_filter_clusters = stereo_frame_edge_pairs.matching_edge_clusters[edge_idx].edge_clusters;
-        bool was_veridical_present = false;
-        for (const auto &cluster : pre_filter_clusters)
-        {
-            for (int idx : cluster.contributing_edges_toed_indices)
-            {
-                if (std::find(veridical_edges.begin(), veridical_edges.end(), idx) != veridical_edges.end())
-                {
-                    was_veridical_present = true;
-                    break;
-                }
-            }
-            if (was_veridical_present)
-                break;
-        }
-        // Only log if recall dropped (was present before, but not after)
-        if (was_veridical_present)
-        {
-            Edge edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(edge_idx);
-            outfile << "Recall drop: Edge " << edge_idx << " (" << edge.location.x << "," << edge.location.y << ") lost its veridical match at stage: " << stage_name << std::endl;
-        }
-    }
-    outfile.close();
-}
-void debug_recall_drop_refine(const std::string &stage_name,
-                              const Stereo_Edge_Pairs &stereo_frame_edge_pairs,
-                              const std::vector<EdgeCluster> &post_filter_clusters,
-                              const std::string &output_dir,
-                              bool continue_file,
-                              size_t edge_idx,
-                              size_t frame_idx)
-{
-
-    const std::vector<int> &veridical_edges = stereo_frame_edge_pairs.veridical_right_edges_indices[edge_idx];
-    std::string dir = output_dir + "/debug_recall_drop";
-    std::string filename = dir + "/frame_" + std::to_string(frame_idx) + "_recall_drop.txt";
-    std::ofstream outfile;
-    if (!continue_file)
-    {
-        outfile.open(filename, std::ios::trunc); // clear file
-    }
-    else
-    {
-        outfile.open(filename, std::ios::app); // append
-    }
-    // Check if veridical edge is present after filtering
-    bool is_veridical_present = false;
-    for (const auto &cluster : post_filter_clusters)
-    {
-        Edge center_edge = cluster.center_edge;
-
-        if (cv::norm(center_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[edge_idx]) <= DIST_TO_GT_THRESH)
-        {
-            is_veridical_present = true;
-            break;
-        }
-
-        if (is_veridical_present)
-            break;
-    }
-    if (!is_veridical_present)
-    {
-        // Check if veridical edge was present before filtering
-        const std::vector<EdgeCluster> &pre_filter_clusters = stereo_frame_edge_pairs.matching_edge_clusters[edge_idx].edge_clusters;
-        bool was_veridical_present = false;
-        for (const auto &cluster : pre_filter_clusters)
-        {
-            for (int idx : cluster.contributing_edges_toed_indices)
-            {
-                if (std::find(veridical_edges.begin(), veridical_edges.end(), idx) != veridical_edges.end())
-                {
-                    was_veridical_present = true;
-                    break;
-                }
-            }
-            if (was_veridical_present)
-                break;
-        }
-        // Only log if recall dropped (was present before, but not after)
-        if (was_veridical_present)
-        {
-            Edge edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(edge_idx);
-            outfile << "Recall drop: Edge " << edge_idx << " (" << edge.location.x << "," << edge.location.y << ") lost its veridical match at stage: " << stage_name << std::endl;
-        }
-    }
-    outfile.close();
-}
-
 std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel)
 {
     double shifted_x1 = edgel.location.x + ORTHOGONAL_SHIFT_MAG * (std::sin(edgel.orientation));
@@ -197,7 +69,7 @@ double get_patch_similarity(const cv::Mat patch_one, const cv::Mat patch_two)
     return norm_one.dot(norm_two);
 }
 
-std::pair<cv::Mat, cv::Mat> get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug = false)
+std::pair<cv::Mat, cv::Mat> get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug)
 {
     Utility util{};
 
@@ -247,36 +119,6 @@ double get_similarity(const cv::Mat &patch_one, const cv::Mat &patch_two)
     cv::Mat norm_one = (patch_one - mean_one) / denom_one;
     cv::Mat norm_two = (patch_two - mean_two) / denom_two;
     return norm_one.dot(norm_two);
-}
-double edge_patch_similarity(const Edge &edge1, const Edge &edge2, const cv::Mat &gray_img_H1, const cv::Mat &gray_img_H2)
-{
-    // Get orthogonal shifted points for both edges
-    std::pair<cv::Point2d, cv::Point2d> shifted_points_H1 = get_Orthogonal_Shifted_Points(edge1);
-    std::pair<cv::Point2d, cv::Point2d> shifted_points_H2 = get_Orthogonal_Shifted_Points(edge2);
-
-    cv::Mat patch_coord_x_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_coord_y_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_plus_H1 = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_minus_H1 = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_plus_H2 = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-    cv::Mat patch_minus_H2 = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
-
-    //> get the two patches on the two sides of the edge in H1
-    get_patch_on_one_edge_side(shifted_points_H1.first, edge1.orientation, patch_coord_x_plus, patch_coord_y_plus, patch_plus_H1, gray_img_H1);
-    get_patch_on_one_edge_side(shifted_points_H1.second, edge1.orientation, patch_coord_x_minus, patch_coord_y_minus, patch_minus_H1, gray_img_H1);
-
-    //> get the two patches on the two sides of the edge in H2
-    get_patch_on_one_edge_side(shifted_points_H2.first, edge2.orientation, patch_coord_x_plus, patch_coord_y_plus, patch_plus_H2, gray_img_H2);
-    get_patch_on_one_edge_side(shifted_points_H2.second, edge2.orientation, patch_coord_x_minus, patch_coord_y_minus, patch_minus_H2, gray_img_H2);
-
-    double sim_pp = get_similarity(patch_plus_H1, patch_plus_H2);   //> (A+, B+)
-    double sim_nn = get_similarity(patch_minus_H1, patch_minus_H2); //> (A-, B-)
-    double sim_pn = get_similarity(patch_plus_H1, patch_minus_H2);  //> (A+, B-)
-    double sim_np = get_similarity(patch_minus_H1, patch_plus_H2);  //> (A-, B+)
-
-    return std::max({sim_pp, sim_nn, sim_pn, sim_np});
 }
 
 double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y)
@@ -950,12 +792,18 @@ void apply_NCC_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs,
                          const std::string &output_dir, size_t frame_idx, bool is_left = true)
 {
     Utility util{};
-    cv::Mat left_image = is_left ? stereo_frame_edge_pairs.stereo_frame->left_image : stereo_frame_edge_pairs.stereo_frame->right_image;
-    cv::Mat right_image = is_left ? stereo_frame_edge_pairs.stereo_frame->right_image : stereo_frame_edge_pairs.stereo_frame->left_image;
-    if (left_image.type() != CV_64F)
-        left_image.convertTo(left_image, CV_64F);
-    if (right_image.type() != CV_64F)
-        right_image.convertTo(right_image, CV_64F);
+    // Convert images to CV_64F for template Bilinear_Interpolation<double>
+    cv::Mat left_image, right_image;
+    if (is_left)
+    {
+        stereo_frame_edge_pairs.stereo_frame->left_image.convertTo(left_image, CV_64F);
+        stereo_frame_edge_pairs.stereo_frame->right_image.convertTo(right_image, CV_64F);
+    }
+    else
+    {
+        stereo_frame_edge_pairs.stereo_frame->right_image.convertTo(left_image, CV_64F);
+        stereo_frame_edge_pairs.stereo_frame->left_image.convertTo(right_image, CV_64F);
+    }
 
     stereo_frame_edge_pairs.left_edge_patches.resize(stereo_frame_edge_pairs.focused_edge_indices.size());
 

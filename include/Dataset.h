@@ -274,7 +274,7 @@ struct Stereo_Matching_Edge_Clusters
 
 struct Stereo_Edge_Pairs
 {
-    //> For bi-directional purposes, which we only do it for testing, the left and right are relative to the stereo frame
+    //> this works both for stereo and temporal
     const StereoFrame *stereo_frame; //> pointer to StereoFrame without owning the data of StereoFrame
     cv::Mat left_disparity_map;
     cv::Mat right_disparity_map;
@@ -288,7 +288,8 @@ struct Stereo_Edge_Pairs
     std::vector<Eigen::Vector3d> epip_line_coeffs_of_left_edges;    //> epipolar line coefficients of source edges
     std::vector<std::pair<cv::Mat, cv::Mat>> left_edge_patches;     //> patches on the two sides of the source edges
     std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
-    bool is_left_to_right = true;
+    std::unordered_map<int, int> final_candidate_set; //> find the corresponeding left edge when given right edge, would be populated after Best filter
+    bool is_left_to_right = true;                     //> focusing on left frame or right frame
     //> Matching edge clusters for each left edge
     std::vector<Stereo_Matching_Edge_Clusters> matching_edge_clusters;
 
@@ -329,7 +330,7 @@ struct Stereo_Edge_Pairs
         return stereo_frame->left_edges[i];
     }
     Edge get_focused_edge_by_Stereo_Edge_Pairs_index(size_t i) const { return is_left_to_right ? stereo_frame->left_edges[focused_edge_indices[i]] : stereo_frame->right_edges[focused_edge_indices[i]]; }
-
+    Edge get_focused_edge_by_toed_index(size_t i) const { return get_focused_edge_by_Stereo_Edge_Pairs_index(get_Stereo_Edge_Pairs_left_id_index(i)); }
     //> Return the number of left and right edge pairs
     size_t size() const { return focused_edge_indices.size(); }
 
@@ -427,11 +428,49 @@ struct KF_CF_EdgeCorrespondence
     std::vector<double> gt_orientation_on_cf;
     std::vector<cv::Point2d> gt_location_on_cf;
 
-    const StereoFrame *key_frame;
-    const StereoFrame *current_frame;
+    const Stereo_Edge_Pairs *key_frame_pairs;
+    const Stereo_Edge_Pairs *current_frame_pairs;
 
     std::vector<std::vector<int>> veridical_cf_edges_indices; // corresponding vertical edges in the current frame
     std::vector<std::vector<int>> matching_cf_edges_indices;  // corresponding edge indices in the current frame after filtering
+
+    // getters:
+    Edge get_kf_edge_by_index(size_t i) const
+    {
+        // returns the edge in keyframe given index in keyframe edge list
+        if (i >= kf_edges.size())
+        {
+            std::cerr << "ERROR: keyframe edge index " << i << " out of bounds!" << std::endl;
+            return Edge();
+        }
+        int idx = kf_edges[i];
+        return key_frame_pairs->get_focused_edge_by_toed_index(idx);
+    }
+    Edge get_cf_edge_by_indexij(size_t i, size_t j) const
+    {
+        // returns the edge in current frame given index in keyframe edge list and index in corresponding cf edge list
+        if (i >= kf_edges.size() || j >= matching_cf_edges_indices[i].size())
+        {
+            std::cerr << "ERROR: current frame edge index " << i << " out of bounds!" << std::endl;
+            return Edge();
+        }
+        int idx = matching_cf_edges_indices[i][j];
+
+        return current_frame_pairs->get_focused_edge_by_toed_index(idx);
+    }
+    Edge get_cf_edge_by_index(size_t i)
+    {
+        // returns the edge in current frame given its toed index
+        const std::vector<Edge> &cf_edges = current_frame_pairs->is_left_to_right
+                                                ? current_frame_pairs->stereo_frame->left_edges
+                                                : current_frame_pairs->stereo_frame->right_edges;
+        if (i >= cf_edges.size())
+        {
+            std::cerr << "ERROR: current frame edge index " << i << " out of bounds!" << std::endl;
+            return Edge();
+        }
+        return cf_edges[i];
+    }
 };
 
 extern cv::Mat merged_visualization_global;

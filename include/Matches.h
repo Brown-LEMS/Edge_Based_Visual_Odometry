@@ -20,6 +20,8 @@ std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edg
 void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
                                 cv::Mat &patch_coord_x, cv::Mat &patch_coord_y,
                                 cv::Mat &patch_val, const cv::Mat img);
+std::pair<cv::Mat, cv::Mat> get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug = false);
+double get_patch_similarity(const cv::Mat patch_one, const cv::Mat patch_two);
 double get_similarity(const cv::Mat &patch_one, const cv::Mat &patch_two);
 double edge_patch_similarity(const Edge &edge1, const Edge &edge2, const cv::Mat &gray_img_H1, const cv::Mat &gray_img_H2);
 
