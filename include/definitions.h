@@ -17,17 +17,11 @@
 #define EPIPOLAR_LINE_DIST_THRESH (0.5)  //> in pixels
 #define EPIP_TENGENCY_ORIENT_THRESH (12) //> in degrees
 #define EPIP_TENGENCY_PROXIM_THRESH (4)  //> in pixels
-#define MAX_DISPARITY (23.0063)
+#define MAX_DISPARITY (25)
 #define EDGE_CLUSTER_THRESH (0.3) //> in pixels
 #define ORTHOGONAL_SHIFT_MAG (5)  //> in pixels
 #define PATCH_SIZE (7)            //> in pixels
 #define NCC_THRESH (0.6)
-
-#define NCC_THRESH_STRONG_BOTH_SIDES (0.5)
-#define NCC_THRESH_WEAK_BOTH_SIDES (0.25)
-#define NCC_THRESH_STRONG_ONE_SIDE (0.65)
-#define MATCH_TOL (3) //> in pixels
-#define MAX_DISPARITY (23.0063)
 
 #define EPIP_TANGENCY_DISPL_THRESH (3) //> in pixels
 #define LOCATION_PERTURBATION (0.4)    //> in pixels
@@ -39,6 +33,7 @@
 #define BNB_SIFT (0.4)
 #define BNB_NCC (0.9)
 #define HUBER_DELTA (1.0) //> Huber threshold
+#define LOWES_RATIO (0.8) //> Suggested in Lowe's paper
 
 #define BIDIRECTIONAL_FILTERING (false)
 
@@ -46,25 +41,18 @@
 //> precision-recall experiments
 #define DIST_TO_GT_THRESH (1.0) //> in pixels
 
-#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
 #define GRID_SIZE (15)     //> Size of the spatial grid cells in pixels
 
 #define MEASURE_TIMINGS (false)
 
-//> For quick processing
-#define WRITE_TOED_EDGES (true)
-#define READ_TOED_EDGES_FROM_FILES (false)
-
-//> Writing some intermediate data for debugging
-#define WRITE_KF_CF_GT_EDGE_PAIRS (true)
 
 //> Generic definitions
 #define RANSAC_NUM_OF_ITERATIONS (500)
 #define EPSILON (1e-12)
 #define REPROJ_ERROR_THRESH (2) //> in pixels
 
-#define DEPTH_GRAD_GAUSSIAN_SIGMA (3)
-#define GAUSSIAN_KERNEL_WINDOW_LENGTH (2 * 4 * DEPTH_GRAD_GAUSSIAN_SIGMA + 1)
+//> Verbose
+#define DATASET_LOAD_VERBOSE (false)
 
 //> DEBUGGING PURPOSE
 #define SHOW_YAML_FILE_DATA (false)
@@ -88,8 +76,6 @@
 #define SIFT_CONTRAST_THRESHOLD (0.04)
 #define SIFT_EDGE_THRESHOLD (10)
 #define SIFT_GAUSSIAN_SIGMA (1.6)
-
-#define LOWES_RATIO (0.8) //> Suggested in Lowe's paper
 #define K_IN_KNN_MATCHING (2)
 
 //> Print outs

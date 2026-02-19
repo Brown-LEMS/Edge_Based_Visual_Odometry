@@ -188,7 +188,6 @@ void Dataset::load_dataset(const std::string &dataset_type,
         std::string stereo_pairs_path = file_info.dataset_path + "/" + file_info.sequence_name + "/stereo_pairs";
         stereo_iterator = Iterators::createETH3DIterator(stereo_pairs_path);
         LoadETH3DDisparityMaps(stereo_pairs_path, num_pairs, left_ref_disparity_maps, right_ref_disparity_maps);
-        // right_ref_disparity_maps = LoadETH3DRightReferenceMaps(stereo_pairs_path, num_pairs);
         left_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, true);
         right_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, false);
     }
@@ -299,8 +298,9 @@ void Dataset::LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int n
             right_disparity_maps.push_back(right_disparity_map);
         }
     }
-
+#if DATASET_LOAD_VERBOSE
     std::cout << "Loaded " << left_disparity_maps.size() << " left disparity maps and " << right_disparity_maps.size() << " right disparity maps" << std::endl;
+#endif
 }
 
 void Dataset::WriteDisparityToBinary(const std::string &filepath, const cv::Mat &disparity_map)
@@ -317,25 +317,6 @@ void Dataset::WriteDisparityToBinary(const std::string &filepath, const cv::Mat 
     ofs.write(reinterpret_cast<const char *>(&rows), sizeof(rows));
     ofs.write(reinterpret_cast<const char *>(&cols), sizeof(cols));
     ofs.write(reinterpret_cast<const char *>(disparity_map.ptr<float>(0)), sizeof(float) * rows * cols);
-}
-
-cv::Mat Dataset::ReadDisparityFromBinary(const std::string &filepath)
-{
-    std::ifstream ifs(filepath, std::ios::binary);
-    if (!ifs.is_open())
-    {
-        std::cerr << "ERROR: Could not read disparity from: " << filepath << std::endl;
-        return {};
-    }
-
-    int rows, cols;
-    ifs.read(reinterpret_cast<char *>(&rows), sizeof(rows));
-    ifs.read(reinterpret_cast<char *>(&cols), sizeof(cols));
-
-    cv::Mat disparity_map(rows, cols, CV_32F);
-    ifs.read(reinterpret_cast<char *>(disparity_map.ptr<float>(0)), sizeof(float) * rows * cols);
-
-    return disparity_map;
 }
 
 cv::Mat Dataset::readPFM(const std::string &file_path)
@@ -665,8 +646,9 @@ bool Dataset::read_edges_and_disparities_from_file(const std::string &file_path,
             std::cerr << "Warning: No valid edge data found in file: " << file_path << std::endl;
             return false;
         }
-
+#if DATASET_LOAD_VERBOSE
         std::cout << "Successfully loaded " << edges.size() << " third-order edges from: " << file_path << std::endl;
+#endif
         return true;
     }
     catch (const std::exception &e)

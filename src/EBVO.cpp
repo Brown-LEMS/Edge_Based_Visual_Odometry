@@ -52,13 +52,10 @@ void EBVO::PerformEdgeBasedVO()
             break;
         }
 
-        // If the current frame has ground truth, we can use it (current development: using GT for evaluation)
-        if (dataset.has_gt())
-        {
-        }
         const cv::Mat &left_disparity_map = (frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[frame_idx] : cv::Mat();
         const cv::Mat &right_disparity_map = (frame_idx < right_ref_disparity_maps.size()) ? right_ref_disparity_maps[frame_idx] : cv::Mat();
 
+        //> FOr now, this is optional
         const cv::Mat &left_occlusion_mask = (frame_idx < left_occlusion_masks.size()) ? left_occlusion_masks[frame_idx] : cv::Mat();
         const cv::Mat &right_occlusion_mask = (frame_idx < right_occlusion_masks.size()) ? right_occlusion_masks[frame_idx] : cv::Mat();
 
@@ -107,7 +104,6 @@ void EBVO::PerformEdgeBasedVO()
             last_keyframe_stereo_left.right_disparity_map = right_disparity_map;
 
             //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
-            // stereo_edge_matcher.Find_Stereo_GT_Locations(dataset, left_disparity_map, left_occlusion_mask, true, last_keyframe_stereo_left);
             stereo_edge_matcher.Find_Stereo_GT_Locations(dataset, left_disparity_map, last_keyframe, last_keyframe_stereo_left, true);
             std::cout << "Complete calculating GT locations for left edges of the keyframe (previous frame)..." << std::endl;
 
@@ -116,7 +112,6 @@ void EBVO::PerformEdgeBasedVO()
             std::cout << "Size of stereo edge correspondences pool = " << last_keyframe_stereo_left.focused_edge_indices.size() << std::endl;
 
             last_keyframe_stereo_left.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
-            last_keyframe_stereo_right.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
 
             Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_left, frame_idx);
 
@@ -124,12 +119,9 @@ void EBVO::PerformEdgeBasedVO()
 
             //> extract SIFT descriptor for each left and right edge of last_keyframe_stereo
             stereo_edge_matcher.augment_Edge_Data(last_keyframe_stereo_left, true);
-            stereo_edge_matcher.augment_Edge_Data(last_keyframe_stereo_right, false);
 
             if (!last_keyframe_stereo_left.b_is_size_consistent())
                 last_keyframe_stereo_left.print_size_consistency();
-            if (!last_keyframe_stereo_right.b_is_size_consistent())
-                last_keyframe_stereo_right.print_size_consistency();
             b_is_keyframe = false;
         }
         else
@@ -142,14 +134,7 @@ void EBVO::PerformEdgeBasedVO()
             current_frame_stereo_left.left_disparity_map = left_disparity_map;
             current_frame_stereo_left.right_disparity_map = right_disparity_map;
 
-            current_frame_stereo_right.clean_up_vector_data_structures();
-            current_frame_stereo_right.stereo_frame = &current_frame;
-            current_frame_stereo_right.left_disparity_map = right_disparity_map;
-            current_frame_stereo_right.right_disparity_map = left_disparity_map;
-            //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
-
             stereo_edge_matcher.Find_Stereo_GT_Locations(dataset, left_disparity_map, current_frame, current_frame_stereo_left, true);
-            // stereo_edge_matcher.Find_Stereo_GT_Locations(left_disparity_map, left_occlusion_mask, true, current_frame_stereo_left);
             std::cout << "Complete calculating GT locations for left edges of the current frame..." << current_frame_stereo_left.focused_edge_indices.size() << std::endl;
 
             //> Construct a GT stereo edge pool
@@ -157,15 +142,12 @@ void EBVO::PerformEdgeBasedVO()
             std::cout << "Size of stereo edge correspondences pool for left edges= " << current_frame_stereo_left.focused_edge_indices.size() << std::endl;
 
             add_edges_to_spatial_grid(current_frame_stereo_left, left_grid);
-            add_edges_to_spatial_grid(current_frame_stereo_right, right_grid);
             // std::cout << "size of spatial grid for left edges = " << left_grid.get_num_edges_in_grid() << std::endl;
             // Construct TOED-to-Stereo_Edge_Pairs mapping for the current frame
             current_frame_stereo_left.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
-            current_frame_stereo_right.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
 
             //> extract SIFT descriptor for each left edge of current_frame_stereo
             stereo_edge_matcher.augment_Edge_Data(current_frame_stereo_left, true);
-            // augment_Edge_Data(current_frame_stereo_right, false);
             if (!current_frame_stereo_left.b_is_size_consistent())
                 current_frame_stereo_left.print_size_consistency();
 
