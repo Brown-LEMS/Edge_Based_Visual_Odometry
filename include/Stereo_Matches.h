@@ -53,11 +53,8 @@ public:
         double &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           /* optional inputs */
         int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
 
-    // void apply_NCC_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double ncc_val_threshold, bool is_left);
-    // void apply_NCC_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::vector<EdgeCluster>> &test_false_negative_edge_clusters,
-    // std::vector<std::vector<std::pair<cv::Mat, cv::Mat>>> &test_false_negative_matching_edge_patches,
-    // std::vector<int> &left_edge_indices_to_false_negatives,
-    // const std::string &output_dir = "", size_t frame_idx = 0, bool is_left = true);
+    void construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<Edge> &candidate_edge_set);
+
     
     //> utility functions
     void augment_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
