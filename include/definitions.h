@@ -52,7 +52,11 @@
 #define REPROJ_ERROR_THRESH (2) //> in pixels
 
 //> Verbose
-#define DATASET_LOAD_VERBOSE (false)
+#define DATASET_LOAD_VERBOSE             (false)
+#define STEREO_EDGE_MATCH_EVAL_VERBOSE   (true)
+
+//> Output for visualization
+#define RECORD_FILTER_DISTRIBUTIONS      (false)
 
 //> DEBUGGING PURPOSE
 #define SHOW_YAML_FILE_DATA (false)
