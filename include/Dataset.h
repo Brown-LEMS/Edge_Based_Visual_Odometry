@@ -274,7 +274,6 @@ struct Stereo_Matching_Edge_Clusters
 
 struct Stereo_Edge_Pairs
 {
-    //> this works both for stereo and temporal
     const StereoFrame *stereo_frame; //> pointer to StereoFrame without owning the data of StereoFrame
     cv::Mat left_disparity_map;
     cv::Mat right_disparity_map;
@@ -288,8 +287,8 @@ struct Stereo_Edge_Pairs
     std::vector<Eigen::Vector3d> epip_line_coeffs_of_left_edges;    //> epipolar line coefficients of source edges
     std::vector<std::pair<cv::Mat, cv::Mat>> left_edge_patches;     //> patches on the two sides of the source edges
     std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
-    std::unordered_map<int, int> final_candidate_set; //> find the corresponeding left edge when given right edge, would be populated after Best filter
-    bool is_left_to_right = true;                     //> focusing on left frame or right frame
+    std::unordered_map<Edge, int> final_candidate_set; //> find the corresponeding left edge when given right edge, would be populated after Best filter
+    bool is_left_to_right = true;                      //> focusing on left frame or right frame
     //> Matching edge clusters for each left edge
     std::vector<Stereo_Matching_Edge_Clusters> matching_edge_clusters;
 
@@ -421,10 +420,16 @@ struct StereoEdgeCorrespondencesGT
     }
 };
 
+struct scores
+{
+    double ncc_score;
+    double sift_score;
+};
+
 struct KF_CF_EdgeCorrespondence
 {
-
-    std::vector<int> kf_edges; //> stores the 3rd order edges
+    bool is_left_to_right;     //> whether the keyframe is left or right
+    std::vector<int> kf_edges; //> stores the 3rd order edges / stores reprsentative edge indices
     std::vector<double> gt_orientation_on_cf;
     std::vector<cv::Point2d> gt_location_on_cf;
 
@@ -433,7 +438,7 @@ struct KF_CF_EdgeCorrespondence
 
     std::vector<std::vector<int>> veridical_cf_edges_indices; // corresponding vertical edges in the current frame
     std::vector<std::vector<int>> matching_cf_edges_indices;  // corresponding edge indices in the current frame after filtering
-
+    std::vector<std::vector<scores>> matching_scores;
     // getters:
     Edge get_kf_edge_by_index(size_t i) const
     {

@@ -428,6 +428,7 @@ void remove_empty_clusters(Stereo_Edge_Pairs &stereo_frame_edge_pairs)
             stereo_frame_edge_pairs.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
         }
     }
+    stereo_frame_edge_pairs.print_size_consistency();
 }
 void get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
@@ -600,91 +601,27 @@ void apply_Epipolar_Line_Distance_Filtering(Stereo_Edge_Pairs &stereo_frame_edge
 
     //> Pre-allocate the output vector to avoid race conditions
     stereo_frame_edge_pairs.matching_edge_clusters.resize(epip_line_coeffs.size());
-
-    //> Storage for epipolar distances
-    std::vector<double> epipolar_distances;
-    std::vector<int> is_veridical;
-
-    //> Randomly select left edges for recording ALL right edge distances (before filtering)
-    std::vector<int> random_focused_edge_indices;
-    std::unordered_set<int> random_left_edge_set;
-    if (num_random_edges_for_distribution > 0)
-    {
-        random_focused_edge_indices = is_left ? PickRandomEdges(stereo_frame_edge_pairs.focused_edge_indices.size(), num_random_edges_for_distribution) : PickRandomEdges(stereo_frame_edge_pairs.candidate_edge_indices.size(), num_random_edges_for_distribution);
-        random_left_edge_set.insert(random_focused_edge_indices.begin(), random_focused_edge_indices.end());
-        std::cout << "Selected " << random_focused_edge_indices.size() << " random left edges for full distribution recording" << std::endl;
-    }
-
-    //> Pre-allocate thread-local storage based on number of threads
-    int num_threads = omp_get_max_threads();
-    std::vector<std::vector<int>> thread_local_indices_to_remove(num_threads);
-
-#pragma omp parallel
-    {
-        int thread_id = omp_get_thread_num();
-
-        //> Thread-local storage for epipolar distances
-        std::vector<double> thread_local_epipolar_distances;
-        std::vector<int> thread_local_is_veridical;
-
 #pragma omp for schedule(dynamic)
-        for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
-        {
-            const auto e_coeffs = epip_line_coeffs[i];
-            const std::vector<Edge> &candidate_edges = is_left ? stereo_frame_edge_pairs.stereo_frame->right_edges : stereo_frame_edge_pairs.stereo_frame->left_edges;
-            std::vector<int> right_candidate_edge_indices = extract_Epipolar_Edge_Indices(e_coeffs, candidate_edges, 0.5);
-
-            //> Record epipolar distances for randomly selected left edges (ALL right edges)
-            if (random_left_edge_set.find(i) != random_left_edge_set.end())
-            {
-                //> Record for ALL right edges to show pre-filtering distribution
-                for (size_t right_edge_idx = 0; right_edge_idx < candidate_edges.size(); ++right_edge_idx)
-                {
-                    const auto &right_edge = is_left ? stereo_frame_edge_pairs.stereo_frame->right_edges[right_edge_idx] : stereo_frame_edge_pairs.stereo_frame->left_edges[right_edge_idx];
-                    double x = right_edge.location.x;
-                    double y = right_edge.location.y;
-                    double dist_to_epip_line = std::abs(e_coeffs(0) * x + e_coeffs(1) * y + e_coeffs(2)) /
-                                               std::sqrt((e_coeffs(0) * e_coeffs(0)) + (e_coeffs(1) * e_coeffs(1)));
-                    thread_local_epipolar_distances.push_back(dist_to_epip_line);
-
-                    //> Check if this edge is veridical
-                    bool is_gt = std::find(stereo_frame_edge_pairs.veridical_right_edges_indices[i].begin(),
-                                           stereo_frame_edge_pairs.veridical_right_edges_indices[i].end(),
-                                           right_edge_idx) != stereo_frame_edge_pairs.veridical_right_edges_indices[i].end();
-                    thread_local_is_veridical.push_back(is_gt ? 1 : 0);
-                }
-            }
-
-            //> each right candidate edge is a cluster
-            std::vector<EdgeCluster> right_candidate_edge_clusters;
-            for (const auto &right_candidate_edge_index : right_candidate_edge_indices)
-            {
-                EdgeCluster right_candidate_edge_cluster;
-                right_candidate_edge_cluster.center_edge = is_left ? stereo_frame_edge_pairs.stereo_frame->right_edges[right_candidate_edge_index]
-                                                                   : stereo_frame_edge_pairs.stereo_frame->left_edges[right_candidate_edge_index];
-                is_left ? right_candidate_edge_cluster.contributing_edges.push_back(stereo_frame_edge_pairs.stereo_frame->right_edges[right_candidate_edge_index])
-                        : right_candidate_edge_cluster.contributing_edges.push_back(stereo_frame_edge_pairs.stereo_frame->left_edges[right_candidate_edge_index]);
-                right_candidate_edge_cluster.contributing_edges_toed_indices.push_back(right_candidate_edge_index);
-                right_candidate_edge_clusters.push_back(right_candidate_edge_cluster);
-            }
-            stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = right_candidate_edge_clusters;
-        }
-
-#pragma omp critical
-        {
-            epipolar_distances.insert(epipolar_distances.end(), thread_local_epipolar_distances.begin(), thread_local_epipolar_distances.end());
-            is_veridical.insert(is_veridical.end(), thread_local_is_veridical.begin(), thread_local_is_veridical.end());
-        }
-    }
-
-    //> Record epipolar distance distribution if output directory is provided
-    if (!output_dir.empty() && !epipolar_distances.empty())
+    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
     {
-        record_Filter_Distribution("epipolar_distance", epipolar_distances, is_veridical, output_dir, frame_idx);
-    }
+        const auto e_coeffs = epip_line_coeffs[i];
+        const std::vector<Edge> &candidate_edges = is_left ? stereo_frame_edge_pairs.stereo_frame->right_edges : stereo_frame_edge_pairs.stereo_frame->left_edges;
+        std::vector<int> right_candidate_edge_indices = extract_Epipolar_Edge_Indices(e_coeffs, candidate_edges, 0.5);
 
-    //> Record ambiguity distribution
-    record_Ambiguity_Distribution("epipolar", stereo_frame_edge_pairs, output_dir, frame_idx);
+        //> each right candidate edge is a cluster
+        std::vector<EdgeCluster> right_candidate_edge_clusters;
+        for (const auto &right_candidate_edge_index : right_candidate_edge_indices)
+        {
+            EdgeCluster right_candidate_edge_cluster;
+            right_candidate_edge_cluster.center_edge = is_left ? stereo_frame_edge_pairs.stereo_frame->right_edges[right_candidate_edge_index]
+                                                               : stereo_frame_edge_pairs.stereo_frame->left_edges[right_candidate_edge_index];
+            is_left ? right_candidate_edge_cluster.contributing_edges.push_back(stereo_frame_edge_pairs.stereo_frame->right_edges[right_candidate_edge_index])
+                    : right_candidate_edge_cluster.contributing_edges.push_back(stereo_frame_edge_pairs.stereo_frame->left_edges[right_candidate_edge_index]);
+            right_candidate_edge_cluster.contributing_edges_toed_indices.push_back(right_candidate_edge_index);
+            right_candidate_edge_clusters.push_back(right_candidate_edge_cluster);
+        }
+        stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = right_candidate_edge_clusters;
+    }
 }
 
 void record_Filter_Distribution(const std::string &filter_name, const std::vector<double> &filter_values, const std::vector<int> &is_veridical, const std::string &output_dir, size_t frame_idx)
@@ -759,64 +696,29 @@ void record_Ambiguity_Distribution(const std::string &stage_name, const Stereo_E
 
 void apply_Disparity_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir = "", size_t frame_idx = 0, bool is_left = true)
 {
-    //> Storage for location errors (distance to GT)
-    std::vector<double> location_errors;
-    std::vector<int> is_veridical;
-
-#pragma omp parallel
-    {
-        //> Thread-local storage for location errors
-        std::vector<double> thread_local_location_errors;
-        std::vector<int> thread_local_is_veridical;
 
 #pragma omp for schedule(dynamic)
-        for (int i = 0; i < static_cast<int>(stereo_frame_edge_pairs.focused_edge_indices.size()); ++i)
-        {
-            std::vector<EdgeCluster> surviving_edge_clusters;
-            Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
-            cv::Point2d GT_location = stereo_frame_edge_pairs.GT_locations_from_left_edges[i];
-
-            for (auto const &edge_cluster : stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters)
-            {
-                Edge right_edge = edge_cluster.center_edge;
-
-                //> Record location error for all candidate edges (horizontal disparity difference)
-                double location_error = std::abs(right_edge.location.x - left_edge.location.x);
-                thread_local_location_errors.push_back(location_error);
-
-                //> Check if this edge is veridical (in ground truth)
-                int right_edge_index = edge_cluster.contributing_edges_toed_indices[0];
-                bool is_gt = std::find(stereo_frame_edge_pairs.veridical_right_edges_indices[i].begin(),
-                                       stereo_frame_edge_pairs.veridical_right_edges_indices[i].end(),
-                                       right_edge_index) != stereo_frame_edge_pairs.veridical_right_edges_indices[i].end();
-                thread_local_is_veridical.push_back(is_gt ? 1 : 0);
-
-                double candidate_disparity = is_left ? (left_edge.location.x - right_edge.location.x)
-                                                     : (right_edge.location.x - left_edge.location.x);
-                if (candidate_disparity >= 0 && candidate_disparity <= MAX_DISPARITY)
-                {
-                    surviving_edge_clusters.push_back(edge_cluster);
-                }
-            }
-            // debug_recall_drop("Disparity Filter", stereo_frame_edge_pairs, surviving_edge_clusters, output_dir, false, i, frame_idx);
-            stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = surviving_edge_clusters;
-        }
-
-#pragma omp critical
-        {
-            location_errors.insert(location_errors.end(), thread_local_location_errors.begin(), thread_local_location_errors.end());
-            is_veridical.insert(is_veridical.end(), thread_local_is_veridical.begin(), thread_local_is_veridical.end());
-        }
-    }
-
-    //> Record location error distribution if output directory is provided
-    if (!output_dir.empty() && !location_errors.empty())
+    for (int i = 0; i < static_cast<int>(stereo_frame_edge_pairs.focused_edge_indices.size()); ++i)
     {
-        record_Filter_Distribution("location_error", location_errors, is_veridical, output_dir, frame_idx);
-    }
+        std::vector<EdgeCluster> surviving_edge_clusters;
+        Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
+        cv::Point2d GT_location = stereo_frame_edge_pairs.GT_locations_from_left_edges[i];
 
-    //> Record ambiguity distribution
-    record_Ambiguity_Distribution("disparity", stereo_frame_edge_pairs, output_dir, frame_idx);
+        for (auto const &edge_cluster : stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters)
+        {
+            Edge right_edge = edge_cluster.center_edge;
+            //> Check if this edge is veridical (in ground truth)
+
+            double candidate_disparity = is_left ? (left_edge.location.x - right_edge.location.x)
+                                                 : (right_edge.location.x - left_edge.location.x);
+            if (candidate_disparity >= 0 && candidate_disparity <= MAX_DISPARITY)
+            {
+                surviving_edge_clusters.push_back(edge_cluster);
+            }
+        }
+        // debug_recall_drop("Disparity Filter", stereo_frame_edge_pairs, surviving_edge_clusters, output_dir, false, i, frame_idx);
+        stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = surviving_edge_clusters;
+    }
 }
 
 void apply_NCC_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs,
@@ -838,87 +740,50 @@ void apply_NCC_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs,
 
     stereo_frame_edge_pairs.left_edge_patches.resize(stereo_frame_edge_pairs.focused_edge_indices.size());
 
-    //> Storage for NCC values
-    std::vector<double> ncc_values;
-    std::vector<int> is_veridical;
-
-#pragma omp parallel
-    {
-        //> Thread-local storage for NCC values
-        std::vector<double> thread_local_ncc_values;
-        std::vector<int> thread_local_is_veridical;
-
 #pragma omp for schedule(dynamic)
-        for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
-        {
-            //> Get the left edge patches
-            Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
-            stereo_frame_edge_pairs.left_edge_patches[i] = get_edge_patches(left_edge, left_image);
-
-            //> Get the right edge patches
-            std::vector<EdgeCluster> surviving_edge_clusters;
-            std::vector<double> surviving_edge_cluster_final_scores;
-            std::vector<double> surviving_edge_cluster_confidences;
-            std::vector<bool> surviving_edge_cluster_validities;
-            for (int j = 0; j < stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size(); j++)
-            {
-                const auto &edge_cluster = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j];
-                Edge right_edge = edge_cluster.center_edge;
-                std::pair<cv::Mat, cv::Mat> right_edge_patches = get_edge_patches(right_edge, right_image);
-
-                //> Calculate the similarity between the left edge patches and the right edge patches
-                double sim_pp = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].first, right_edge_patches.first);   //> (A+, B+)
-                double sim_nn = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].second, right_edge_patches.second); //> (A-, B-)
-                double sim_pn = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].first, right_edge_patches.second);  //> (A+, B-)
-                double sim_np = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].second, right_edge_patches.first);  //> (A-, B+)
-                double final_SIM_score = std::max({sim_pp, sim_nn, sim_pn, sim_np});
-
-                //> Record NCC value for all candidate edges
-                thread_local_ncc_values.push_back(final_SIM_score);
-
-                //> Check if this edge is veridical (in ground truth)
-                int right_edge_index = edge_cluster.contributing_edges_toed_indices[0];
-                bool is_gt = std::find(stereo_frame_edge_pairs.veridical_right_edges_indices[i].begin(),
-                                       stereo_frame_edge_pairs.veridical_right_edges_indices[i].end(),
-                                       right_edge_index) != stereo_frame_edge_pairs.veridical_right_edges_indices[i].end();
-                thread_local_is_veridical.push_back(is_gt ? 1 : 0);
-
-                if (final_SIM_score > NCC_THRESH)
-                {
-                    surviving_edge_clusters.push_back(edge_cluster);
-                    surviving_edge_cluster_final_scores.push_back(final_SIM_score);
-                    // Preserve existing SIFT confidence if available
-                    double existing_confidence = (j < stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences.size())
-                                                     ? stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences[j]
-                                                     : 0.0;
-                    surviving_edge_cluster_confidences.push_back(existing_confidence);
-                    surviving_edge_cluster_validities.push_back(true); //> Placeholder for validity
-                }
-            }
-
-            // debug_recall_drop("NCC Filter", stereo_frame_edge_pairs, surviving_edge_clusters, output_dir, true, i, frame_idx);
-
-            stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = std::move(surviving_edge_clusters);
-            stereo_frame_edge_pairs.matching_edge_clusters[i].refine_final_scores = std::move(surviving_edge_cluster_final_scores);
-            stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences = std::move(surviving_edge_cluster_confidences);
-            stereo_frame_edge_pairs.matching_edge_clusters[i].refine_validities = std::move(surviving_edge_cluster_validities);
-        }
-
-#pragma omp critical
-        {
-            ncc_values.insert(ncc_values.end(), thread_local_ncc_values.begin(), thread_local_ncc_values.end());
-            is_veridical.insert(is_veridical.end(), thread_local_is_veridical.begin(), thread_local_is_veridical.end());
-        }
-    }
-
-    //> Record NCC distribution if output directory is provided
-    if (!output_dir.empty() && !ncc_values.empty())
+    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
     {
-        record_Filter_Distribution("ncc_score", ncc_values, is_veridical, output_dir, frame_idx);
-    }
+        //> Get the left edge patches
+        Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
+        stereo_frame_edge_pairs.left_edge_patches[i] = get_edge_patches(left_edge, left_image);
 
-    //> Record ambiguity distribution
-    record_Ambiguity_Distribution("ncc", stereo_frame_edge_pairs, output_dir, frame_idx);
+        //> Get the right edge patches
+        std::vector<EdgeCluster> surviving_edge_clusters;
+        std::vector<double> surviving_edge_cluster_final_scores;
+        std::vector<double> surviving_edge_cluster_confidences;
+        std::vector<bool> surviving_edge_cluster_validities;
+        for (int j = 0; j < stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size(); j++)
+        {
+            const auto &edge_cluster = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j];
+            Edge right_edge = edge_cluster.center_edge;
+            std::pair<cv::Mat, cv::Mat> right_edge_patches = get_edge_patches(right_edge, right_image);
+
+            //> Calculate the similarity between the left edge patches and the right edge patches
+            double sim_pp = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].first, right_edge_patches.first);   //> (A+, B+)
+            double sim_nn = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].second, right_edge_patches.second); //> (A-, B-)
+            double sim_pn = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].first, right_edge_patches.second);  //> (A+, B-)
+            double sim_np = get_patch_similarity(stereo_frame_edge_pairs.left_edge_patches[i].second, right_edge_patches.first);  //> (A-, B+)
+            double final_SIM_score = std::max({sim_pp, sim_nn, sim_pn, sim_np});
+            if (final_SIM_score > NCC_THRESH)
+            {
+                surviving_edge_clusters.push_back(edge_cluster);
+                surviving_edge_cluster_final_scores.push_back(final_SIM_score);
+                // Preserve existing SIFT confidence if available
+                double existing_confidence = (j < stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences.size())
+                                                 ? stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences[j]
+                                                 : 0.0;
+                surviving_edge_cluster_confidences.push_back(existing_confidence);
+                surviving_edge_cluster_validities.push_back(true); //> Placeholder for validity
+            }
+        }
+
+        // debug_recall_drop("NCC Filter", stereo_frame_edge_pairs, surviving_edge_clusters, output_dir, true, i, frame_idx);
+
+        stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = std::move(surviving_edge_clusters);
+        stereo_frame_edge_pairs.matching_edge_clusters[i].refine_final_scores = std::move(surviving_edge_cluster_final_scores);
+        stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences = std::move(surviving_edge_cluster_confidences);
+        stereo_frame_edge_pairs.matching_edge_clusters[i].refine_validities = std::move(surviving_edge_cluster_validities);
+    }
 }
 
 void add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame_edge_pairs, SpatialGrid &spatial_grid, bool is_left)
@@ -958,6 +823,42 @@ void add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame_edge_pairs, Spati
     }
 }
 
+void augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::pair<cv::Mat, cv::Mat>> &edge_descriptors, bool is_left)
+{
+    // we will modify the edge_descriptors
+    edge_descriptors.clear();
+    int size = is_left ? stereo_frame_edge_pairs.stereo_frame->left_edges.size() : stereo_frame_edge_pairs.stereo_frame->right_edges.size();
+    edge_descriptors.resize(size);
+    const cv::Mat &image = is_left ? stereo_frame_edge_pairs.stereo_frame->left_image_undistorted
+                                   : stereo_frame_edge_pairs.stereo_frame->right_image_undistorted;
+#pragma omp parallel
+    {
+        cv::Ptr<cv::SIFT> thread_sift = cv::SIFT::create();
+#pragma omp for schedule(dynamic)
+        for (int i = 0; i < size; ++i)
+        {
+            Edge le = stereo_frame_edge_pairs.get_focused_edge_by_toed_index(i);
+            std::pair<cv::Point2d, cv::Point2d> shifted_points = get_Orthogonal_Shifted_Points(le, 8);
+
+            //> Create keypoints for this edge pair
+            std::vector<cv::KeyPoint> kps;
+            kps.push_back(cv::KeyPoint(shifted_points.first, 1, 180 / M_PI * le.orientation));
+            kps.push_back(cv::KeyPoint(shifted_points.second, 1, 180 / M_PI * le.orientation));
+
+            cv::Mat descriptors;
+            thread_sift->compute(image, kps, descriptors);
+
+            if (descriptors.rows == 2)
+            {
+                edge_descriptors[i] = std::make_pair(descriptors.row(0).clone(), descriptors.row(1).clone());
+            }
+            else
+            {
+                edge_descriptors[i] = std::make_pair(cv::Mat(), cv::Mat());
+            }
+        }
+    }
+}
 void augment_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
     stereo_frame_edge_pairs.left_edge_descriptors.clear();
@@ -999,15 +900,9 @@ void apply_SIFT_filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double sif
     cv::Mat candidate_image = is_left ? stereo_frame_edge_pairs.stereo_frame->right_image_undistorted
                                       : stereo_frame_edge_pairs.stereo_frame->left_image_undistorted;
 
-    //> Storage for SIFT descriptor distances
-    std::vector<double> sift_distances;
-    std::vector<int> is_veridical;
-
 #pragma omp parallel
     {
-        //> Thread-local storage for SIFT distances
-        std::vector<double> thread_local_sift_distances;
-        std::vector<int> thread_local_is_veridical;
+        cv::Ptr<cv::SIFT> sift = cv::SIFT::create(); // Create once per thread, not per iteration
 
 #pragma omp for schedule(dynamic)
         for (int i = 0; i < static_cast<int>(stereo_frame_edge_pairs.focused_edge_indices.size()); ++i)
@@ -1018,8 +913,6 @@ void apply_SIFT_filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double sif
             Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
             std::pair<cv::Mat, cv::Mat> left_edge_descriptor = stereo_frame_edge_pairs.left_edge_descriptors[i];
             std::vector<cv::KeyPoint> edge_keypoints;
-
-            cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
             for (auto const &edge_cluster : stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters)
             {
                 Edge right_edge = edge_cluster.center_edge;
@@ -1044,17 +937,6 @@ void apply_SIFT_filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double sif
                     double sift_desc_distance_3 = cv::norm(left_edge_descriptor.first, right_edge_descriptor_2, cv::NORM_L2);
                     double sift_desc_distance_4 = cv::norm(left_edge_descriptor.second, right_edge_descriptor_2, cv::NORM_L2);
                     double sift_desc_distance = std::min({sift_desc_distance_1, sift_desc_distance_2, sift_desc_distance_3, sift_desc_distance_4});
-
-                    //> Record SIFT distance for all candidate edges
-                    thread_local_sift_distances.push_back(sift_desc_distance);
-
-                    //> Check if this edge is veridical (in ground truth)
-                    int right_edge_index = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j / 2].contributing_edges_toed_indices[0];
-                    bool is_gt = std::find(stereo_frame_edge_pairs.veridical_right_edges_indices[i].begin(),
-                                           stereo_frame_edge_pairs.veridical_right_edges_indices[i].end(),
-                                           right_edge_index) != stereo_frame_edge_pairs.veridical_right_edges_indices[i].end();
-                    thread_local_is_veridical.push_back(is_gt ? 1 : 0);
-
                     if (sift_desc_distance < sift_dist_threshold)
                     {
                         EdgeCluster edge_cluster = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j / 2];
@@ -1074,22 +956,7 @@ void apply_SIFT_filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double sif
             stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = surviving_edge_clusters;
             stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences = surviving_edge_cluster_confidences;
         }
-
-#pragma omp critical
-        {
-            sift_distances.insert(sift_distances.end(), thread_local_sift_distances.begin(), thread_local_sift_distances.end());
-            is_veridical.insert(is_veridical.end(), thread_local_is_veridical.begin(), thread_local_is_veridical.end());
-        }
     }
-
-    //> Record SIFT distance distribution if output directory is provided
-    if (!output_dir.empty() && !sift_distances.empty())
-    {
-        record_Filter_Distribution("sift_distance", sift_distances, is_veridical, output_dir, frame_idx);
-    }
-
-    //> Record ambiguity distribution
-    record_Ambiguity_Distribution("sift", stereo_frame_edge_pairs, output_dir, frame_idx);
 }
 
 void apply_Best_Nearly_Best_Test(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double lowe_ratio_threshold = LOWES_RATIO, const std::string &output_dir = "", size_t frame_idx = 0, bool is_NCC = true)
@@ -1158,53 +1025,25 @@ void apply_Best_Nearly_Best_Test(Stereo_Edge_Pairs &stereo_frame_edge_pairs, dou
                     surviving_confidences.push_back(cluster_data.refine_confidences[idx]);
                     surviving_validities.push_back(cluster_data.refine_validities[idx]);
                 }
-
-                // debug_recall_drop_refine(test_name, stereo_frame_edge_pairs, surviving_clusters, "output_files", true, i, frame_idx);
-
-                // if (is_NCC && i == 10580)
-                // {
-                //     std::cout << "BEFORE BNB - index 265(" << left_edge.location.x << ", " << left_edge.location.y << "), orientation: " << left_edge.orientation << std::endl;
-                //     std::cout << "Best score: " << best_score << " (threshold: " << lowe_ratio_threshold << ")" << std::endl;
-                //     for (int m = 0; m < num_clusters; ++m)
-                //     {
-                //         size_t idx = indices[m]; // idx points to the sorted cluster
-                //         bool is_veridical = cv::norm(cluster_data.edge_clusters[idx].center_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH;
-                //         double score = cluster_data.refine_final_scores[idx];
-                //         double ratio = score / best_score;
-                //         std::string kept = (m < keep_count) ? "[KEPT]" : "[DROPPED]";
-                //         std::cout << "  Rank " << m << " " << kept << " (orig_idx=" << idx << "): loc=("
-                //                   << cluster_data.edge_clusters[idx].center_edge.location.x << ", "
-                //                   << cluster_data.edge_clusters[idx].center_edge.location.y << "), orientation= "
-                //                   << cluster_data.edge_clusters[idx].center_edge.orientation
-                //                   << ", Score=" << score << ", Ratio=" << ratio
-                //                   << (is_veridical ? " [VERIDICAL]" : "") << std::endl;
-                //     }
-                // }
                 cluster_data.edge_clusters = std::move(surviving_clusters);
                 cluster_data.refine_final_scores = std::move(surviving_scores);
                 cluster_data.refine_confidences = std::move(surviving_confidences);
                 cluster_data.refine_validities = std::move(surviving_validities);
-                // if (is_NCC && i == 10580)
-                // {
-                //     std::cout << "AFTER BNB - index 265 - kept " << cluster_data.edge_clusters.size() << " clusters" << std::endl;
-                //     for (size_t m = 0; m < cluster_data.edge_clusters.size(); ++m)
-                //     {
-                //         bool is_veridical = cv::norm(cluster_data.edge_clusters[m].center_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH;
-                //         double score = cluster_data.refine_final_scores[m];
-                //         std::cout << "  Surviving " << m << ": loc=("
-                //                   << cluster_data.edge_clusters[m].center_edge.location.x << ", "
-                //                   << cluster_data.edge_clusters[m].center_edge.location.y << "), orientation= "
-                //                   << cluster_data.edge_clusters[m].center_edge.orientation
-                //                   << ", Score=" << score
-                //                   << (is_veridical ? " [VERIDICAL]" : "") << std::endl;
-                //     }
-                // }
             }
         }
     }
-    record_Ambiguity_Distribution(test_name, stereo_frame_edge_pairs, output_dir, frame_idx);
 }
-
+void construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<Edge> &candidate_edge_set)
+{
+    candidate_edge_set.clear();
+    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
+    {
+        Stereo_Matching_Edge_Clusters &cluster_data = stereo_frame_edge_pairs.matching_edge_clusters[i];
+        EdgeCluster &edge_clusters = cluster_data.edge_clusters[0]; //> After Lowe's ratio test, we should have at most 1 cluster per edge
+        Edge right_edge = edge_clusters.center_edge;
+        candidate_edge_set.push_back(right_edge);
+    }
+}
 void apply_Lowe_Ratio_Test(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double lowe_ratio_threshold, const std::string &output_dir, size_t frame_idx)
 {
 

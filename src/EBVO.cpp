@@ -168,14 +168,8 @@ void EBVO::PerformEdgeBasedVO()
 
             Frame_Evaluation_Metrics metrics = get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_left, frame_idx);
 
-            //> extract SIFT descriptor for each left and right edge of last_keyframe_stereo
-            augment_Edge_Data(last_keyframe_stereo_left, true);
-            augment_Edge_Data(last_keyframe_stereo_right, false);
-
             if (!last_keyframe_stereo_left.b_is_size_consistent())
                 last_keyframe_stereo_left.print_size_consistency();
-            if (!last_keyframe_stereo_right.b_is_size_consistent())
-                last_keyframe_stereo_right.print_size_consistency();
             b_is_keyframe = false;
         }
         else
@@ -205,19 +199,18 @@ void EBVO::PerformEdgeBasedVO()
             get_Stereo_Edge_GT_Pairs(dataset, current_frame, current_frame_stereo_right, false);
             std::cout << "Size of stereo edge correspondences pool for right edges= " << current_frame_stereo_right.focused_edge_indices.size() << std::endl;
 
-            add_edges_to_spatial_grid(current_frame_stereo_left, left_grid);
-            add_edges_to_spatial_grid(current_frame_stereo_right, right_grid);
             // std::cout << "size of spatial grid for left edges = " << left_grid.get_num_edges_in_grid() << std::endl;
             // Construct TOED-to-Stereo_Edge_Pairs mapping for the current frame
             current_frame_stereo_left.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
             current_frame_stereo_right.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
 
-            //> extract SIFT descriptor for each left edge of current_frame_stereo
-            augment_Edge_Data(current_frame_stereo_left, true);
+            Frame_Evaluation_Metrics metrics = get_Stereo_Edge_Pairs(dataset, current_frame_stereo_left, frame_idx);
             // augment_Edge_Data(current_frame_stereo_right, false);
             if (!current_frame_stereo_left.b_is_size_consistent())
                 current_frame_stereo_left.print_size_consistency();
 
+            add_edges_to_spatial_grid(current_frame_stereo_left, left_grid);
+            add_edges_to_spatial_grid(current_frame_stereo_right, right_grid);
             //> Construct correspondences structure between last keyframe and the current frame
             KF_CF_EdgeCorrespondence KF_CF_edge_pairs_left, KF_CF_edge_pairs_right;
 
@@ -245,8 +238,15 @@ void EBVO::PerformEdgeBasedVO()
             apply_NCC_filtering(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, 0.6, last_keyframe.left_image, current_frame.left_image, true);
             Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "NCC Filtering");
 
-            apply_SIFT_filtering(KF_CF_edge_pairs_left, 600, true);
+            augment_all_Edge_Data(current_frame_stereo_left, current_frame_descriptors, true);
+            apply_SIFT_filtering(KF_CF_edge_pairs_left, 500.0, true);
             Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "SIFT Filtering");
+
+            apply_best_nearly_best_filtering(KF_CF_edge_pairs_left, 0.8, true);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "BNB NCC Filtering");
+
+            apply_best_nearly_best_filtering(KF_CF_edge_pairs_left, 0.3, false);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "BNB SIFT Filtering");
 
             // //> Stage 4: Stereo consistency filtering
             // apply_stereo_filtering(KF_CF_edge_pairs_left, KF_CF_edge_pairs_right,
@@ -271,20 +271,41 @@ void EBVO::PerformEdgeBasedVO()
 void EBVO::add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid)
 {
     //> Add left edges to spatial grid. This is done on the current image only.
-    //> Pre-allocate grid_indices to avoid race conditions
-    const std::vector<Edge> &edges = stereo_frame.is_left_to_right ? stereo_frame.stereo_frame->left_edges : stereo_frame.stereo_frame->right_edges;
+    const std::vector<int> &edges = stereo_frame.focused_edge_indices; //> only add focused edges to the spatial grid for matching
     stereo_frame.grid_indices.resize(edges.size());
 
-#pragma omp parallel for schedule(static)
-    for (int i = 0; i < edges.size(); ++i)
+    // Pre-compute grid cell assignments in parallel (read-only, no race conditions)
+    std::vector<std::pair<int, int>> edge_to_grid(edges.size()); // <edge_idx, grid_cell_idx>
+
+#pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < static_cast<int>(edges.size()); ++i)
     {
-        int grid_index;
-#pragma omp critical
+        cv::Point2d edge_location = stereo_frame.get_focused_edge_by_Stereo_Edge_Pairs_index(i).location;
+        int grid_x = static_cast<int>(edge_location.x) / spatial_grid.cell_size;
+        int grid_y = static_cast<int>(edge_location.y) / spatial_grid.cell_size;
+
+        if (grid_x >= 0 && grid_x < spatial_grid.grid_width &&
+            grid_y >= 0 && grid_y < spatial_grid.grid_height)
         {
-            cv::Point2d edge_location = edges[i].location;
-            grid_index = spatial_grid.add_edge_to_grids(i, edge_location);
+            int grid_idx = grid_y * spatial_grid.grid_width + grid_x;
+            edge_to_grid[i] = {i, grid_idx};
+            stereo_frame.grid_indices[i] = grid_idx;
         }
-        stereo_frame.grid_indices[i] = grid_index;
+        else
+        {
+            edge_to_grid[i] = {i, -1}; // Mark as invalid
+            stereo_frame.grid_indices[i] = -1;
+        }
+    }
+
+    // Add edges to grid sequentially (no race conditions, thread-safe)
+    for (int i = 0; i < static_cast<int>(edges.size()); ++i)
+    {
+        int grid_idx = edge_to_grid[i].second;
+        if (grid_idx >= 0 && grid_idx < static_cast<int>(spatial_grid.grid.size()))
+        {
+            spatial_grid.grid[grid_idx].push_back(edges[i]); // Store actual TOED edge index, not position in array
+        }
     }
 }
 
@@ -466,6 +487,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
     std::vector<std::vector<double>> thread_gt_orientations(num_threads_corr);
     std::vector<std::vector<cv::Point2d>> thread_gt_locations(num_threads_corr);
     std::vector<std::vector<std::vector<int>>> thread_veridical_cf_edges(num_threads_corr);
+    std::vector<std::vector<std::vector<scores>>> thread_scores(num_threads_corr);
 
     //> For each left edge in the keyframe, find the GT location on the current image
 #pragma omp parallel
@@ -504,6 +526,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
                 current_candidate_edge_indices = spatial_grid.getCandidatesWithinRadius(projected_point_cv, search_radius);
 
                 std::vector<int> CF_veridical_edges_indices;
+                std::vector<scores> CF_veridical_edges_scores;
                 for (const auto &curr_e_index : current_candidate_edge_indices)
                 {
                     //> Check if the Euclidean distance is less than some threshold
@@ -519,6 +542,10 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
                     {
                         CF_veridical_edges_indices.push_back(curr_e_index);
                     }
+                    scores score;
+                    score.ncc_score = -1.0;
+                    score.sift_score = 900.0;
+                    CF_veridical_edges_scores.push_back(score);
                 }
 
                 // Only record KF edges that have at least one veridical correspondence
@@ -530,6 +557,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
                     thread_gt_orientations[tid].push_back(ori);
                     thread_gt_locations[tid].push_back(projected_point_cv);
                     thread_veridical_cf_edges[tid].push_back(CF_veridical_edges_indices);
+                    thread_scores[tid].push_back(CF_veridical_edges_scores);
                 }
             }
         }
@@ -546,6 +574,8 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
                                                   thread_gt_locations[tid].begin(), thread_gt_locations[tid].end());
         KF_CF_edge_pairs.veridical_cf_edges_indices.insert(KF_CF_edge_pairs.veridical_cf_edges_indices.end(),
                                                            thread_veridical_cf_edges[tid].begin(), thread_veridical_cf_edges[tid].end());
+        KF_CF_edge_pairs.matching_scores.insert(KF_CF_edge_pairs.matching_scores.end(),
+                                                thread_scores[tid].begin(), thread_scores[tid].end());
     }
     for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
     {
@@ -582,8 +612,8 @@ void EBVO::apply_spatial_grid_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pai
     // Pre-allocate the matching_cf_edges_indices vector to avoid segfault
     KF_CF_edge_pairs.matching_cf_edges_indices.resize(KF_CF_edge_pairs.kf_edges.size());
 
-#pragma omp for schedule(dynamic, 64)
-    for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
+#pragma omp parallel for schedule(dynamic, 64)
+    for (int i = 0; i < static_cast<int>(KF_CF_edge_pairs.kf_edges.size()); ++i)
     {
         Edge kf_edge = KF_CF_edge_pairs.get_kf_edge_by_index(i);
         std::vector<int> candidates = spatial_grid.getCandidatesWithinRadius(kf_edge.location, grid_radius);
@@ -595,45 +625,153 @@ void EBVO::apply_SIFT_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, doub
 {
     //> For each edge in the keyframe, compare its SIFT descriptor with the SIFT descriptors of the edges in the current frame
     //> Filter out edges that don't meet the SIFT distance threshold
+    std::string output_dir = dataset.get_output_path();
+    size_t frame_idx = 0;
+    // Thread-local storage for parallel SIFT distance accumulation
+    int num_threads = omp_get_max_threads();
+    std::vector<std::vector<double>> thread_local_sift_distances(num_threads);
+    std::vector<std::vector<int>> thread_local_is_veridical(num_threads);
 
-#pragma omp parallel for schedule(dynamic, 64)
-    for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
+#pragma omp parallel
     {
-        std::vector<int> filtered_cf_edges_indices;
-
-        // Get SIFT descriptors for the keyframe edge (two descriptors per edge)
-        std::pair<cv::Mat, cv::Mat> kf_edge_descriptors = KF_CF_edge_pairs.key_frame_pairs->left_edge_descriptors[i];
-
-        // Iterate through all matching CF edges for this KF edge
-        for (int cf_edge_idx : KF_CF_edge_pairs.matching_cf_edges_indices[i])
+        const int tid = omp_get_thread_num();
+#pragma omp for schedule(dynamic, 64)
+        for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
         {
-            // Get the index in the Stereo_Edge_Pairs structure
-            int stereo_idx = KF_CF_edge_pairs.current_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(cf_edge_idx);
+            std::vector<int> filtered_cf_edges_indices;
+            std::vector<scores> filtered_scores;
+            // Get SIFT descriptors for the keyframe edge (two descriptors per edge)
+            int kf_toed_index = KF_CF_edge_pairs.kf_edges[i];
+            int kf_stereo_index = KF_CF_edge_pairs.key_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(kf_toed_index);
+            std::pair<cv::Mat, cv::Mat> kf_edge_descriptors = KF_CF_edge_pairs.key_frame_pairs->left_edge_descriptors[kf_stereo_index];
 
-            if (stereo_idx >= 0 && stereo_idx < KF_CF_edge_pairs.current_frame_pairs->left_edge_descriptors.size())
+            // Iterate through all matching CF edges for this KF edge
+            for (int j = 0; j < KF_CF_edge_pairs.matching_cf_edges_indices[i].size(); ++j)
             {
+                int cf_edge_idx = KF_CF_edge_pairs.matching_cf_edges_indices[i][j];
                 // Get SIFT descriptors for the current frame edge
-                std::pair<cv::Mat, cv::Mat> cf_edge_descriptors = KF_CF_edge_pairs.current_frame_pairs->left_edge_descriptors[stereo_idx];
-
-                // Compare all combinations of descriptors (2x2 = 4 combinations)
-                // Take the minimum distance to get the best match
-                double sift_dist_1 = cv::norm(kf_edge_descriptors.first, cf_edge_descriptors.first, cv::NORM_L2);
-                double sift_dist_2 = cv::norm(kf_edge_descriptors.first, cf_edge_descriptors.second, cv::NORM_L2);
-                double sift_dist_3 = cv::norm(kf_edge_descriptors.second, cf_edge_descriptors.first, cv::NORM_L2);
-                double sift_dist_4 = cv::norm(kf_edge_descriptors.second, cf_edge_descriptors.second, cv::NORM_L2);
-
-                double min_sift_dist = std::min({sift_dist_1, sift_dist_2, sift_dist_3, sift_dist_4});
-
-                // Keep the edge if it passes the threshold
-                if (min_sift_dist < sift_dist_threshold)
+                std::pair<cv::Mat, cv::Mat> cf_edge_descriptors = current_frame_descriptors[cf_edge_idx];
+                scores &score = KF_CF_edge_pairs.matching_scores[i][j];
+                if (cf_edge_descriptors.first.empty() || cf_edge_descriptors.second.empty())
                 {
-                    filtered_cf_edges_indices.push_back(cf_edge_idx);
+                    filtered_cf_edges_indices.push_back(cf_edge_idx); // If no descriptors, keep the edge for now (or could choose to discard)
+                    filtered_scores.push_back(score);
+                }
+                else
+                {
+                    // Compare all combinations of descriptors (2x2 = 4 combinations)
+                    // Take the minimum distance to get the best match
+                    double sift_dist_1 = cv::norm(kf_edge_descriptors.first, cf_edge_descriptors.first, cv::NORM_L2);
+                    double sift_dist_2 = cv::norm(kf_edge_descriptors.first, cf_edge_descriptors.second, cv::NORM_L2);
+                    double sift_dist_3 = cv::norm(kf_edge_descriptors.second, cf_edge_descriptors.first, cv::NORM_L2);
+                    double sift_dist_4 = cv::norm(kf_edge_descriptors.second, cf_edge_descriptors.second, cv::NORM_L2);
+
+                    double min_sift_dist = std::min({sift_dist_1, sift_dist_2, sift_dist_3, sift_dist_4});
+
+                    // Check if this edge is veridical (in ground truth)
+                    bool is_gt = std::find(KF_CF_edge_pairs.veridical_cf_edges_indices[i].begin(),
+                                           KF_CF_edge_pairs.veridical_cf_edges_indices[i].end(),
+                                           cf_edge_idx) != KF_CF_edge_pairs.veridical_cf_edges_indices[i].end();
+                    thread_local_is_veridical[tid].push_back(is_gt ? 1 : 0);
+                    thread_local_sift_distances[tid].push_back(min_sift_dist);
+
+                    // Keep the edge if it passes the threshold
+                    if (min_sift_dist < sift_dist_threshold)
+                    {
+                        filtered_cf_edges_indices.push_back(cf_edge_idx);
+                        scores score_refined = score;
+                        score_refined.sift_score = min_sift_dist;
+                        filtered_scores.push_back(score_refined);
+                    }
                 }
             }
-        }
 
-        // Update the matching indices with filtered results
-        KF_CF_edge_pairs.matching_cf_edges_indices[i] = filtered_cf_edges_indices;
+            // Update the matching indices with filtered results
+            KF_CF_edge_pairs.matching_cf_edges_indices[i] = filtered_cf_edges_indices;
+            KF_CF_edge_pairs.matching_scores[i] = filtered_scores;
+        }
+    }
+
+    // Merge thread-local data
+    std::vector<double> sift_distances;
+    std::vector<int> is_veridical;
+    for (int tid = 0; tid < num_threads; ++tid)
+    {
+        sift_distances.insert(sift_distances.end(), thread_local_sift_distances[tid].begin(), thread_local_sift_distances[tid].end());
+        is_veridical.insert(is_veridical.end(), thread_local_is_veridical[tid].begin(), thread_local_is_veridical[tid].end());
+    }
+}
+
+void EBVO::apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC)
+{
+    std::string test_name = is_NCC ? "BNB_NCC" : "BNB_SIFT";
+
+#pragma omp parallel
+    {
+#pragma omp for schedule(dynamic)
+        for (int i = 0; i < static_cast<int>(KF_CF_edge_pairs.kf_edges.size()); ++i)
+        {
+
+            Edge left_edge = KF_CF_edge_pairs.get_kf_edge_by_index(i);
+            int stereo_idx = KF_CF_edge_pairs.key_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(KF_CF_edge_pairs.kf_edges[i]);
+            auto &m_ind = KF_CF_edge_pairs.matching_cf_edges_indices[i];
+            size_t num_clusters = m_ind.size();
+
+            if (num_clusters < 2)
+                continue;
+
+            // 1. Create an index map to sort clusters based on score without losing original indices
+            // Assuming higher score is better (NCC). If SIFT (lower better), flip the comparison logic.
+            std::vector<size_t> indices(num_clusters);
+            std::iota(indices.begin(), indices.end(), 0);
+            if (is_NCC)
+                std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
+                          { return KF_CF_edge_pairs.matching_scores[i][a].ncc_score > KF_CF_edge_pairs.matching_scores[i][b].ncc_score; });
+            else
+                std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
+                          { return KF_CF_edge_pairs.matching_scores[i][a].sift_score < KF_CF_edge_pairs.matching_scores[i][b].sift_score; });
+            // 2. Determine how many candidates pass the recursive ratio test
+            size_t keep_count = 1; // Always keep the best
+
+            double best_score = is_NCC ? KF_CF_edge_pairs.matching_scores[i][indices[0]].ncc_score : KF_CF_edge_pairs.matching_scores[i][indices[0]].sift_score;
+
+            for (size_t j = 0; j < num_clusters - 1; ++j)
+            {
+                double next_score = is_NCC ? KF_CF_edge_pairs.matching_scores[i][indices[j + 1]].ncc_score : KF_CF_edge_pairs.matching_scores[i][indices[j + 1]].sift_score;
+                if (best_score == 0)
+                    break;
+                // Ratio: next_best / current_best
+                // If the ratio is high (e.g., 0.9), they are "nearly best."
+                // If the ratio is low (e.g., 0.4), the next one is significantly worse.
+
+                double ratio = is_NCC ? next_score / best_score : best_score / next_score;
+                if (ratio >= threshold)
+                {
+                    keep_count++;
+                }
+                else
+                {
+                    break; // Significant drop detected, stop including further matches
+                }
+            }
+
+            // 3. If we aren't keeping everything, rebuild the vectors
+            if (keep_count < num_clusters)
+            {
+
+                std::vector<int> surviving_cf_matches;
+                std::vector<scores> surviving_scores;
+
+                for (size_t k = 0; k < keep_count; ++k)
+                {
+                    size_t idx = indices[k];
+                    surviving_cf_matches.push_back(KF_CF_edge_pairs.matching_cf_edges_indices[i][idx]);
+                    surviving_scores.push_back(KF_CF_edge_pairs.matching_scores[i][idx]);
+                }
+                KF_CF_edge_pairs.matching_cf_edges_indices[i] = std::move(surviving_cf_matches);
+                KF_CF_edge_pairs.matching_scores[i] = std::move(surviving_scores);
+            }
+        }
     }
 }
 
@@ -664,14 +802,15 @@ void EBVO::apply_NCC_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, const
         std::pair<cv::Mat, cv::Mat> kf_edge_patches = get_edge_patches(kf_edge, kf_image_64f);
 
         std::vector<int> filtered_cf_edges_indices;
-
+        std::vector<scores> filtered_sim_scores;
         // Iterate through all matching CF edges for this KF edge
-        for (int cf_edge_idx : KF_CF_edge_pairs.matching_cf_edges_indices[i])
+        for (int j = 0; j < KF_CF_edge_pairs.matching_cf_edges_indices[i].size(); ++j)
         {
+            int cf_edge_idx = KF_CF_edge_pairs.matching_cf_edges_indices[i][j];
             if (cf_edge_idx >= 0 && cf_edge_idx < cf_edges.size())
             {
                 const Edge &cf_edge = cf_edges[cf_edge_idx];
-
+                scores s = KF_CF_edge_pairs.matching_scores[i][j];
                 // Extract patches for the current frame edge
                 std::pair<cv::Mat, cv::Mat> cf_edge_patches = get_edge_patches(cf_edge, cf_image_64f);
 
@@ -686,12 +825,17 @@ void EBVO::apply_NCC_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, const
                 if (final_SIM_score > ncc_val_threshold)
                 {
                     filtered_cf_edges_indices.push_back(cf_edge_idx);
+                    scores refined_score;
+                    refined_score.ncc_score = final_SIM_score;
+                    refined_score.sift_score = s.sift_score; // Preserve SIFT score for potential later use
+                    filtered_sim_scores.push_back(refined_score);
                 }
             }
         }
 
         // Update the matching indices with filtered results
         KF_CF_edge_pairs.matching_cf_edges_indices[i] = filtered_cf_edges_indices;
+        KF_CF_edge_pairs.matching_scores[i] = filtered_sim_scores;
     }
 }
 
