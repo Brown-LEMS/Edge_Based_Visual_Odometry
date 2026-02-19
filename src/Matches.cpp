@@ -1033,6 +1033,7 @@ void apply_Best_Nearly_Best_Test(Stereo_Edge_Pairs &stereo_frame_edge_pairs, dou
         }
     }
 }
+
 void construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<Edge> &candidate_edge_set)
 {
     candidate_edge_set.clear();
