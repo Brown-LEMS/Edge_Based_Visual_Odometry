@@ -17,6 +17,7 @@
 
 #include "definitions.h"
 #include "Frame.h"
+#include "toed/cpu_toed.hpp"
 
 // =====================================================================================================================
 // UTILITY_TOOLS: useful functions for debugging, writing data to files, displaying images, etc.
@@ -43,6 +44,12 @@ public:
     double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y);
     double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection);
     double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection);
+
+    std::pair<cv::Mat, cv::Mat> get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug = false);
+    std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel);
+    std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel, double shift_magnitude);
+    void get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta, cv::Mat &patch_coord_x, cv::Mat &patch_coord_y, cv::Mat &patch_val, const cv::Mat img);
+    double get_patch_similarity(const cv::Mat patch_one, const cv::Mat patch_two);
 
     void Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
                                          std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2,

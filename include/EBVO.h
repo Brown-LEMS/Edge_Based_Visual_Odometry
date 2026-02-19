@@ -3,6 +3,7 @@
 
 #include "Dataset.h"
 #include "utility.h"
+#include "Stereo_Matches.h"
 
 #include <yaml-cpp/yaml.h>
 #include <unordered_map>
@@ -35,10 +36,8 @@ public:
     // Main function to perform edge-based visual odometry
     void PerformEdgeBasedVO();
     void ProcessEdges(const cv::Mat &image,
-                      const std::string &filepath,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
-    void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::Mat occlusion_mask, bool is_left, Stereo_Edge_Pairs &stereo_frame_edge_pairs);
     void add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid);
 
     //> filtering methods

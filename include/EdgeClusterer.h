@@ -51,8 +51,6 @@ public:
     //> the result of the clustering
     std::vector<EdgeCluster> returned_clusters;
 
-    //> the result of the clustering
-    std::vector<EdgeCluster> returned_clusters;
     
 private:
     int getClusterSize(int label);
