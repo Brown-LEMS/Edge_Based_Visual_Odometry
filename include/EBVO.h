@@ -50,6 +50,15 @@ public:
                              const cv::Mat &keyframe_image, const cv::Mat &current_image, bool is_left);
     void apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC);
 
+    void min_Edge_Photometric_Residual_by_Gauss_Newton(
+        /* inputs */
+        Edge left_edge, Eigen::Vector2d init_disp, const cv::Mat &left_image_undistorted, \
+        const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y, 
+        /* outputs */
+        Eigen::Vector2d &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           
+        /* optional inputs */
+        int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
+
     void apply_stereo_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs_left, KF_CF_EdgeCorrespondence &KF_CF_edge_pairs_right,
                                 const Stereo_Edge_Pairs &last_keyframe_stereo_left, const Stereo_Edge_Pairs &current_frame_stereo_left,
                                 const Stereo_Edge_Pairs &last_keyframe_stereo_right, const Stereo_Edge_Pairs &current_frame_stereo_right,
@@ -62,11 +71,6 @@ public:
                                              size_t frame_idx, const std::string &stage_name);
 
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
-    std::vector<Eigen::Vector2f> LucasKanadeOpticalFlow(
-        const cv::Mat &img1,
-        const cv::Mat &img2,
-        const std::vector<Edge> &edges,
-        int patch_size);
 
     void augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::pair<cv::Mat, cv::Mat>> &edge_descriptors, bool is_left);
 

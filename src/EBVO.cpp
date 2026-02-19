@@ -734,6 +734,125 @@ void EBVO::apply_NCC_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, const
     }
 }
 
+void EBVO::min_Edge_Photometric_Residual_by_Gauss_Newton(
+    /* inputs */
+    Edge left_edge, Eigen::Vector2d init_disp, const cv::Mat &left_image_undistorted, \
+    const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y, 
+    /* outputs */
+    Eigen::Vector2d &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           
+    /* optional inputs */
+    int max_iter, double tol, double huber_delta, bool b_verbose)
+{
+    cv::Point2d t(std::cos(left_edge.orientation), std::sin(left_edge.orientation));
+    cv::Point2d n(-t.y, t.x);
+    double side_shift = (PATCH_SIZE / 2.0) + 1.0;
+    cv::Point2d c_plus = left_edge.location + n * side_shift;
+    cv::Point2d c_minus = left_edge.location - n * side_shift;
+
+    std::vector<cv::Point2d> cLplus, cLminus;
+    util_make_rotated_patch_coords(c_plus, left_edge.orientation, cLplus);
+    util_make_rotated_patch_coords(c_minus, left_edge.orientation, cLminus);
+
+    std::vector<double> pLplus_f, pLminus_f;
+    util_sample_patch_at_coords(left_image_undistorted, cLplus, pLplus_f);
+    util_sample_patch_at_coords(left_image_undistorted, cLminus, pLminus_f);
+    double mLplus = util_vector_mean<double>(pLplus_f);
+    double mLminus = util_vector_mean<double>(pLminus_f);
+    std::vector<double> Lplus, Lminus;
+    for (double x : pLplus_f)
+    {
+        Lplus.push_back(x - mLplus);
+    }
+    for (double x : pLminus_f)
+    {
+        Lminus.push_back(x - mLminus);
+    }
+
+    Eigen::Vector2d d = init_disp;
+    double init_RMS = 0.0;
+    for (int iter = 0; iter < max_iter; ++iter)
+    {
+        //> Compute the right patch coordinates
+        cv::Point2d cRplus = c_plus - cv::Point2d(d[0], d[1]);
+        cv::Point2d cRminus = c_minus - cv::Point2d(d[0], d[1]);
+
+        std::vector<cv::Point2d> cRplusC, cRminusC;
+        util_make_rotated_patch_coords(cRplus, left_edge.orientation, cRplusC);
+        util_make_rotated_patch_coords(cRminus, left_edge.orientation, cRminusC);
+
+        //> Sample right intensities and right gradient X at these coords
+        std::vector<double> pRplus_f, pRminus_f, gxRplus_f, gxRminus_f, gyRplus_f, gyRminus_f;
+        util_sample_patch_at_coords(right_image_undistorted, cRplusC, pRplus_f);
+        util_sample_patch_at_coords(right_image_undistorted, cRminusC, pRminus_f);
+        util_sample_patch_at_coords(right_image_gradients_x, cRplusC, gxRplus_f);
+        util_sample_patch_at_coords(right_image_gradients_x, cRminusC, gxRminus_f);
+        util_sample_patch_at_coords(right_image_gradients_y, cRplusC, gyRplus_f);
+        util_sample_patch_at_coords(right_image_gradients_y, cRminusC, gyRminus_f);
+
+        //> Compute means of the right patches
+        double mRplus = util_vector_mean<double>(pRplus_f);
+        double mRminus = util_vector_mean<double>(pRminus_f);
+
+        //> Build residuals r = (L - meanL) - (R - meanR)  which centers both patches
+        //> Build gradient which is the derivative of the residual with respect to the disparity g = dr / dd
+        Eigen::Matrix2d H = Eigen::Matrix2d::Zero();
+        Eigen::Vector2d b = Eigen::Vector2d::Zero();
+        double cost = 0.0;
+        auto accumulate_patch = [&](const std::vector<double> &Lc, const std::vector<double> &Rf,
+                                    const std::vector<double> &gxRf, const std::vector<double> &gyRf, double meanR)
+        {
+            for (size_t k = 0; k < Lc.size(); ++k)
+            {
+                double r = Lc[k] - (Rf[k] - meanR);
+                Eigen::Vector2d J = -Eigen::Vector2d(gxRf[k], gyRf[k]);
+                double absr = std::abs(r);
+                double w = (absr > huber_delta) ? 1.0 : huber_delta / absr;
+                
+                H += w * J * J.transpose();
+                b += w * J * r;
+                cost += w * r * r;
+            }
+        };
+        accumulate_patch(Lplus, pRplus_f, gxRplus_f, gyRplus_f, mRplus);
+        accumulate_patch(Lminus, pRminus_f, gxRminus_f, gyRminus_f, mRminus);
+
+        //> Update delta
+        Eigen::Vector2d delta = -H.ldlt().solve(b);
+        d += delta;
+
+        double rms = std::sqrt(cost / (Lplus.size() + Lminus.size()));
+        if (iter == 0)
+            init_RMS = rms;
+        if (b_verbose)
+        {
+            std::cout << "iter " << iter << ": disp =" << d
+                      << "  Δ =" << delta
+                      << "  RMS =" << rms
+                      << "  cost =" << cost << std::endl;
+        }
+        residual_log.push_back(rms);
+
+        bool is_outlier = (rms > huber_delta * 2.0) || (residual_log.size() < 2);
+
+        //> Early stopping if the update is too small
+        if (delta.norm() < tol || iter == max_iter - 1)
+        {
+            refined_validity = (is_outlier) ? false : true;
+            refined_final_score = rms;
+            refined_confidence = std::exp(-rms / huber_delta);
+            break;
+        }
+        else if (iter == max_iter - 1)
+        {
+            refined_validity = (is_outlier) ? false : true;
+            refined_final_score = rms;
+            refined_confidence = 1.0 - (rms / init_RMS); //> optional
+        }
+    }
+
+    refined_disparity = d;
+}
+
 void EBVO::apply_stereo_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs_left, KF_CF_EdgeCorrespondence &KF_CF_edge_pairs_right,
                                   const Stereo_Edge_Pairs &last_keyframe_stereo_left, const Stereo_Edge_Pairs &current_frame_stereo_left,
                                   const Stereo_Edge_Pairs &last_keyframe_stereo_right, const Stereo_Edge_Pairs &current_frame_stereo_right,
