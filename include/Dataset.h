@@ -274,7 +274,6 @@ struct Stereo_Matching_Edge_Clusters
 
 struct Stereo_Edge_Pairs
 {
-    //> this works both for stereo and temporal
     const StereoFrame *stereo_frame; //> pointer to StereoFrame without owning the data of StereoFrame
     cv::Mat left_disparity_map;
     cv::Mat right_disparity_map;
@@ -288,8 +287,8 @@ struct Stereo_Edge_Pairs
     std::vector<Eigen::Vector3d> epip_line_coeffs_of_left_edges;    //> epipolar line coefficients of source edges
     std::vector<std::pair<cv::Mat, cv::Mat>> left_edge_patches;     //> patches on the two sides of the source edges
     std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
-    std::unordered_map<int, int> final_candidate_set; //> find the corresponeding left edge when given right edge, would be populated after Best filter
-    bool is_left_to_right = true;                     //> focusing on left frame or right frame
+    std::unordered_map<Edge, int> final_candidate_set; //> find the corresponeding left edge when given right edge, would be populated after Best filter
+    bool is_left_to_right = true;                      //> focusing on left frame or right frame
     //> Matching edge clusters for each left edge
     std::vector<Stereo_Matching_Edge_Clusters> matching_edge_clusters;
 
@@ -421,10 +420,16 @@ struct StereoEdgeCorrespondencesGT
     }
 };
 
+struct scores
+{
+    double ncc_score;
+    double sift_score;
+};
+
 struct KF_CF_EdgeCorrespondence
 {
-
-    std::vector<int> kf_edges; //> stores the 3rd order edges
+    bool is_left_to_right;     //> whether the keyframe is left or right
+    std::vector<int> kf_edges; //> stores the 3rd order edges / stores reprsentative edge indices
     std::vector<double> gt_orientation_on_cf;
     std::vector<cv::Point2d> gt_location_on_cf;
 
@@ -433,7 +438,7 @@ struct KF_CF_EdgeCorrespondence
 
     std::vector<std::vector<int>> veridical_cf_edges_indices; // corresponding vertical edges in the current frame
     std::vector<std::vector<int>> matching_cf_edges_indices;  // corresponding edge indices in the current frame after filtering
-
+    std::vector<std::vector<scores>> matching_scores;
     // getters:
     Edge get_kf_edge_by_index(size_t i) const
     {
@@ -487,6 +492,15 @@ public:
 
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
+
+    // should we make it edge pairs?
+    std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> forward_gt_data;
+    std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> reverse_gt_data;
+
+    std::vector<std::pair<double, double>> ncc_one_vs_err;
+    std::vector<std::pair<double, double>> ncc_two_vs_err;
+
+    std::vector<cv::Point2d> ground_truth_right_edges_after_lowe;
 
     // getters
     bool has_gt() { return file_info.has_gt; };
@@ -587,11 +601,23 @@ private:
     // functions
     void PrintDatasetInfo();
 
+    std::vector<std::pair<cv::Mat, cv::Mat>> LoadEuRoCImages(const std::string &csv_path, const std::string &left_path, const std::string &right_path, int num_images);
+
+    std::vector<std::pair<cv::Mat, cv::Mat>> LoadETH3DImages(const std::string &stereo_pairs_path, int num_images);
+
+    //    std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
+
+    std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
+
     std::vector<cv::Mat> LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left = true);
+
+    //    std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
 
     void LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int num_maps, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps);
 
     void WriteDisparityToBinary(const std::string &filepath, const cv::Mat &disparity_map);
+
+    cv::Mat ReadDisparityFromBinary(const std::string &filepath);
 
     cv::Mat LoadDisparityFromCSV(const std::string &path);
 

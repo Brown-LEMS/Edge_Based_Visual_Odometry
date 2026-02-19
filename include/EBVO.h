@@ -3,7 +3,6 @@
 
 #include "Dataset.h"
 #include "utility.h"
-#include "Stereo_Matches.h"
 
 #include <yaml-cpp/yaml.h>
 #include <unordered_map>
@@ -36,8 +35,10 @@ public:
     // Main function to perform edge-based visual odometry
     void PerformEdgeBasedVO();
     void ProcessEdges(const cv::Mat &image,
+                      const std::string &filepath,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
+    void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::Mat occlusion_mask, bool is_left, Stereo_Edge_Pairs &stereo_frame_edge_pairs);
     void add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid);
 
     //> filtering methods
@@ -47,6 +48,8 @@ public:
     void apply_SIFT_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double sift_dist_threshold, bool is_left);
     void apply_NCC_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, const Stereo_Edge_Pairs &keyframe_stereo, const Stereo_Edge_Pairs &current_stereo, double ncc_val_threshold,
                              const cv::Mat &keyframe_image, const cv::Mat &current_image, bool is_left);
+    void apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC);
+
     void apply_stereo_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs_left, KF_CF_EdgeCorrespondence &KF_CF_edge_pairs_right,
                                 const Stereo_Edge_Pairs &last_keyframe_stereo_left, const Stereo_Edge_Pairs &current_frame_stereo_left,
                                 const Stereo_Edge_Pairs &last_keyframe_stereo_right, const Stereo_Edge_Pairs &current_frame_stereo_right,
@@ -80,13 +83,14 @@ private:
     SpatialGrid left_grid;
     SpatialGrid right_grid;
     //> third order edges
-    std::vector<Edge> kf_edges_left;
-    std::vector<Edge> kf_edges_right;
-    std::vector<Edge> cf_edges_left;
+    std::vector<Edge> kf_edges_left;  //> 3rd order edges in the keyframe
+    std::vector<Edge> kf_edges_right; //> Representative edges
+    std::vector<Edge> cf_edges_left;  //>
     std::vector<Edge> cf_edges_right;
+
     // SIFT descriptor cache for efficient temporal matching
-    std::unordered_map<int, cv::Mat> previous_frame_descriptors_cache; // Maps previous frame edge index to its descriptor
-    std::vector<int> previous_edge_indices;                            // Track which edges have descriptors
+    std::vector<std::pair<cv::Mat, cv::Mat>> current_frame_descriptors; // Maps previous frame edge index to its descriptor
+    std::vector<int> previous_edge_indices;                             // Track which edges have descriptors
 };
 
 #endif // EBVO_H
