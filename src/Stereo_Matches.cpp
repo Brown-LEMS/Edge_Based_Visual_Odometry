@@ -184,41 +184,7 @@ void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat le
     }
 }
 
-void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const std::vector<double> &edge_disparities, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
-{
-    Utility util{};
-    for (int left_edge_index = 0; left_edge_index < stereo_frame.left_edges.size(); left_edge_index++)
-    {
-        Edge e = stereo_frame.left_edges[left_edge_index];
-
-        //> omit if the edge orientation is close to 0, pi, or -pi
-        if (std::abs(rad_to_deg<double>(e.orientation)) < 4 || std::abs(rad_to_deg<double>(e.orientation) - 180.0) < 4 || std::abs(rad_to_deg<double>(e.orientation) + 180.0) < 4)
-        {
-            continue;
-        }
-
-        double disparity = edge_disparities[left_edge_index];
-        assert(!(std::isnan(disparity) || std::isinf(disparity) || disparity < 0.0));
-
-        cv::Point2d GT_location(e.location.x - disparity, e.location.y);
-
-        //> insert data to the stereo_frame_edge_pairs structure
-        stereo_frame_edge_pairs.focused_edge_indices.push_back(left_edge_index);
-        stereo_frame_edge_pairs.GT_locations_from_left_edges.push_back(GT_location);
-
-        //> Convert cv::Point2d to Eigen::Vector3d
-        Eigen::Vector3d e_location_eigen(e.location.x, e.location.y, 1.0);
-        Eigen::Vector3d GT_location_eigen(GT_location.x, GT_location.y, 1.0);
-
-        double rho = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
-        double rho_1 = (rho < 0.0) ? (-rho) : (rho);
-
-        Eigen::Vector3d gamma_1 = dataset.get_left_calib_matrix().inverse() * e_location_eigen;
-        Eigen::Vector3d Gamma_1 = rho_1 * gamma_1;
-
-        stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1);
-    }
-}
+// call after all filters
 void Stereo_Matches::remove_empty_clusters(Stereo_Edge_Pairs &stereo_frame_edge_pairs)
 {
     std::vector<int> indices_to_remove;
@@ -247,6 +213,7 @@ void Stereo_Matches::remove_empty_clusters(Stereo_Edge_Pairs &stereo_frame_edge_
             stereo_frame_edge_pairs.left_edge_descriptors.erase(stereo_frame_edge_pairs.left_edge_descriptors.begin() + no_GT_index);
             stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges.erase(stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges.begin() + no_GT_index);
             stereo_frame_edge_pairs.left_edge_patches.erase(stereo_frame_edge_pairs.left_edge_patches.begin() + no_GT_index);
+            // reconstruct third order mapping after erasing
             stereo_frame_edge_pairs.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
         }
     }
@@ -313,7 +280,7 @@ void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFram
 void Stereo_Matches::Evaluate_Stereo_Edge_Correspondences(
     Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx, const std::string &stage_name,                                              /* Inputs */
     double &recall_per_image, double &precision_per_image, double &precision_pair_per_image, double &num_of_target_edges_per_source_edge_avg, /* Outputs */
-    Evaluation_Statistics &evaluation_statistics, bool b_store_FN, bool b_store_photo_refine_statistics)                      /* Optional Inputs */
+    Evaluation_Statistics &evaluation_statistics, bool b_store_FN, bool b_store_photo_refine_statistics)                                      /* Optional Inputs */
 {
     //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame
     int total_num_of_true_positives_for_recall = 0;
@@ -408,12 +375,13 @@ void Stereo_Matches::Evaluate_Stereo_Edge_Correspondences(
     std::cout << "- Precision rate:    " << std::fixed << std::setprecision(8) << precision_per_image << std::endl;
     std::cout << "- Precision pair rate:    " << std::fixed << std::setprecision(8) << precision_pair_per_image << std::endl;
     std::cout << "- Average ambiguity: " << std::fixed << std::setprecision(8) << num_of_target_edges_per_source_edge_avg << std::endl;
-    std::cout << "========================================================\n" << std::endl;
+    std::cout << "========================================================\n"
+              << std::endl;
 #endif
 }
 
 void Stereo_Matches::apply_Epipolar_Line_Distance_Filtering(
-    Stereo_Edge_Pairs &stereo_frame_edge_pairs, Dataset &dataset, const std::vector<Edge> right_edges, 
+    Stereo_Edge_Pairs &stereo_frame_edge_pairs, Dataset &dataset, const std::vector<Edge> right_edges,
     const std::string &output_dir, bool is_left, size_t frame_idx, int num_random_edges_for_distribution)
 {
     // be aware that left_edges may not be actually left edges, depends on is_left
@@ -520,7 +488,7 @@ void Stereo_Matches::record_Ambiguity_Distribution(const std::string &stage_name
 
 void Stereo_Matches::apply_Disparity_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir, size_t frame_idx, bool is_left)
 {
-    #pragma omp for schedule(dynamic)
+#pragma omp for schedule(dynamic)
     for (int i = 0; i < static_cast<int>(stereo_frame_edge_pairs.focused_edge_indices.size()); ++i)
     {
         std::vector<EdgeCluster> surviving_edge_clusters;
@@ -562,7 +530,7 @@ void Stereo_Matches::apply_NCC_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pa
 
     stereo_frame_edge_pairs.left_edge_patches.resize(stereo_frame_edge_pairs.focused_edge_indices.size());
 
-    #pragma omp for schedule(dynamic)
+#pragma omp for schedule(dynamic)
     for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
     {
         //> Get the left edge patches
@@ -644,15 +612,18 @@ void Stereo_Matches::add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame_e
     }
 }
 
-void Stereo_Matches::construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<Edge> &candidate_edge_set)
+void Stereo_Matches::construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<Edge> &candidate_edge_set, std::vector<bool> &eval_set)
 {
     candidate_edge_set.clear();
+    eval_set.clear();
     for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
     {
         Stereo_Matching_Edge_Clusters &cluster_data = stereo_frame_edge_pairs.matching_edge_clusters[i];
         EdgeCluster &edge_clusters = cluster_data.edge_clusters[0]; //> After Lowe's ratio test, we should have at most 1 cluster per edge
         Edge right_edge = edge_clusters.center_edge;
+        bool is_veridical = (cv::norm(right_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH);
         candidate_edge_set.push_back(right_edge);
+        eval_set.push_back(is_veridical);
     }
 }
 
@@ -1114,9 +1085,9 @@ void Stereo_Matches::consolidate_redundant_edge_hypothesis(
 
 void Stereo_Matches::min_Edge_Photometric_Residual_by_Gauss_Newton(
     /* inputs */
-    Edge left_edge, double init_disp, const cv::Mat &left_image_undistorted, const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x, 
+    Edge left_edge, double init_disp, const cv::Mat &left_image_undistorted, const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x,
     /* outputs */
-    double &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           
+    double &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,
     /* optional inputs */
     int max_iter, double tol, double huber_delta, bool b_verbose)
 {
@@ -1286,39 +1257,12 @@ void Stereo_Matches::refine_edge_disparity(Stereo_Edge_Pairs &stereo_frame_edge_
 
 Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx)
 {
-// #if BIDIRECTIONAL_FILTERING
-//     std::vector<double> right_edge_disparities;
-//     // for now the pairs_right have nothing in it, we want to process edges to it(we dont need to redo it since frame_edge_pairs have all the info)
-//     stereo_edge_pairs_right.stereo_frame = stereo_frame_edge_pairs.stereo_frame;
-//     stereo_edge_pairs_right.left_disparity_map = stereo_frame_edge_pairs.right_disparity_map;
-//     stereo_edge_pairs_right.right_disparity_map = stereo_frame_edge_pairs.left_disparity_map;
-//     if (dataset.b_get_right_edges_and_disparities_from_file)
-//     {
-//         Find_Stereo_GT_Locations(dataset, right_edge_disparities, *stereo_frame_edge_pairs.stereo_frame, stereo_edge_pairs_right, false);
-//     }
-//     else
-//     {
-//         Find_Stereo_GT_Locations(dataset, stereo_frame_edge_pairs.right_disparity_map, *stereo_frame_edge_pairs.stereo_frame, stereo_edge_pairs_right, false);
-//     }
-//     std::cout << "Complete calculating GT locations for right edges of the keyframe..." << std::endl;
-//     std::cout << "Size of right edges with GT locations on the right image = " << stereo_edge_pairs_right.size() << std::endl;
-
-//     get_Stereo_Edge_GT_Pairs(dataset, *stereo_frame_edge_pairs.stereo_frame, stereo_edge_pairs_right, false);
-//     std::cout << "Size of stereo edge correspondences pool = " << stereo_edge_pairs_right.size() << std::endl;
-
-// #endif
-
-    Stereo_Edge_Pairs stereo_edge_pairs_right;
-
-    // SpatialGrid spatial_left(dataset.get_width(), dataset.get_height(), 5);
-    // SpatialGrid spatial_right(dataset.get_width(), dataset.get_height(), 5);
 
     Evaluation_Statistics evaluation_statistics;
     Evaluation_Statistics evaluation_statistics_right;
     Frame_Evaluation_Metrics frame_metrics;
 
     double recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg;
-    // double recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right;
 
     //> Apply epipolar line distance filtering (must be first to extract candidates)
     //> Set num_random_edges_for_distribution to 5-10 to record ALL right edges for random subset of left edges (shows pre-filtering distribution)
@@ -1328,15 +1272,6 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
     frame_metrics.stages["Epipolar Line Distance Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-// #if BIDIRECTIONAL_FILTERING
-//     apply_Epipolar_Line_Distance_Filtering(stereo_edge_pairs_right, dataset, stereo_edge_pairs_right.stereo_frame->left_edges, "output_files/right_edges", false, frame_idx, 10);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_edge_pairs_right, frame_idx, "Epipolar Line Distance Filtering (Right)",
-//                                          recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right,
-//                                          evaluation_statistics_right);
-// #endif
-
-    // add_edges_to_spatial_grid(stereo_frame_edge_pairs, spatial_left, true);
-    // add_edges_to_spatial_grid(stereo_frame_edge_pairs, spatial_right, false);
 
     //> Apply disparity filtering
     apply_Disparity_Filtering(stereo_frame_edge_pairs, "output_files", frame_idx);
@@ -1344,18 +1279,9 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
     frame_metrics.stages["Maximal Disparity Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-// #if BIDIRECTIONAL_FILTERING
-//     apply_Disparity_Filtering(stereo_edge_pairs_right, "output_files/right_edges", frame_idx, false);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_edge_pairs_right, frame_idx, "Maximal Disparity Filtering (Right)",
-//                                          recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right,
-//                                          evaluation_statistics_right);
-// #endif
+
     //> Augment edge data with SIFT descriptors
     augment_Edge_Data(stereo_frame_edge_pairs, true);
-
-// #if BIDIRECTIONAL_FILTERING
-//     augment_Edge_Data(stereo_edge_pairs_right, false);
-// #endif
 
     //> Apply SIFT filtering
     apply_SIFT_filtering(stereo_frame_edge_pairs, SIFT_THRESHOLD, "output_files", frame_idx);
@@ -1371,6 +1297,7 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
                                          evaluation_statistics);
     frame_metrics.stages["NCC Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
 
+    //> Apply Best-Nearly-Best test with both NCC and SIFT scores
     apply_Best_Nearly_Best_Test(stereo_frame_edge_pairs, BNB_NCC, "output_files", frame_idx, true);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB Test NCC",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1382,24 +1309,6 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
     frame_metrics.stages["BNB Test_Strict"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-
-// #if BIDIRECTIONAL_FILTERING
-//     apply_NCC_Filtering(stereo_edge_pairs_right, "output_files/right_edges", frame_idx, false);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_edge_pairs_right, frame_idx, "NCC Filtering (Right)",
-//                                          recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right,
-//                                          evaluation_statistics_right);
-// #endif
-// #if BIDIRECTIONAL_FILTERING
-//     apply_SIFT_filtering(stereo_edge_pairs_right, sift_dist_threshold, "output_files/right_edges", frame_idx, false);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_edge_pairs_right, frame_idx, "SIFT Filtering (Right)",
-//                                          recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right,
-//                                          evaluation_statistics_right);
-//     apply_bidirectional_test(stereo_frame_edge_pairs, stereo_edge_pairs_right, "output_files", frame_idx);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Bidirectional Consistency Test",
-//                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
-//                                          evaluation_statistics);
-//     frame_metrics.stages["Bidirectional Consistency Test"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-// #endif
 
     //> Shift edges to the epipolar line and cluster them to consolidate redundant edge hypothesis
     bool b_shift_to_epipolar_line = true;
@@ -1415,13 +1324,6 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
     record_Ambiguity_Distribution("photometric_refinement", stereo_frame_edge_pairs, "output_files", frame_idx);
 #endif
     frame_metrics.stages["Photometric Refinement"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-// #if BIDIRECTIONAL_FILTERING
-//     consolidate_redundant_edge_hypothesis(stereo_edge_pairs_right, frame_idx, b_shift_to_epipolar_line, b_cluster_edges);
-//     refine_edge_disparity(stereo_edge_pairs_right, frame_idx, false);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_edge_pairs_right, frame_idx, "Photometric Refinement (Right)",
-//                                          recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right,
-//                                          evaluation_statistics_right, false, true);
-// #endif
 
     consolidate_redundant_edge_hypothesis(stereo_frame_edge_pairs, false, true);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Edge Clustering",
@@ -1431,39 +1333,21 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
     record_Ambiguity_Distribution("edge_clustering", stereo_frame_edge_pairs, "output_files", frame_idx);
 #endif
     frame_metrics.stages["Edge Clustering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-// #if BIDIRECTIONAL_FILTERING
-//     consolidate_redundant_edge_hypothesis(stereo_edge_pairs_right, frame_idx, false, true);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_edge_pairs_right, frame_idx, "Edge Clustering (Right)",
-//                                          recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right,
-//                                          evaluation_statistics_right);
-// #endif
 
+    //> Post NCC filtering after clustering
     apply_NCC_Filtering(stereo_frame_edge_pairs, "output_files", frame_idx);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "NCC Filtering(Post-Clustering)",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
 
     frame_metrics.stages["NCC Filtering(Post-Clustering)"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-// #if BIDIRECTIONAL_FILTERING
-//     refine_edge_disparity(stereo_edge_pairs_right, frame_idx, false);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_edge_pairs_right, frame_idx, "Photometric Refinement (Post-NCC) (Right)",
-//                                          recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right,
-//                                          evaluation_statistics_right, false, true);
-// #endif
 
-    //> Apply Lowe's ratio test after all filtering to disambiguate final candidates
+    //> Apply Best filter after all filtering to disambiguate final candidates
     apply_Lowe_Ratio_Test(stereo_frame_edge_pairs, LOWES_RATIO, "output_files", frame_idx);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Best",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
     frame_metrics.stages["Best"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-
-// #if BIDIRECTIONAL_FILTERING
-//     apply_Lowe_Ratio_Test(stereo_edge_pairs_right, LOWES_RATIO, "output_files/right_edges", frame_idx);
-//     Evaluate_Stereo_Edge_Correspondences(stereo_edge_pairs_right, frame_idx, "Lowe's Ratio Test (Right)",
-//                                          recall_per_image_right, precision_per_image_right, precision_pair_per_image_right, num_of_target_edges_per_source_edge_avg_right,
-//                                          evaluation_statistics_right);
-// #endif
 
     std::cout << "Edge size before cleaning: " << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
     remove_empty_clusters(stereo_frame_edge_pairs);
@@ -1472,6 +1356,6 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
     frame_metrics.stages["Final"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
-    // after best, we need to reorganize the stereo_frame_edge_pairs to make sure every focused edge should have one and only one cluster pair, meaning cleaning those with no candidates
+
     return frame_metrics;
 }

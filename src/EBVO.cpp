@@ -36,7 +36,6 @@ void EBVO::PerformEdgeBasedVO()
     StereoFrame last_keyframe, current_frame;
     //> Initialize
     Stereo_Edge_Pairs last_keyframe_stereo_left, current_frame_stereo_left;
-    Stereo_Edge_Pairs last_keyframe_stereo_right, current_frame_stereo_right;
 
     //> Engine for constructing stereo edge correspondences
     Stereo_Matches stereo_edge_matcher;
@@ -61,7 +60,8 @@ void EBVO::PerformEdgeBasedVO()
         const cv::Mat &left_occlusion_mask = (frame_idx < left_occlusion_masks.size()) ? left_occlusion_masks[frame_idx] : cv::Mat();
         const cv::Mat &right_occlusion_mask = (frame_idx < right_occlusion_masks.size()) ? right_occlusion_masks[frame_idx] : cv::Mat();
 
-        std::cout << std::endl << "Image Pair #" << frame_idx << std::endl;
+        std::cout << std::endl
+                  << "Image Pair #" << frame_idx << std::endl;
 
         cv::Mat left_cur_undistorted, right_cur_undistorted;
         cv::undistort(current_frame.left_image, left_cur_undistorted, left_calib, left_dist_coeff_mat);
@@ -99,7 +99,6 @@ void EBVO::PerformEdgeBasedVO()
             //> Update last keyframe
             last_keyframe = current_frame;
             kf_edges_left = dataset.left_edges;
-            kf_edges_right = dataset.right_edges;
             last_keyframe_stereo_left.clean_up_vector_data_structures();
             last_keyframe_stereo_left.stereo_frame = &last_keyframe;
             last_keyframe_stereo_left.left_disparity_map = left_disparity_map;
@@ -108,7 +107,6 @@ void EBVO::PerformEdgeBasedVO()
             //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
             stereo_edge_matcher.Find_Stereo_GT_Locations(dataset, left_disparity_map, last_keyframe, last_keyframe_stereo_left, true);
             std::cout << "Complete calculating GT locations for left edges of the keyframe (previous frame)..." << std::endl;
-
             //> Construct a GT stereo edge pool
             stereo_edge_matcher.get_Stereo_Edge_GT_Pairs(dataset, last_keyframe, last_keyframe_stereo_left, true);
             std::cout << "Size of stereo edge correspondences pool = " << last_keyframe_stereo_left.focused_edge_indices.size() << std::endl;
@@ -117,7 +115,7 @@ void EBVO::PerformEdgeBasedVO()
 
             //> construct stereo edge correspondences for the keyframe frame
             Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_left, frame_idx);
-
+            stereo_edge_matcher.construct_candidate_set(last_keyframe_stereo_left, kf_edges_right, kf_right_eval);
             // exit(1);
 
             if (!last_keyframe_stereo_left.b_is_size_consistent())
@@ -127,7 +125,6 @@ void EBVO::PerformEdgeBasedVO()
         else
         {
             cf_edges_left = dataset.left_edges;
-            cf_edges_right = dataset.right_edges;
             current_frame_stereo_left.clean_up_vector_data_structures();
             current_frame_stereo_left.stereo_frame = &current_frame;
             current_frame_stereo_left.left_disparity_map = left_disparity_map;
@@ -146,31 +143,34 @@ void EBVO::PerformEdgeBasedVO()
             //> construct stereo edge correspondences for the current frame
             Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, current_frame_stereo_left, frame_idx);
 
+            stereo_edge_matcher.construct_candidate_set(current_frame_stereo_left, cf_edges_right, cf_right_eval);
+            std::cout << "Size of candidate set = " << cf_edges_right.size() << std::endl;
             //> extract SIFT descriptor for each left edge of current_frame_stereo
             // stereo_edge_matcher.augment_Edge_Data(current_frame_stereo_left, true);
             if (!current_frame_stereo_left.b_is_size_consistent())
                 current_frame_stereo_left.print_size_consistency();
 
-            add_edges_to_spatial_grid(current_frame_stereo_left, left_grid);
-            // add_edges_to_spatial_grid(current_frame_stereo_right, right_grid);
+            add_edges_to_spatial_grid(current_frame_stereo_left, left_grid, true);
+            std::cout << "Finish adding left edges of the current frame to spatial grid with cell size " << GRID_SIZE << std::endl;
+            add_edges_to_spatial_grid(current_frame_stereo_left, right_grid, false);
+            std::cout << "Finish adding right edges of the current frame to spatial grid with cell size " << GRID_SIZE << std::endl;
             //> Construct correspondences structure between last keyframe and the current frame
             KF_CF_EdgeCorrespondence KF_CF_edge_pairs_left, KF_CF_edge_pairs_right;
 
             // Use ALL-edges grid for temporal matching
             Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, left_grid, true);
-            // Use ALL-edges grid for temporal matching
-            // Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, right_grid, false);
-
             std::cout << "Size of veridical edge pairs (left) = " << KF_CF_edge_pairs_left.kf_edges.size() << std::endl;
-            // std::cout << "Size of veridical edge pairs (right) = " << KF_CF_edge_pairs_right.kf_edges.size() << std::endl;
+            // Use ALL-edges grid for temporal matching
+            Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, right_grid, false);
 
+            std::cout << "Size of veridical edge pairs (right) = " << KF_CF_edge_pairs_right.kf_edges.size() << std::endl;
             //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             //> Stage 1: Apply spatial grid to the current frame
             apply_spatial_grid_filtering(KF_CF_edge_pairs_left, left_grid, 30.0);
-            // apply_spatial_grid_filtering(KF_CF_edge_pairs_right, last_keyframe_stereo_right, kf_edges_right, right_grid_all_edges, 50.0);
+            apply_spatial_grid_filtering(KF_CF_edge_pairs_right, right_grid, 30.0);
 
             Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Spatial Grid");
-            // Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_right, current_frame_stereo_right, frame_idx, "Spatial Grid");
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Spatial Grid");
 
             // //> Stage 2: Do orientation filtering
             apply_orientation_filtering(KF_CF_edge_pairs_left, 35.0, true);
@@ -207,7 +207,7 @@ void EBVO::PerformEdgeBasedVO()
     }
 }
 
-void EBVO::add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid)
+void EBVO::add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid, bool is_left)
 {
     //> Add left edges to spatial grid. This is done on the current image only.
     const std::vector<int> &edges = stereo_frame.focused_edge_indices; //> only add focused edges to the spatial grid for matching
@@ -220,6 +220,7 @@ void EBVO::add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGri
     for (int i = 0; i < static_cast<int>(edges.size()); ++i)
     {
         cv::Point2d edge_location = stereo_frame.get_focused_edge_by_Stereo_Edge_Pairs_index(i).location;
+        is_left ? edge_location = edge_location : edge_location = stereo_frame.matching_edge_clusters[i].edge_clusters[0].center_edge.location; //> at this point left edge has one and only one correspondence in the right edge
         int grid_x = static_cast<int>(edge_location.x) / spatial_grid.cell_size;
         int grid_y = static_cast<int>(edge_location.y) / spatial_grid.cell_size;
 
@@ -243,7 +244,8 @@ void EBVO::add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGri
         int grid_idx = edge_to_grid[i].second;
         if (grid_idx >= 0 && grid_idx < static_cast<int>(spatial_grid.grid.size()))
         {
-            spatial_grid.grid[grid_idx].push_back(edges[i]); // Store actual TOED edge index, not position in array
+            int idx_to_store = is_left ? edges[i] : i;
+            spatial_grid.grid[grid_idx].push_back(idx_to_store); // Store actual TOED edge index or the representative indices
         }
     }
 }
@@ -320,7 +322,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
 {
     std::string filename = dataset.get_output_path() + "/veridical_edges_frame" + std::to_string(is_left) + ".txt";
     std::ofstream outfile(filename);
-
+    KF_CF_edge_pairs.is_left = is_left;
     KF_CF_edge_pairs.key_frame_pairs = &last_keyframe_stereo;
     KF_CF_edge_pairs.current_frame_pairs = &current_frame_stereo;
     //> Ground-truth relative pose of the current frame with respect to the keyframe
@@ -337,10 +339,12 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
     Eigen::Vector3d t21 = t2 - R2 * R1.transpose() * t1; // t_left
     t21 = is_left ? t21 : -dataset.get_relative_rot_left_to_right() * R_left * dataset.get_relative_rot_left_to_right().transpose() * dataset.get_relative_transl_left_to_right() + dataset.get_relative_rot_left_to_right() * R_left * t21 + dataset.get_relative_transl_left_to_right();
 
+    int size = is_left ? last_keyframe_stereo.focused_edge_indices.size() : kf_edges_right.size(); // they should be the same.
+
     std::vector<Edge> &current_kf_edges = is_left ? kf_edges_left : kf_edges_right;
     std::vector<Edge> &current_cf_edges = is_left ? cf_edges_left : cf_edges_right;
     std::vector<Edge> &other_keyframe_edges = is_left ? kf_edges_right : kf_edges_left;
-
+    // right now we have populated cf_edges_right and kf_edges_right that stores the representative edges
     // Thread-local storage for parallel correspondence accumulation
     int num_threads_corr = omp_get_max_threads();
 
@@ -356,7 +360,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
     {
         const int tid = omp_get_thread_num();
 #pragma omp for schedule(dynamic, 128)
-        for (int i = 0; i < last_keyframe_stereo.focused_edge_indices.size(); ++i)
+        for (int i = 0; i < size; ++i)
         {
 
             Eigen::Matrix3d calib_matrix;
@@ -368,11 +372,13 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
             {
                 calib_matrix = dataset.get_right_calib_matrix();
             }
+
+            int kf_idx = is_left ? last_keyframe_stereo.focused_edge_indices[i] : i;
             Eigen::Vector3d projected_point = calib_matrix * (R21 * last_keyframe_stereo.Gamma_in_left_cam_coord[i] + t21);
             projected_point /= projected_point.z();
-            int kf_veridical_edge_indx = last_keyframe_stereo.veridical_right_edges_indices[i][0];
+            int kf_veridical_edge_indx = is_left ? last_keyframe_stereo.veridical_right_edges_indices[i][0] : last_keyframe_stereo.focused_edge_indices[i];
             double ori = orientation_mapping(
-                current_kf_edges[last_keyframe_stereo.focused_edge_indices[i]],
+                current_kf_edges[kf_idx],
                 other_keyframe_edges[kf_veridical_edge_indx],
                 projected_point,
                 is_left,
@@ -414,7 +420,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
                 if (!CF_veridical_edges_indices.empty())
                 {
 
-                    thread_kf_edges[tid].push_back(last_keyframe_stereo.focused_edge_indices[i]);
+                    thread_kf_edges[tid].push_back(kf_idx);
                     thread_stereo_frame_indices[tid].push_back(i);
                     thread_gt_orientations[tid].push_back(ori);
                     thread_gt_locations[tid].push_back(projected_point_cv);
@@ -439,6 +445,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
         KF_CF_edge_pairs.matching_scores.insert(KF_CF_edge_pairs.matching_scores.end(),
                                                 thread_scores[tid].begin(), thread_scores[tid].end());
     }
+
     for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
     {
         int kf_edge_index = KF_CF_edge_pairs.kf_edges[i];
@@ -461,7 +468,11 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
                 outfile << ", ";
             }
         }
-        outfile << "]\n";
+        if (!is_left)
+        {
+            outfile << "]; is " << kf_right_eval[kf_edge_index];
+        }
+        outfile << "\n";
     }
     outfile.close();
 }
@@ -474,10 +485,21 @@ void EBVO::apply_spatial_grid_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pai
     // Pre-allocate the matching_cf_edges_indices vector to avoid segfault
     KF_CF_edge_pairs.matching_cf_edges_indices.resize(KF_CF_edge_pairs.kf_edges.size());
 
+    // Get the correct edge vector based on is_left flag
+    const std::vector<Edge> &kf_edges = KF_CF_edge_pairs.is_left ? kf_edges_left : kf_edges_right;
+
 #pragma omp parallel for schedule(dynamic, 64)
     for (int i = 0; i < static_cast<int>(KF_CF_edge_pairs.kf_edges.size()); ++i)
     {
-        Edge kf_edge = KF_CF_edge_pairs.get_kf_edge_by_index(i);
+        int edge_idx = KF_CF_edge_pairs.kf_edges[i];
+        // Bounds check to prevent segfault
+        if (edge_idx < 0 || edge_idx >= static_cast<int>(kf_edges.size()))
+        {
+            std::cerr << "ERROR: Edge index " << edge_idx << " out of bounds. Vector size: " << kf_edges.size() << std::endl;
+            continue;
+        }
+
+        Edge kf_edge = kf_edges[edge_idx];
         std::vector<int> candidates = spatial_grid.getCandidatesWithinRadius(kf_edge.location, grid_radius);
         KF_CF_edge_pairs.matching_cf_edges_indices[i] = candidates;
     }
@@ -568,13 +590,23 @@ void EBVO::apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge
 {
     std::string test_name = is_NCC ? "BNB_NCC" : "BNB_SIFT";
 
+    // Get the correct edge vector based on is_left flag
+    const std::vector<Edge> &kf_edges = KF_CF_edge_pairs.is_left ? kf_edges_left : kf_edges_right;
+
 #pragma omp parallel
     {
 #pragma omp for schedule(dynamic)
         for (int i = 0; i < static_cast<int>(KF_CF_edge_pairs.kf_edges.size()); ++i)
         {
 
-            Edge left_edge = KF_CF_edge_pairs.get_kf_edge_by_index(i);
+            int edge_idx = KF_CF_edge_pairs.kf_edges[i];
+            // Bounds check to prevent segfault
+            if (edge_idx < 0 || edge_idx >= static_cast<int>(kf_edges.size()))
+            {
+                continue;
+            }
+
+            Edge left_edge = kf_edges[edge_idx];
             int stereo_idx = KF_CF_edge_pairs.key_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(KF_CF_edge_pairs.kf_edges[i]);
             auto &m_ind = KF_CF_edge_pairs.matching_cf_edges_indices[i];
             size_t num_clusters = m_ind.size();
@@ -990,15 +1022,32 @@ void EBVO::apply_orientation_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pair
 {
     //> for each edge in the keyframe, compare its orientation with the edges in the current frame
 
+    // Get the correct edge vectors based on is_left flag
+    const std::vector<Edge> &kf_edges = KF_CF_edge_pairs.is_left ? kf_edges_left : kf_edges_right;
+    const std::vector<Edge> &cf_edges = KF_CF_edge_pairs.is_left ? cf_edges_left : cf_edges_right;
+
 #pragma omp parallel for schedule(dynamic, 64)
     for (size_t idx = 0; idx < KF_CF_edge_pairs.kf_edges.size(); ++idx)
     {
-        Edge kf_edge = KF_CF_edge_pairs.get_kf_edge_by_index(idx);
+        int kf_edge_idx = KF_CF_edge_pairs.kf_edges[idx];
+        // Bounds check
+        if (kf_edge_idx < 0 || kf_edge_idx >= static_cast<int>(kf_edges.size()))
+        {
+            continue;
+        }
+
+        Edge kf_edge = kf_edges[kf_edge_idx];
 
         std::vector<int> filtered_cf_edges_indices;
         for (auto &m_edge_idx : KF_CF_edge_pairs.matching_cf_edges_indices[idx])
         {
-            Edge cf_edge = KF_CF_edge_pairs.get_cf_edge_by_index(m_edge_idx);
+            // Bounds check for CF edge
+            if (m_edge_idx < 0 || m_edge_idx >= static_cast<int>(cf_edges.size()))
+            {
+                continue;
+            }
+
+            Edge cf_edge = cf_edges[m_edge_idx];
             double orientation_diff = std::abs(rad_to_deg<double>(kf_edge.orientation - cf_edge.orientation));
             if (orientation_diff > 180.0)
             {
@@ -1020,13 +1069,6 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
                                                Stereo_Edge_Pairs &keyframe_stereo, Stereo_Edge_Pairs &current_stereo,
                                                size_t frame_idx, const std::string &stage_name)
 {
-    //> FIXME: Write the results to a file
-    // std::string output_dir = dataset.get_output_path();
-    // std::string eval_filename = output_dir + "/edge_match_evaluation_" + stage_name + "_frame_" + std::to_string(frame_idx) + ".txt";
-    // std::ofstream eval_PR(eval_filename);
-    std::string output_dir = dataset.get_output_path();
-    std::string stereo_filter_filename = output_dir + "/match_debug_frame_" + std::to_string(frame_idx) + ".csv";
-    std::ofstream stereo_csv(stereo_filter_filename);
 
     int total_num_of_true_positives_for_recall = 0;
     int total_num_of_true_positives_for_precision = 0;
@@ -1036,11 +1078,14 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
     //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame
     bool debug = (stage_name == "Spatial Grid");
     std::cout << "is it debugging? " << debug << std::endl;
-    num_of_target_edges_per_source_edge.reserve(KF_CF_edge_pairs.kf_edges.size()); //> compailable to both left and right edges
-    precision_per_edge.reserve(KF_CF_edge_pairs.kf_edges.size());
+    int kf_edge_count = KF_CF_edge_pairs.is_left ? KF_CF_edge_pairs.kf_edges.size() : static_cast<int>(std::accumulate(kf_right_eval.begin(), kf_right_eval.end(), 0));
+    num_of_target_edges_per_source_edge.reserve(kf_edge_count); //> compailable to both left and right edges
+    precision_per_edge.reserve(kf_edge_count);
 
     for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
     {
+        if (!KF_CF_edge_pairs.is_left && !kf_right_eval[i])
+            continue;
         bool fail = true;
         total_num_of_true_positives_for_precision = 0;
         //> Find if there is at least one edge index in edge_pair.matching_cf_edges_indices is found in edge_pair.veridical_cf_edges_indices
@@ -1049,12 +1094,12 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
             int total_num_of_candidates = KF_CF_edge_pairs.matching_cf_edges_indices[i].size();
 
             // Get the appropriate edge vector based on left/right
-            const std::vector<Edge> &cf_edges = current_stereo.is_left_to_right
-                                                    ? current_stereo.stereo_frame->left_edges
-                                                    : current_stereo.stereo_frame->right_edges;
-
+            const std::vector<Edge> &cf_edges = KF_CF_edge_pairs.is_left
+                                                    ? cf_edges_left
+                                                    : cf_edges_right;
             for (const auto &matched_idx : KF_CF_edge_pairs.matching_cf_edges_indices[i])
             {
+
                 // matched_idx is a TOED edge index, access the edge directly
                 if (matched_idx >= 0 && matched_idx < cf_edges.size())
                 {
@@ -1071,12 +1116,6 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
             }
             else
             {
-                if (debug)
-                {
-                    stereo_csv << "KF Edge Index: " << KF_CF_edge_pairs.kf_edges[i] << " (Location: (" << KF_CF_edge_pairs.get_kf_edge_by_index(i).location.x << ", " << KF_CF_edge_pairs.get_kf_edge_by_index(i).location.y << ")"
-                               << ", GT Location on CF: (" << KF_CF_edge_pairs.gt_location_on_cf[i].x << ", " << KF_CF_edge_pairs.gt_location_on_cf[i].y << ")"
-                               << ")\n No matched edges passed the filter.\n";
-                }
             }
             precision_per_edge.push_back(static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_candidates));
             precision_pair_edge.push_back(static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_candidates));
@@ -1084,35 +1123,10 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
         }
     }
 
-    double recall_per_image = static_cast<double>(total_num_of_true_positives_for_recall) / KF_CF_edge_pairs.kf_edges.size();
+    double recall_per_image = static_cast<double>(total_num_of_true_positives_for_recall) / kf_edge_count;
     double precision_per_image = std::accumulate(precision_per_edge.begin(), precision_per_edge.end(), 0.0) / precision_per_edge.size();
     double precision_pair_per_image = std::accumulate(precision_pair_edge.begin(), precision_pair_edge.end(), 0.0) / precision_pair_edge.size();
     double num_of_target_edges_per_source_edge_avg = std::accumulate(num_of_target_edges_per_source_edge.begin(), num_of_target_edges_per_source_edge.end(), 0.0) / num_of_target_edges_per_source_edge.size();
-
-    // Debug: Check for edges with no correspondences or empty matching lists
-    if (debug)
-    {
-        std::set<int> kf_edge_set(KF_CF_edge_pairs.kf_edges.begin(), KF_CF_edge_pairs.kf_edges.end());
-        for (int focused_idx : keyframe_stereo.focused_edge_indices)
-        {
-            if (kf_edge_set.find(focused_idx) == kf_edge_set.end())
-            {
-                stereo_csv << "Focused edge " << focused_idx << " has no correspondences at all.\n";
-            }
-            else
-            {
-                auto it = std::find(KF_CF_edge_pairs.kf_edges.begin(), KF_CF_edge_pairs.kf_edges.end(), focused_idx);
-                if (it != KF_CF_edge_pairs.kf_edges.end())
-                {
-                    int idx = it - KF_CF_edge_pairs.kf_edges.begin();
-                    if (KF_CF_edge_pairs.matching_cf_edges_indices[idx].empty())
-                    {
-                        stereo_csv << "Focused edge " << focused_idx << " has empty matching list.\n";
-                    }
-                }
-            }
-        }
-    }
 
     std::cout << "Stereo Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx << std::endl;
     std::cout << "- Recall rate:       " << std::fixed << std::setprecision(8) << recall_per_image << std::endl;
@@ -1120,9 +1134,7 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
     std::cout << "- Average ambiguity: " << std::fixed << std::setprecision(8) << num_of_target_edges_per_source_edge_avg << std::endl;
     std::cout << "========================================================\n"
               << std::endl;
-    stereo_csv.close();
 }
-
 
 void EBVO::augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::pair<cv::Mat, cv::Mat>> &edge_descriptors, bool is_left)
 {
@@ -1161,4 +1173,3 @@ void EBVO::augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std
         }
     }
 }
-

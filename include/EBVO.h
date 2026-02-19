@@ -39,7 +39,7 @@ public:
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
     void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::Mat occlusion_mask, bool is_left, Stereo_Edge_Pairs &stereo_frame_edge_pairs);
-    void add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid);
+    void add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid, bool is_left);
 
     //> filtering methods
     void apply_spatial_grid_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, SpatialGrid &spatial_grid, double grid_radius = 1.0);
@@ -70,7 +70,6 @@ public:
 
     void augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::pair<cv::Mat, cv::Mat>> &edge_descriptors, bool is_left);
 
-
     void EvaluateEdgeMatchPerformance(const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
                                       const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
                                       size_t frame_idx,
@@ -88,9 +87,10 @@ private:
     //> third order edges
     std::vector<Edge> kf_edges_left;  //> 3rd order edges in the keyframe
     std::vector<Edge> kf_edges_right; //> Representative edges
+    std::vector<bool> kf_right_eval;  //> whether the representative edges in the keyframe are veridical
     std::vector<Edge> cf_edges_left;  //>
     std::vector<Edge> cf_edges_right;
-
+    std::vector<bool> cf_right_eval;
     // SIFT descriptor cache for efficient temporal matching
     std::vector<std::pair<cv::Mat, cv::Mat>> current_frame_descriptors; // Maps previous frame edge index to its descriptor
     std::vector<int> previous_edge_indices;                             // Track which edges have descriptors
