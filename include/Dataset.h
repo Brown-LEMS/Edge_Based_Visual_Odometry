@@ -340,17 +340,26 @@ struct final_stereo_edge_pair
     bool b_is_TP;
 };
 
-struct temporal_edge_pair
-{
-    //> pointers to the stereo edge pairs
-    const final_stereo_edge_pair *KF_stereo_edge_mate;
-    const final_stereo_edge_pair *CF_stereo_edge_mate;
-};
-
 struct scores
 {
     double ncc_score;
     double sift_score;
+};
+
+struct temporal_edge_pair
+{
+    //> pointers to the stereo edge pairs
+    const final_stereo_edge_pair *KF_stereo_edge_mate;
+    // const std::vector<final_stereo_edge_pair> *CF_stereo_edge_mates;
+
+    //> On the current frame
+    Eigen::Vector3d projected_point;
+    double projected_orientation;
+
+    //> pointer to a set of final_stereo_edge_pair on the current frame
+    std::vector<int> veridical_CF_stereo_edge_mate_indices;
+    std::vector<int> candidate_CF_stereo_edge_mate_indices;
+    std::vector<scores> matching_scores;
 };
 
 struct KF_CF_EdgeCorrespondence

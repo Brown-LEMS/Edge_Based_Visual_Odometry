@@ -64,7 +64,12 @@ public:
                                 const Stereo_Edge_Pairs &last_keyframe_stereo_right, const Stereo_Edge_Pairs &current_frame_stereo_right,
                                 size_t frame_idx);
 
-    void Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo, SpatialGrid &spatial_grid, bool is_left, double gt_dist_threshold = 1.0);
+    // void Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo, SpatialGrid &spatial_grid, bool is_left, double gt_dist_threshold = 1.0);
+    void Find_Veridical_Edge_Correspondences_on_CF(std::vector<temporal_edge_pair> &temporal_edge_mates,
+                                                   const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
+                                                   const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
+                                                   Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
+                                                   SpatialGrid &spatial_grid, bool b_is_left, double gt_dist_threshold = 1.0);
     //> Evaluations
     void Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &KF_CF_edge_pairs,
                                              Stereo_Edge_Pairs &keyframe_stereo, Stereo_Edge_Pairs &current_stereo,
@@ -80,6 +85,8 @@ public:
                                       const std::string &stage_name,
                                       double distance_threshold = 3.0);
     void debug_veridical(int edge_idx, const KF_CF_EdgeCorrespondence &KF_CF_edge_pairs_left, const KF_CF_EdgeCorrespondence &KF_CF_edge_pairs_right, const Stereo_Edge_Pairs &keyframe_stereo, const Stereo_Edge_Pairs &current_stereo_left, const Stereo_Edge_Pairs &current_stereo_right, bool is_left);
+
+    double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset);
 
 private:
     //> CH: shared pointer to the class of third-order edge detector
