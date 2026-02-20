@@ -37,9 +37,9 @@ struct SpatialGrid
     std::vector<std::vector<int>> grid;
 
     // Default constructor
-    SpatialGrid() : cell_size(30), grid_width(0), grid_height(0) {}
+    SpatialGrid() : cell_size(35), grid_width(0), grid_height(0) {}
 
-    SpatialGrid(int img_width, int img_height, int cell_sz = 30)
+    SpatialGrid(int img_width, int img_height, int cell_sz = 35)
         : cell_size(cell_sz)
     {
         grid_width = (img_width + cell_size - 1) / cell_size;

@@ -52,10 +52,10 @@ public:
 
     void min_Edge_Photometric_Residual_by_Gauss_Newton(
         /* inputs */
-        Edge left_edge, Eigen::Vector2d init_disp, const cv::Mat &left_image_undistorted, \
-        const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y, 
+        Edge left_edge, Eigen::Vector2d init_disp, const cv::Mat &left_image_undistorted,
+        const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y,
         /* outputs */
-        Eigen::Vector2d &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           
+        Eigen::Vector2d &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,
         /* optional inputs */
         int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
 
@@ -92,12 +92,16 @@ private:
     std::vector<Edge> kf_edges_left;  //> 3rd order edges in the keyframe
     std::vector<Edge> kf_edges_right; //> Representative edges
     std::vector<bool> kf_right_eval;  //> whether the representative edges in the keyframe are veridical
-    std::vector<Edge> cf_edges_left;  //>
+    int valid_kf_right_edges;
+    std::vector<Edge> cf_edges_left; //>
     std::vector<Edge> cf_edges_right;
     std::vector<bool> cf_right_eval;
     // SIFT descriptor cache for efficient temporal matching
-    std::vector<std::pair<cv::Mat, cv::Mat>> current_frame_descriptors; // Maps previous frame edge index to its descriptor
-    std::vector<int> previous_edge_indices;                             // Track which edges have descriptors
+
+    std::vector<std::pair<cv::Mat, cv::Mat>> current_frame_descriptors_left; // Maps previous frame edge index to its descriptor
+    std::vector<std::pair<cv::Mat, cv::Mat>> current_frame_descriptors_right;
+
+    std::vector<int> previous_edge_indices; // Track which edges have descriptors
 };
 
 #endif // EBVO_H

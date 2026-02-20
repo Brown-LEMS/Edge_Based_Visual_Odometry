@@ -175,12 +175,17 @@ void EBVO::PerformEdgeBasedVO()
             // //> Stage 2: Do orientation filtering
             apply_orientation_filtering(KF_CF_edge_pairs_left, 35.0, true);
             Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Orientation Filtering");
+            apply_orientation_filtering(KF_CF_edge_pairs_right, 35.0, false);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Orientation Filtering");
 
             //> Stage 3: Do NCC
             apply_NCC_filtering(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, 0.6, last_keyframe.left_image, current_frame.left_image, true);
             Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "NCC Filtering");
+            apply_NCC_filtering(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, 0.6, last_keyframe.right_image, current_frame.right_image, false);
+            Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "NCC Filtering");
 
-            augment_all_Edge_Data(current_frame_stereo_left, current_frame_descriptors, true);
+            augment_all_Edge_Data(current_frame_stereo_left, current_frame_descriptors_left, true);
+            augment_all_Edge_Data(current_frame_stereo_left, current_frame_descriptors_right, false);
             apply_SIFT_filtering(KF_CF_edge_pairs_left, 500.0, true);
             Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "SIFT Filtering");
 
@@ -259,61 +264,48 @@ void EBVO::ProcessEdges(const cv::Mat &image,
     edges = toed->toed_edges;
 }
 
-double orientation_mapping(const Edge &e1, const Edge &e2, const Eigen::Vector3d projected_point, bool left, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset)
+double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset)
 {
-    //> Map the edge orientation from keyframe to current frame using stereo pair + temporal transformation
-    // Step 1: Get the stereo baseline rotation (left<->right in same frame)
+    // Step 1: Get the stereo baseline rotation (Left -> Right)
     Eigen::Matrix3d R_stereo = dataset.get_relative_rot_left_to_right();
 
-    // Step 2: Reconstruct 3D direction T_1 using Eq. (186) from stereo pair (e1 in left, e2 in right)
-    // t1 and t2 are unit tangent vectors in image plane
-    Eigen::Vector3d t1(cos(e1.orientation), sin(e1.orientation), 0); // KF left edge orientation
-    Eigen::Vector3d t2(cos(e2.orientation), sin(e2.orientation), 0); // KF right edge orientation (stereo mate)
+    // Step 2: Reconstruct 3D direction T_1 in Left KF
+    Eigen::Vector3d t1(cos(e_left.orientation), sin(e_left.orientation), 0);
+    Eigen::Vector3d t2(cos(e_right.orientation), sin(e_right.orientation), 0);
 
-    // Normalize image points to get γ (homogeneous coordinates with z=1)
-    Eigen::Vector3d gamma_1(e1.location.x, e1.location.y, 1.0);
+    Eigen::Vector3d gamma_1(e_left.location.x, e_left.location.y, 1.0);
     gamma_1 = dataset.get_left_calib_matrix().inverse() * gamma_1;
-    Eigen::Vector3d gamma_2(e2.location.x, e2.location.y, 1.0);
+    Eigen::Vector3d gamma_2(e_right.location.x, e_right.location.y, 1.0);
     gamma_2 = dataset.get_right_calib_matrix().inverse() * gamma_2;
 
-    // Eq. (186): Reconstruct 3D tangent T_1 in KF left camera coordinate
     Eigen::Vector3d T_1 = -(gamma_2.dot(t2.cross(R_stereo * t1))) * gamma_1 + (gamma_2.dot(t2.cross(R_stereo * gamma_1))) * t1;
-    T_1 = -T_1; // Flip sign to correct 180° orientation error
+    T_1 = -T_1;
     T_1.normalize();
 
-    // Step 3: Transform T_1 to current frame using temporal rotation (Eq. 176: T_2 = R_21 * T_1)
-    Eigen::Matrix3d R_kf = last_keyframe.gt_rotation;
-    Eigen::Matrix3d R_cf = current_frame.gt_rotation;
-    Eigen::Matrix3d R_temporal = R_cf * R_kf.transpose(); // Temporal rotation from KF to CF
+    // Step 3: Transform T_1 to current frame
+    Eigen::Matrix3d R_temporal = current_frame.gt_rotation * last_keyframe.gt_rotation.transpose(); // Left KF -> Left CF
 
-    // For right camera: need to account for stereo baseline in both frames
-    Eigen::Matrix3d R_21;
-    if (left)
+    Eigen::Vector3d T_2;
+    if (is_left_cam)
     {
-        R_21 = R_temporal; // Left KF -> Left CF
+        T_2 = R_temporal * T_1; // Left KF -> Left CF
     }
     else
     {
-        R_21 = R_stereo * R_temporal * R_stereo.transpose();
+        T_2 = R_stereo * R_temporal * T_1; // Left KF -> Left CF -> Right CF
     }
 
-    Eigen::Vector3d T_2 = R_21 * T_1; // 3D tangent in CF camera coordinate
-
-    // Step 4: Project T_2 to image using Eq. (169): t = (T - (e_3^T * T) * γ) / ||...||
-    // Ensure projected_point is normalized homogeneous (z=1)
-    Eigen::Vector3d gamma_cf = projected_point / projected_point.z(); // γ = Γ / (e_3^T Γ)
-    if (left)
+    // Step 4: Project T_2 to image
+    Eigen::Vector3d gamma_cf = projected_point / projected_point.z();
+    if (is_left_cam)
         gamma_cf = dataset.get_left_calib_matrix().inverse() * gamma_cf;
     else
         gamma_cf = dataset.get_right_calib_matrix().inverse() * gamma_cf;
-    // Eq. (169): t = (T - (e_3^T T) γ) / ||T - (e_3^T T) γ||
-    // e_3^T T = T.z() (third component)
+
     Eigen::Vector3d t = T_2 - T_2.z() * gamma_cf;
     t.normalize();
 
-    // Extract orientation angle from unit tangent vector t = [cos(θ), sin(θ), 0]
-    double theta = atan2(t.y(), t.x());
-    return theta;
+    return atan2(t.y(), t.x());
 }
 
 void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs,
@@ -374,12 +366,38 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &K
             }
 
             int kf_idx = is_left ? last_keyframe_stereo.focused_edge_indices[i] : i;
-            Eigen::Vector3d projected_point = calib_matrix * (R21 * last_keyframe_stereo.Gamma_in_left_cam_coord[i] + t21);
+
+            // 1. Calculate raw Left KF -> Left CF ego-motion directly from GT
+            Eigen::Matrix3d R_left_ego = current_frame_stereo.stereo_frame->gt_rotation * last_keyframe_stereo.stereo_frame->gt_rotation.transpose();
+            Eigen::Vector3d t_left_ego = current_frame_stereo.stereo_frame->gt_translation - R_left_ego * last_keyframe_stereo.stereo_frame->gt_translation;
+
+            Eigen::Vector3d projected_point;
+
+            if (is_left)
+            {
+                // Left KF -> Left CF
+                Eigen::Vector3d pt_in_left_cf = R_left_ego * last_keyframe_stereo.Gamma_in_left_cam_coord[i] + t_left_ego;
+                projected_point = calib_matrix * pt_in_left_cf;
+            }
+            else
+            {
+                // Left KF -> Left CF
+                Eigen::Vector3d pt_in_left_cf = R_left_ego * last_keyframe_stereo.Gamma_in_left_cam_coord[i] + t_left_ego;
+
+                // Left CF -> Right CF (Apply stereo baseline shift)
+                Eigen::Vector3d pt_in_right_cf = dataset.get_relative_rot_left_to_right() * pt_in_left_cf + dataset.get_relative_transl_left_to_right();
+
+                projected_point = calib_matrix * pt_in_right_cf;
+            }
+
             projected_point /= projected_point.z();
             int kf_veridical_edge_indx = is_left ? last_keyframe_stereo.veridical_right_edges_indices[i][0] : last_keyframe_stereo.focused_edge_indices[i];
+            Edge e_left = is_left ? current_kf_edges[kf_idx] : other_keyframe_edges[kf_veridical_edge_indx];
+            Edge e_right = is_left ? other_keyframe_edges[kf_veridical_edge_indx] : current_kf_edges[kf_idx];
+
             double ori = orientation_mapping(
-                current_kf_edges[kf_idx],
-                other_keyframe_edges[kf_veridical_edge_indx],
+                e_left,
+                e_right,
                 projected_point,
                 is_left,
                 *last_keyframe_stereo.stereo_frame,
@@ -528,13 +546,13 @@ void EBVO::apply_SIFT_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, doub
             int kf_toed_index = KF_CF_edge_pairs.kf_edges[i];
             int kf_stereo_index = KF_CF_edge_pairs.key_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(kf_toed_index);
             std::pair<cv::Mat, cv::Mat> kf_edge_descriptors = KF_CF_edge_pairs.key_frame_pairs->left_edge_descriptors[kf_stereo_index];
-
-            // Iterate through all matching CF edges for this KF edge
+            // left and right descriptors should be similar for the same match
+            //  Iterate through all matching CF edges for this KF edge
             for (int j = 0; j < KF_CF_edge_pairs.matching_cf_edges_indices[i].size(); ++j)
             {
                 int cf_edge_idx = KF_CF_edge_pairs.matching_cf_edges_indices[i][j];
                 // Get SIFT descriptors for the current frame edge
-                std::pair<cv::Mat, cv::Mat> cf_edge_descriptors = current_frame_descriptors[cf_edge_idx];
+                std::pair<cv::Mat, cv::Mat> cf_edge_descriptors = is_left ? current_frame_descriptors_left[cf_edge_idx] : current_frame_descriptors_right[cf_edge_idx];
                 scores &score = KF_CF_edge_pairs.matching_scores[i][j];
                 if (cf_edge_descriptors.first.empty() || cf_edge_descriptors.second.empty())
                 {
@@ -677,10 +695,10 @@ void EBVO::apply_NCC_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, const
     //> Filter out edges that don't meet the NCC threshold
 
     // Get the appropriate edge vectors based on left/right
-    const std::vector<Edge> &kf_edges = is_left ? keyframe_stereo.stereo_frame->left_edges
-                                                : keyframe_stereo.stereo_frame->right_edges;
-    const std::vector<Edge> &cf_edges = is_left ? current_stereo.stereo_frame->left_edges
-                                                : current_stereo.stereo_frame->right_edges;
+    const std::vector<Edge> &kf_edges = is_left ? kf_edges_left
+                                                : kf_edges_right;
+    const std::vector<Edge> &cf_edges = is_left ? cf_edges_left
+                                                : cf_edges_right;
 
     // Convert images to CV_64F for patch extraction
     cv::Mat kf_image_64f, cf_image_64f;
@@ -736,10 +754,10 @@ void EBVO::apply_NCC_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, const
 
 void EBVO::min_Edge_Photometric_Residual_by_Gauss_Newton(
     /* inputs */
-    Edge left_edge, Eigen::Vector2d init_disp, const cv::Mat &left_image_undistorted, \
-    const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y, 
+    Edge left_edge, Eigen::Vector2d init_disp, const cv::Mat &left_image_undistorted,
+    const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y,
     /* outputs */
-    Eigen::Vector2d &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           
+    Eigen::Vector2d &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,
     /* optional inputs */
     int max_iter, double tol, double huber_delta, bool b_verbose)
 {
@@ -807,7 +825,7 @@ void EBVO::min_Edge_Photometric_Residual_by_Gauss_Newton(
                 Eigen::Vector2d J = -Eigen::Vector2d(gxRf[k], gyRf[k]);
                 double absr = std::abs(r);
                 double w = (absr > huber_delta) ? 1.0 : huber_delta / absr;
-                
+
                 H += w * J * J.transpose();
                 b += w * J * r;
                 cost += w * r * r;
@@ -1197,7 +1215,22 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
     //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame
     bool debug = (stage_name == "Spatial Grid");
     std::cout << "is it debugging? " << debug << std::endl;
-    int kf_edge_count = KF_CF_edge_pairs.is_left ? KF_CF_edge_pairs.kf_edges.size() : static_cast<int>(std::accumulate(kf_right_eval.begin(), kf_right_eval.end(), 0));
+    int kf_edge_count = 0;
+    if (KF_CF_edge_pairs.is_left)
+    {
+        kf_edge_count = KF_CF_edge_pairs.kf_edges.size();
+    }
+    else
+    {
+        // Only count right edges that actually have a temporal Ground Truth AND are stereo-veridical
+        for (int kf_edge_idx : KF_CF_edge_pairs.kf_edges)
+        {
+            if (kf_right_eval[kf_edge_idx])
+            {
+                kf_edge_count++;
+            }
+        }
+    }
     num_of_target_edges_per_source_edge.reserve(kf_edge_count); //> compailable to both left and right edges
     precision_per_edge.reserve(kf_edge_count);
 
@@ -1258,37 +1291,60 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &K
 void EBVO::augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::pair<cv::Mat, cv::Mat>> &edge_descriptors, bool is_left)
 {
     Utility util{};
-    // we will modify the edge_descriptors
     edge_descriptors.clear();
-    int size = is_left ? stereo_frame_edge_pairs.stereo_frame->left_edges.size() : stereo_frame_edge_pairs.stereo_frame->right_edges.size();
-    edge_descriptors.resize(size);
+    int size = is_left ? stereo_frame_edge_pairs.focused_edge_indices.size() : cf_edges_right.size();
+
+    // Pre-fill with empty Mats so dropped keypoints are handled safely
+    edge_descriptors.resize(size, std::make_pair(cv::Mat(), cv::Mat()));
+
     const cv::Mat &image = is_left ? stereo_frame_edge_pairs.stereo_frame->left_image_undistorted
                                    : stereo_frame_edge_pairs.stereo_frame->right_image_undistorted;
-#pragma omp parallel
+
+    // 1. Gather all valid keypoints into a single vector
+    std::vector<cv::KeyPoint> all_kps;
+    all_kps.reserve(size * 2);
+
+    for (int i = 0; i < size; ++i)
     {
-        cv::Ptr<cv::SIFT> thread_sift = cv::SIFT::create();
-#pragma omp for schedule(dynamic)
-        for (int i = 0; i < size; ++i)
+        Edge le = is_left ? stereo_frame_edge_pairs.get_focused_edge_by_toed_index(i) : cf_edges_right[i];
+
+        // Safety check to prevent OpenCV crashing on invalid math
+        if (std::isnan(le.location.x) || std::isnan(le.orientation))
+            continue;
+
+        std::pair<cv::Point2d, cv::Point2d> shifted_points = util.get_Orthogonal_Shifted_Points(le, 8);
+
+        float angle = 180.0f / M_PI * le.orientation;
+
+        // We embed the original edge index 'i' into class_id.
+        // class_id = (i * 2) for the first point, (i * 2 + 1) for the second.
+        all_kps.emplace_back(shifted_points.first, 1.0f, angle, 0, 0, i * 2);
+        all_kps.emplace_back(shifted_points.second, 1.0f, angle, 0, 0, i * 2 + 1);
+    }
+
+    // 2. Compute EVERYTHING in one single, safe OpenCV call
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+    cv::Mat all_descriptors;
+
+    // OpenCV will safely multi-thread this internally! No OpenMP needed.
+    sift->compute(image, all_kps, all_descriptors);
+
+    // 3. Unpack the batch results back into your edge_descriptors array
+    // Note: If OpenCV drops an out-of-bounds keypoint, it naturally removes it
+    // from all_kps. Our class_id check ensures we still map them to the correct edge!
+    for (int j = 0; j < all_kps.size(); ++j)
+    {
+        int original_id = all_kps[j].class_id;
+        int edge_index = original_id / 2;
+        int point_index = original_id % 2;
+
+        if (point_index == 0)
         {
-            Edge le = stereo_frame_edge_pairs.get_focused_edge_by_toed_index(i);
-            std::pair<cv::Point2d, cv::Point2d> shifted_points = util.get_Orthogonal_Shifted_Points(le, 8);
-
-            //> Create keypoints for this edge pair
-            std::vector<cv::KeyPoint> kps;
-            kps.push_back(cv::KeyPoint(shifted_points.first, 1, 180 / M_PI * le.orientation));
-            kps.push_back(cv::KeyPoint(shifted_points.second, 1, 180 / M_PI * le.orientation));
-
-            cv::Mat descriptors;
-            thread_sift->compute(image, kps, descriptors);
-
-            if (descriptors.rows == 2)
-            {
-                edge_descriptors[i] = std::make_pair(descriptors.row(0).clone(), descriptors.row(1).clone());
-            }
-            else
-            {
-                edge_descriptors[i] = std::make_pair(cv::Mat(), cv::Mat());
-            }
+            edge_descriptors[edge_index].first = all_descriptors.row(j).clone();
+        }
+        else
+        {
+            edge_descriptors[edge_index].second = all_descriptors.row(j).clone();
         }
     }
 }

@@ -1,7 +1,7 @@
 % Visualization of KF and CF edges
-% KF Edge Index: 7860 on Frame 0 Left at (328.95962637, 197.17279013)
-% KF Edge Index: 7860 on Frame 0 Right 
-% CF Edges: 7899, 7900
+% KF Edge Index: 7860 on Frame 0 Left at (328.959, 197.173)
+% KF Edge Index: 7860 on Frame 0 Right at (321.477, 197.173)
+% CF Edges: 7829, 7830, 7831, 7867, 7868
 
 % Setup paths to dataset
 source_dataset_folder = "/gpfs/data/bkimia/Datasets/ETH3D/";
@@ -24,15 +24,18 @@ kf_edge_loc_left = [328.95962637, 197.17279013];
 kf_edge_loc_right = [321.477, 197.173];
 kf_edge_idx = 7860;
 
-% CF edge data
+% CF edge data (Idx, X, Y, Orientation in degrees)
 cf_edges = [
-    7899, 343.13, 192.332, -173.664;
-    7900, 343.614, 192.394, -170.347;
+    7829, 335.396, 191.554, -170.531;
+    7830, 335.824, 191.645, -170.531;
+    7831, 336.286, 191.730, -171.356;
+    7867, 336.622, 191.803, -172.178;
+    7868, 336.986, 191.855, -172.178;
 ];
 
-% GT projected location
-gt_location = [343.636, 191.748];
-gt_orientation = -2.96533;
+% GT projected location and orientation (in radians)
+gt_location = [336.220, 191.709];
+gt_orientation = -2.93114;
 
 % Create figure with 1x3 subplots
 figure('Position', [100, 100, 2000, 600]);
@@ -54,13 +57,13 @@ line([kf_edge_loc_left(1)-dx, kf_edge_loc_left(1)+dx], [kf_edge_loc_left(2)-dy, 
      'Color', 'red', 'LineWidth', 4);
 
 % Draw point at center
-plot(kf_edge_loc_right(1), kf_edge_loc_right(2), 'ro', 'MarkerSize', 15, 'LineWidth', 3);
+plot(kf_edge_loc_left(1), kf_edge_loc_left(2), 'ro', 'MarkerSize', 15, 'LineWidth', 3);
 
 % Add arrow to show orientation
 arrow_len = edge_length/3;
 arrow_dx = arrow_len * cos(kf_ori_rad);
 arrow_dy = arrow_len * sin(kf_ori_rad);
-quiver(kf_edge_loc_right(1), kf_edge_loc_right(2), arrow_dx, arrow_dy, 0, ...
+quiver(kf_edge_loc_left(1), kf_edge_loc_left(2), arrow_dx, arrow_dy, 0, ...
        'Color', 'red', 'LineWidth', 2.5, 'MaxHeadSize', 1.5);
 
 % Add text annotation
@@ -76,26 +79,16 @@ imshow(img_0_right);
 hold on;
 title(sprintf('Frame 0 (Keyframe) - Right Image\nEdge Index: %d', kf_edge_idx), 'FontSize', 14, 'FontWeight', 'bold');
 
-% Draw KF edge as a line with orientation
-edge_length = 40;  % Length of edge line to draw
-kf_ori_rad = atan2(sin(gt_orientation), cos(gt_orientation));  % Convert to radians if needed
-dx = edge_length/2 * cos(kf_ori_rad);
-dy = edge_length/2 * sin(kf_ori_rad);
-
 % Draw edge line
 line([kf_edge_loc_right(1)-dx, kf_edge_loc_right(1)+dx], [kf_edge_loc_right(2)-dy, kf_edge_loc_right(2)+dy], ...
      'Color', 'red', 'LineWidth', 4);
 
 % Draw point at center
-plot(kf_edge_loc(1), kf_edge_loc(2), 'ro', 'MarkerSize', 15, 'LineWidth', 3);
+plot(kf_edge_loc_right(1), kf_edge_loc_right(2), 'ro', 'MarkerSize', 15, 'LineWidth', 3);
 
 % Add arrow to show orientation
-arrow_len = edge_length/3;
-arrow_dx = arrow_len * cos(kf_ori_rad);
-arrow_dy = arrow_len * sin(kf_ori_rad);
-arrowhead_size = 1.5;
-quiver(kf_edge_loc(1), kf_edge_loc(2), arrow_dx, arrow_dy, 0, ...
-       'Color', 'red', 'LineWidth', 2.5, 'MaxHeadSize', arrowhead_size);
+quiver(kf_edge_loc_right(1), kf_edge_loc_right(2), arrow_dx, arrow_dy, 0, ...
+       'Color', 'red', 'LineWidth', 2.5, 'MaxHeadSize', 1.5);
 
 % Add text annotation
 text(kf_edge_loc_right(1)+35, kf_edge_loc_right(2)-20, sprintf('KF Edge #%d\n(%.2f, %.2f)', kf_edge_idx, kf_edge_loc_right(1), kf_edge_loc_right(2)), ...
@@ -112,7 +105,6 @@ hold on;
 title('Frame 1 (Current) - Right Image', 'FontSize', 14, 'FontWeight', 'bold');
 
 % Plot GT projected location as a line
-edge_length = 40;
 gt_ori_rad = gt_orientation;  % Already in radians
 gt_dx = edge_length/2 * cos(gt_ori_rad);
 gt_dy = edge_length/2 * sin(gt_ori_rad);
@@ -134,8 +126,8 @@ quiver(gt_location(1), gt_location(2), arrow_dx, arrow_dy, 0, ...
 text(gt_location(1)+35, gt_location(2)+15, sprintf('GT Projected\n(%.3f, %.3f)\nOri: %.3f', gt_location(1), gt_location(2), gt_orientation), ...
      'Color', 'blue', 'FontSize', 10, 'FontWeight', 'bold', 'BackgroundColor', [1 1 1 0.9]);
 
-% Plot CF edges as lines
-colors = {'g', 'm'};
+% Plot CF edges as lines (Using 5 distinct colors for 5 edges)
+colors = {'g', 'm', 'c', 'y', [1 0.5 0]}; % Green, Magenta, Cyan, Yellow, Orange
 for i = 1:size(cf_edges, 1)
     idx = cf_edges(i, 1);
     x = cf_edges(i, 2);
@@ -169,13 +161,13 @@ end
 
 % Add legend/info
 text(20, 30, sprintf('Frame 1 Right Image - CF Candidates'), 'Color', 'white', 'FontSize', 12, 'FontWeight', 'bold', 'BackgroundColor', [0 0 0 0.7]);
-text(20, 60, sprintf('Blue (dashed): GT Projected | Green: Edge #7899 | Magenta: Edge #7900'), 'Color', 'white', 'FontSize', 10, 'FontWeight', 'bold', 'BackgroundColor', [0 0 0 0.7]);
+text(20, 60, sprintf('Blue(dash): GT | Grn: #7829 | Mag: #7830 | Cya: #7831 | Yel: #7867 | Org: #7868'), 'Color', 'white', 'FontSize', 10, 'FontWeight', 'bold', 'BackgroundColor', [0 0 0 0.7]);
 
 hold off;
 
 % Overall title
-sgtitle(sprintf('Edge-Based Visual Odometry: KF Edge #%d Temporal Projection\nKF Location: (%.3f, %.3f) | GT CF Location: (%.3f, %.3f)', ...
-                kf_edge_idx, kf_edge_loc(1), kf_edge_loc(2), gt_location(1), gt_location(2)), ...
+sgtitle(sprintf('Edge-Based Visual Odometry: KF Edge #%d Temporal Projection\nKF Right Location: (%.3f, %.3f) | GT CF Location: (%.3f, %.3f)', ...
+                kf_edge_idx, kf_edge_loc_right(1), kf_edge_loc_right(2), gt_location(1), gt_location(2)), ...
         'FontSize', 16, 'FontWeight', 'bold');
 
 % Customize figure
