@@ -49,8 +49,10 @@ public:
                                      double orientation_threshold, bool b_is_left);
 
     void apply_SIFT_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double sift_dist_threshold, bool is_left);
-    void apply_NCC_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, const Stereo_Edge_Pairs &keyframe_stereo, const Stereo_Edge_Pairs &current_stereo, double ncc_val_threshold,
-                             const cv::Mat &keyframe_image, const cv::Mat &current_image, bool is_left);
+    void apply_NCC_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
+                             const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
+                             double ncc_val_threshold,
+                             const cv::Mat &keyframe_image, const cv::Mat &current_image, bool b_is_left);
     void apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC);
 
     void min_Edge_Photometric_Residual_by_Gauss_Newton(
