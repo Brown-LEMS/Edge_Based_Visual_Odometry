@@ -179,45 +179,15 @@ void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat le
         double rho_1 = (rho < 0.0) ? (-rho) : (rho);
 
         Eigen::Vector3d gamma_1 = calib_matrix.inverse() * e_location_eigen;
-        Eigen::Vector3d Gamma_1 = rho_1 * gamma_1;
-        stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1);
+        Eigen::Vector3d Gamma_1_left = rho_1 * gamma_1;
+        stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1_left);
+
+        //> apply stereo frame shift
+        Eigen::Vector3d Gamma_1_right = dataset.get_relative_rot_left_to_right() * Gamma_1_left + dataset.get_relative_transl_left_to_right();
+        stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Gamma_1_right);
     }
 }
 
-// call after all filters
-void Stereo_Matches::remove_empty_clusters(Stereo_Edge_Pairs &stereo_frame_edge_pairs)
-{
-    std::vector<int> indices_to_remove;
-    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
-    {
-        if (stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.empty())
-        {
-            indices_to_remove.push_back(i);
-        }
-    }
-
-    //> Remove the left edges from the stereo_frame structure if there is no right edge correspondences close to the GT edge
-    if (!indices_to_remove.empty())
-    {
-        //> First sort the indices in an descending order
-        std::sort(indices_to_remove.rbegin(), indices_to_remove.rend());
-        for (size_t no_GT_index : indices_to_remove)
-        {
-            stereo_frame_edge_pairs.focused_edge_indices.erase(stereo_frame_edge_pairs.focused_edge_indices.begin() + no_GT_index);
-
-            //> Also remove the corresponding 3D points and GT location from disparity to make the size of the vectors consistent
-            stereo_frame_edge_pairs.Gamma_in_left_cam_coord.erase(stereo_frame_edge_pairs.Gamma_in_left_cam_coord.begin() + no_GT_index);
-            stereo_frame_edge_pairs.GT_locations_from_left_edges.erase(stereo_frame_edge_pairs.GT_locations_from_left_edges.begin() + no_GT_index);
-            stereo_frame_edge_pairs.veridical_right_edges_indices.erase(stereo_frame_edge_pairs.veridical_right_edges_indices.begin() + no_GT_index);
-            stereo_frame_edge_pairs.matching_edge_clusters.erase(stereo_frame_edge_pairs.matching_edge_clusters.begin() + no_GT_index);
-            stereo_frame_edge_pairs.left_edge_descriptors.erase(stereo_frame_edge_pairs.left_edge_descriptors.begin() + no_GT_index);
-            stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges.erase(stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges.begin() + no_GT_index);
-            stereo_frame_edge_pairs.left_edge_patches.erase(stereo_frame_edge_pairs.left_edge_patches.begin() + no_GT_index);
-            // reconstruct third order mapping after erasing
-            stereo_frame_edge_pairs.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
-        }
-    }
-}
 void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
     Eigen::Matrix3d fund_mat = is_left ? dataset.get_fund_mat_21() : dataset.get_fund_mat_12();
@@ -271,6 +241,7 @@ void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFram
 
             //> Also remove the corresponding 3D points and GT location from disparity to make the size of the vectors consistent
             stereo_frame_edge_pairs.Gamma_in_left_cam_coord.erase(stereo_frame_edge_pairs.Gamma_in_left_cam_coord.begin() + no_GT_index);
+            stereo_frame_edge_pairs.Gamma_in_right_cam_coord.erase(stereo_frame_edge_pairs.Gamma_in_right_cam_coord.begin() + no_GT_index);
             stereo_frame_edge_pairs.GT_locations_from_left_edges.erase(stereo_frame_edge_pairs.GT_locations_from_left_edges.begin() + no_GT_index);
             stereo_frame_edge_pairs.veridical_right_edges_indices.erase(stereo_frame_edge_pairs.veridical_right_edges_indices.begin() + no_GT_index);
         }
@@ -612,21 +583,6 @@ void Stereo_Matches::add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame_e
     }
 }
 
-void Stereo_Matches::construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<Edge> &candidate_edge_set, std::vector<bool> &eval_set)
-{
-    candidate_edge_set.clear();
-    eval_set.clear();
-    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
-    {
-        Stereo_Matching_Edge_Clusters &cluster_data = stereo_frame_edge_pairs.matching_edge_clusters[i];
-        EdgeCluster &edge_clusters = cluster_data.edge_clusters[0]; //> After Lowe's ratio test, we should have at most 1 cluster per edge
-        Edge right_edge = edge_clusters.center_edge;
-        bool is_veridical = (cv::norm(right_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH);
-        candidate_edge_set.push_back(right_edge);
-        eval_set.push_back(is_veridical);
-    }
-}
-
 void Stereo_Matches::augment_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
     stereo_frame_edge_pairs.left_edge_descriptors.clear();
@@ -885,7 +841,6 @@ void Stereo_Matches::apply_Lowe_Ratio_Test(Stereo_Edge_Pairs &stereo_frame_edge_
         cluster_data.refine_confidences = std::move(surviving_confidences);
         cluster_data.refine_validities = std::move(surviving_validities);
     }
-    // debug_file.close();
 }
 
 void Stereo_Matches::apply_bidirectional_test(Stereo_Edge_Pairs &left_frame, Stereo_Edge_Pairs &right_frame, const std::string &output_dir, int frame_idx)
@@ -1358,4 +1313,86 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
     frame_metrics.stages["Final"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
 
     return frame_metrics;
+}
+
+// call after all filters
+void Stereo_Matches::remove_empty_clusters(Stereo_Edge_Pairs &stereo_frame_edge_pairs)
+{
+    std::vector<int> indices_to_remove;
+    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
+    {
+        if (stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.empty())
+        {
+            indices_to_remove.push_back(i);
+        }
+    }
+
+    //> Remove the left edges from the stereo_frame structure if there is no right edge correspondences close to the GT edge
+    if (!indices_to_remove.empty())
+    {
+        //> First sort the indices in an descending order
+        std::sort(indices_to_remove.rbegin(), indices_to_remove.rend());
+        for (size_t no_GT_index : indices_to_remove)
+        {
+            stereo_frame_edge_pairs.focused_edge_indices.erase(stereo_frame_edge_pairs.focused_edge_indices.begin() + no_GT_index);
+
+            //> Also remove the corresponding 3D points and GT location from disparity to make the size of the vectors consistent
+            stereo_frame_edge_pairs.Gamma_in_left_cam_coord.erase(stereo_frame_edge_pairs.Gamma_in_left_cam_coord.begin() + no_GT_index);
+            stereo_frame_edge_pairs.Gamma_in_right_cam_coord.erase(stereo_frame_edge_pairs.Gamma_in_right_cam_coord.begin() + no_GT_index);
+            stereo_frame_edge_pairs.GT_locations_from_left_edges.erase(stereo_frame_edge_pairs.GT_locations_from_left_edges.begin() + no_GT_index);
+            stereo_frame_edge_pairs.veridical_right_edges_indices.erase(stereo_frame_edge_pairs.veridical_right_edges_indices.begin() + no_GT_index);
+            stereo_frame_edge_pairs.matching_edge_clusters.erase(stereo_frame_edge_pairs.matching_edge_clusters.begin() + no_GT_index);
+            stereo_frame_edge_pairs.left_edge_descriptors.erase(stereo_frame_edge_pairs.left_edge_descriptors.begin() + no_GT_index);
+            stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges.erase(stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges.begin() + no_GT_index);
+            stereo_frame_edge_pairs.left_edge_patches.erase(stereo_frame_edge_pairs.left_edge_patches.begin() + no_GT_index);
+            // reconstruct third order mapping after erasing
+            stereo_frame_edge_pairs.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
+        }
+    }
+}
+
+void Stereo_Matches::construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<final_stereo_edge_pair> &final_stereo_edge_pairs)
+{
+    cv::Mat right_image;
+    stereo_frame_edge_pairs.stereo_frame->right_image.convertTo(right_image, CV_64F);
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+
+    final_stereo_edge_pairs.clear();
+    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
+    {
+        final_stereo_edge_pair stereo_mate;
+
+        //> Left and right edges
+        Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
+        Edge right_edge = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[0].center_edge;
+        stereo_mate.left_edge = left_edge;
+        stereo_mate.right_edge = right_edge;
+
+        //> Left and right edge patches
+        stereo_mate.left_edge_patches = stereo_frame_edge_pairs.left_edge_patches[i];
+        stereo_mate.right_edge_patches = utility_tool->get_edge_patches(right_edge, right_image);
+
+        //> Left and right edge descriptors
+        stereo_mate.left_edge_descriptors = stereo_frame_edge_pairs.left_edge_descriptors[i];
+
+        std::vector<cv::KeyPoint> edge_keypoints;
+        std::pair<cv::Point2d, cv::Point2d> shifted_points = utility_tool->get_Orthogonal_Shifted_Points(right_edge, 8); //> augment the edge by adding shifted points along the orthogonal direction
+        cv::KeyPoint edge_kp1(shifted_points.first, 1, 180 / M_PI * right_edge.orientation);
+        cv::KeyPoint edge_kp2(shifted_points.second, 1, 180 / M_PI * right_edge.orientation);
+        edge_keypoints.push_back(edge_kp1);
+        edge_keypoints.push_back(edge_kp2);
+        cv::Mat right_edge_descriptors;
+        sift->compute(right_image, edge_keypoints, right_edge_descriptors);
+        stereo_mate.right_edge_descriptors = std::make_pair(right_edge_descriptors.row(0).clone(), right_edge_descriptors.row(1).clone());
+
+        //> 3D points in left and right camera coordinates
+        stereo_mate.Gamma_in_left_cam_coord = stereo_frame_edge_pairs.Gamma_in_left_cam_coord[i];
+        stereo_mate.Gamma_in_right_cam_coord = stereo_frame_edge_pairs.Gamma_in_right_cam_coord[i];
+
+        //> Whether the stereo edge pair is true positive
+        stereo_mate.b_is_TP = (cv::norm(right_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH) ? (true) : (false);
+    
+        //> Push back the stereo edge pair
+        final_stereo_edge_pairs.push_back(stereo_mate);
+    }
 }

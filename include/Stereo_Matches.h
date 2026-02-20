@@ -53,7 +53,7 @@ public:
         double &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           /* optional inputs */
         int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
 
-    void construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<Edge> &candidate_edge_set, std::vector<bool> &eval_set);
+    void construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<final_stereo_edge_pair> &final_stereo_edge_pairs);
 
     //> utility functions
     void augment_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);

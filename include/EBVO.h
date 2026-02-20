@@ -89,13 +89,12 @@ private:
     SpatialGrid left_grid;
     SpatialGrid right_grid;
     //> third order edges
-    std::vector<Edge> kf_edges_left;  //> 3rd order edges in the keyframe
-    std::vector<Edge> kf_edges_right; //> Representative edges
-    std::vector<bool> kf_right_eval;  //> whether the representative edges in the keyframe are veridical
-    int valid_kf_right_edges;
-    std::vector<Edge> cf_edges_left; //>
-    std::vector<Edge> cf_edges_right;
-    std::vector<bool> cf_right_eval;
+    std::vector<Edge> kf_edges_left;  //> 3rd order edges in the keyframe-left
+    std::vector<Edge> kf_edges_right; //> Representative edges in the keyframe-right
+    std::vector<bool> kf_right_eval;  //> whether the representative edges in the keyframe-right are veridical
+    std::vector<Edge> cf_edges_left;  //> 3rd order edges in the current frame-left
+    std::vector<Edge> cf_edges_right; //> Representative edges in the current frame-right
+    std::vector<bool> cf_right_eval;  //> whether the representative edges in the current frame-right are veridical
     // SIFT descriptor cache for efficient temporal matching
 
     std::vector<std::pair<cv::Mat, cv::Mat>> current_frame_descriptors_left; // Maps previous frame edge index to its descriptor
