@@ -179,15 +179,15 @@ void EBVO::PerformEdgeBasedVO()
             //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             //> Stage 1: Apply spatial grid to the current frame
             apply_spatial_grid_filtering(left_temporal_edge_mates, left_spatial_grids, 30.0, true);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Spatial Grid");
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Spatial Grid", "Left");
             apply_spatial_grid_filtering(right_temporal_edge_mates, right_spatial_grids, 30.0, false);
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Spatial Grid");
+            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Spatial Grid", "Right");
 
-            // // //> Stage 2: Do orientation filtering
-            // apply_orientation_filtering(KF_CF_edge_pairs_left, 35.0, true);
-            // Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Orientation Filtering");
-            // apply_orientation_filtering(KF_CF_edge_pairs_right, 35.0, false);
-            // Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Orientation Filtering");
+            // //> Stage 2: Do orientation filtering
+            apply_orientation_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 35.0, true);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Orientation Filtering", "Left");
+            apply_orientation_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, 35.0, false);
+            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Orientation Filtering", "Right");
 
             // //> Stage 3: Do NCC
             // apply_NCC_filtering(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, 0.6, last_keyframe.left_image, current_frame.left_image, true);
@@ -1251,153 +1251,186 @@ void EBVO::debug_veridical(int edge_idx, const KF_CF_EdgeCorrespondence &KF_CF_e
     // debug_file.close();
 }
 
-void EBVO::apply_orientation_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double orientation_threshold, bool is_left)
+// void EBVO::apply_orientation_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double orientation_threshold, bool is_left)
+// {
+//     //> for each edge in the keyframe, compare its orientation with the edges in the current frame
+
+//     // Get the correct edge vectors based on is_left flag
+//     const std::vector<Edge> &kf_edges = KF_CF_edge_pairs.is_left ? kf_edges_left : kf_edges_right;
+//     const std::vector<Edge> &cf_edges = KF_CF_edge_pairs.is_left ? cf_edges_left : cf_edges_right;
+
+// #pragma omp parallel for schedule(dynamic, 64)
+//     for (size_t idx = 0; idx < KF_CF_edge_pairs.kf_edges.size(); ++idx)
+//     {
+//         int kf_edge_idx = KF_CF_edge_pairs.kf_edges[idx];
+//         // Bounds check
+//         if (kf_edge_idx < 0 || kf_edge_idx >= static_cast<int>(kf_edges.size()))
+//         {
+//             continue;
+//         }
+
+//         Edge kf_edge = kf_edges[kf_edge_idx];
+
+//         std::vector<int> filtered_cf_edges_indices;
+//         for (auto &m_edge_idx : KF_CF_edge_pairs.matching_cf_edges_indices[idx])
+//         {
+//             // Bounds check for CF edge
+//             if (m_edge_idx < 0 || m_edge_idx >= static_cast<int>(cf_edges.size()))
+//             {
+//                 continue;
+//             }
+
+//             Edge cf_edge = cf_edges[m_edge_idx];
+//             double orientation_diff = std::abs(rad_to_deg<double>(kf_edge.orientation - cf_edge.orientation));
+//             if (orientation_diff > 180.0)
+//             {
+//                 orientation_diff = 360.0 - orientation_diff;
+//             }
+
+//             // Keep edge if orientation is similar (< threshold) OR opposite (~180°)
+//             if (orientation_diff < orientation_threshold ||
+//                 std::abs(orientation_diff - 180.0) < orientation_threshold)
+//             {
+//                 filtered_cf_edges_indices.push_back(m_edge_idx);
+//             }
+//         }
+//         KF_CF_edge_pairs.matching_cf_edges_indices[idx] = filtered_cf_edges_indices;
+//     }
+// }
+
+void EBVO::apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
+                                      const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
+                                      double orientation_threshold, bool b_is_left)
 {
-    //> for each edge in the keyframe, compare its orientation with the edges in the current frame
-
-    // Get the correct edge vectors based on is_left flag
-    const std::vector<Edge> &kf_edges = KF_CF_edge_pairs.is_left ? kf_edges_left : kf_edges_right;
-    const std::vector<Edge> &cf_edges = KF_CF_edge_pairs.is_left ? cf_edges_left : cf_edges_right;
-
+    //> For each temporal edge pair, filter candidates by projected orientation vs CF edge orientation
 #pragma omp parallel for schedule(dynamic, 64)
-    for (size_t idx = 0; idx < KF_CF_edge_pairs.kf_edges.size(); ++idx)
+    for (int i = 0; i < static_cast<int>(temporal_edge_mates.size()); ++i)
     {
-        int kf_edge_idx = KF_CF_edge_pairs.kf_edges[idx];
-        // Bounds check
-        if (kf_edge_idx < 0 || kf_edge_idx >= static_cast<int>(kf_edges.size()))
+        temporal_edge_pair &tp = temporal_edge_mates[i];
+        double ref_orientation = tp.projected_orientation;
+
+        std::vector<int> filtered_candidates;
+        std::vector<scores> filtered_scores;
+        filtered_candidates.reserve(tp.candidate_CF_stereo_edge_mate_indices.size());
+        filtered_scores.reserve(tp.candidate_CF_stereo_edge_mate_indices.size());
+
+        for (size_t j = 0; j < tp.candidate_CF_stereo_edge_mate_indices.size(); ++j)
         {
-            continue;
-        }
-
-        Edge kf_edge = kf_edges[kf_edge_idx];
-
-        std::vector<int> filtered_cf_edges_indices;
-        for (auto &m_edge_idx : KF_CF_edge_pairs.matching_cf_edges_indices[idx])
-        {
-            // Bounds check for CF edge
-            if (m_edge_idx < 0 || m_edge_idx >= static_cast<int>(cf_edges.size()))
-            {
-                continue;
-            }
-
-            Edge cf_edge = cf_edges[m_edge_idx];
-            double orientation_diff = std::abs(rad_to_deg<double>(kf_edge.orientation - cf_edge.orientation));
+            int cf_stereo_mate_idx = tp.candidate_CF_stereo_edge_mate_indices[j];
+            const Edge &cf_edge = b_is_left ? CF_stereo_edge_mates[cf_stereo_mate_idx].left_edge : CF_stereo_edge_mates[cf_stereo_mate_idx].right_edge;
+            double orientation_diff = std::abs(rad_to_deg<double>(ref_orientation - cf_edge.orientation));
             if (orientation_diff > 180.0)
-            {
                 orientation_diff = 360.0 - orientation_diff;
-            }
 
-            // Keep edge if orientation is similar (< threshold) OR opposite (~180°)
-            if (orientation_diff < orientation_threshold ||
-                std::abs(orientation_diff - 180.0) < orientation_threshold)
+            if (orientation_diff < orientation_threshold || std::abs(orientation_diff - 180.0) < orientation_threshold)
             {
-                filtered_cf_edges_indices.push_back(m_edge_idx);
+                filtered_candidates.push_back(cf_stereo_mate_idx);
+                filtered_scores.push_back(tp.matching_scores[j]);
             }
         }
-        KF_CF_edge_pairs.matching_cf_edges_indices[idx] = filtered_cf_edges_indices;
+        tp.candidate_CF_stereo_edge_mate_indices = std::move(filtered_candidates);
+        tp.matching_scores = std::move(filtered_scores);
     }
 }
 
-void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &KF_CF_edge_pairs,
-                                               Stereo_Edge_Pairs &keyframe_stereo, Stereo_Edge_Pairs &current_stereo,
-                                               size_t frame_idx, const std::string &stage_name)
-{
-    int total_num_of_true_positives_for_recall = 0;
-    int total_num_of_true_positives_for_precision = 0;
-    std::vector<double> num_of_target_edges_per_source_edge;
-    std::vector<double> precision_per_edge;
-    std::vector<double> precision_pair_edge;
+// void EBVO::Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &KF_CF_edge_pairs,
+//                                                Stereo_Edge_Pairs &keyframe_stereo, Stereo_Edge_Pairs &current_stereo,
+//                                                size_t frame_idx, const std::string &stage_name)
+// {
+//     int total_num_of_true_positives_for_recall = 0;
+//     int total_num_of_true_positives_for_precision = 0;
+//     std::vector<double> num_of_target_edges_per_source_edge;
+//     std::vector<double> precision_per_edge;
+//     std::vector<double> precision_pair_edge;
 
-    //> Do we need this?
-    int kf_edge_count = 0;
-    if (KF_CF_edge_pairs.is_left)
-    {
-        kf_edge_count = KF_CF_edge_pairs.kf_edges.size();
-    }
-    else
-    {
-        // Only count right edges that actually have a temporal Ground Truth AND are stereo-veridical
-        for (int kf_edge_idx : KF_CF_edge_pairs.kf_edges)
-        {
-            if (kf_right_eval[kf_edge_idx])
-            {
-                kf_edge_count++;
-            }
-        }
-    }
+//     //> Do we need this?
+//     int kf_edge_count = 0;
+//     if (KF_CF_edge_pairs.is_left)
+//     {
+//         kf_edge_count = KF_CF_edge_pairs.kf_edges.size();
+//     }
+//     else
+//     {
+//         // Only count right edges that actually have a temporal Ground Truth AND are stereo-veridical
+//         for (int kf_edge_idx : KF_CF_edge_pairs.kf_edges)
+//         {
+//             if (kf_right_eval[kf_edge_idx])
+//             {
+//                 kf_edge_count++;
+//             }
+//         }
+//     }
 
-    num_of_target_edges_per_source_edge.reserve(kf_edge_count); //> compailable to both left and right edges
-    precision_per_edge.reserve(kf_edge_count);
+//     num_of_target_edges_per_source_edge.reserve(kf_edge_count); //> compailable to both left and right edges
+//     precision_per_edge.reserve(kf_edge_count);
 
-    for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
-    {
-        if (!KF_CF_edge_pairs.is_left && !kf_right_eval[i])
-            continue;
-        bool fail = true;
-        total_num_of_true_positives_for_precision = 0;
-        //> Find if there is at least one edge index in edge_pair.matching_cf_edges_indices is found in edge_pair.veridical_cf_edges_indices
-        if (KF_CF_edge_pairs.matching_cf_edges_indices[i].size() > 0)
-        {
-            int total_num_of_candidates = KF_CF_edge_pairs.matching_cf_edges_indices[i].size();
+//     for (int i = 0; i < KF_CF_edge_pairs.kf_edges.size(); ++i)
+//     {
+//         if (!KF_CF_edge_pairs.is_left && !kf_right_eval[i])
+//             continue;
+//         bool fail = true;
+//         total_num_of_true_positives_for_precision = 0;
+//         //> Find if there is at least one edge index in edge_pair.matching_cf_edges_indices is found in edge_pair.veridical_cf_edges_indices
+//         if (KF_CF_edge_pairs.matching_cf_edges_indices[i].size() > 0)
+//         {
+//             int total_num_of_candidates = KF_CF_edge_pairs.matching_cf_edges_indices[i].size();
 
-            // Get the appropriate edge vector based on left/right
-            const std::vector<Edge> &cf_edges = KF_CF_edge_pairs.is_left
-                                                    ? cf_edges_left
-                                                    : cf_edges_right;
-            for (const auto &matched_idx : KF_CF_edge_pairs.matching_cf_edges_indices[i])
-            {
-                // matched_idx is a TOED edge index, access the edge directly
-                if (matched_idx >= 0 && matched_idx < cf_edges.size())
-                {
-                    const Edge &cf_edge = cf_edges[matched_idx];
-                    if (cv::norm(cf_edge.location - KF_CF_edge_pairs.gt_location_on_cf[i]) < 1.0)
-                    {
-                        total_num_of_true_positives_for_precision++;
-                    }
-                }
-            }
-            if (total_num_of_true_positives_for_precision > 0)
-            {
-                total_num_of_true_positives_for_recall++;
-            }
-            else
-            {
-            }
-            precision_per_edge.push_back(static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_candidates));
-            precision_pair_edge.push_back(static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_candidates));
-            num_of_target_edges_per_source_edge.push_back(total_num_of_candidates);
-        }
-    }
+//             // Get the appropriate edge vector based on left/right
+//             const std::vector<Edge> &cf_edges = KF_CF_edge_pairs.is_left
+//                                                     ? cf_edges_left
+//                                                     : cf_edges_right;
+//             for (const auto &matched_idx : KF_CF_edge_pairs.matching_cf_edges_indices[i])
+//             {
+//                 // matched_idx is a TOED edge index, access the edge directly
+//                 if (matched_idx >= 0 && matched_idx < cf_edges.size())
+//                 {
+//                     const Edge &cf_edge = cf_edges[matched_idx];
+//                     if (cv::norm(cf_edge.location - KF_CF_edge_pairs.gt_location_on_cf[i]) < 1.0)
+//                     {
+//                         total_num_of_true_positives_for_precision++;
+//                     }
+//                 }
+//             }
+//             if (total_num_of_true_positives_for_precision > 0)
+//             {
+//                 total_num_of_true_positives_for_recall++;
+//             }
+//             else
+//             {
+//             }
+//             precision_per_edge.push_back(static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_candidates));
+//             precision_pair_edge.push_back(static_cast<double>(total_num_of_true_positives_for_precision) / static_cast<double>(total_num_of_candidates));
+//             num_of_target_edges_per_source_edge.push_back(total_num_of_candidates);
+//         }
+//     }
 
-    double recall_per_image = static_cast<double>(total_num_of_true_positives_for_recall) / kf_edge_count;
-    double precision_per_image = std::accumulate(precision_per_edge.begin(), precision_per_edge.end(), 0.0) / precision_per_edge.size();
-    double precision_pair_per_image = std::accumulate(precision_pair_edge.begin(), precision_pair_edge.end(), 0.0) / precision_pair_edge.size();
-    double num_of_target_edges_per_source_edge_avg = std::accumulate(num_of_target_edges_per_source_edge.begin(), num_of_target_edges_per_source_edge.end(), 0.0) / num_of_target_edges_per_source_edge.size();
+//     double recall_per_image = static_cast<double>(total_num_of_true_positives_for_recall) / kf_edge_count;
+//     double precision_per_image = std::accumulate(precision_per_edge.begin(), precision_per_edge.end(), 0.0) / precision_per_edge.size();
+//     double precision_pair_per_image = std::accumulate(precision_pair_edge.begin(), precision_pair_edge.end(), 0.0) / precision_pair_edge.size();
+//     double num_of_target_edges_per_source_edge_avg = std::accumulate(num_of_target_edges_per_source_edge.begin(), num_of_target_edges_per_source_edge.end(), 0.0) / num_of_target_edges_per_source_edge.size();
 
-    std::cout << "Stereo Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx << std::endl;
-    std::cout << "- Recall rate:       " << std::fixed << std::setprecision(8) << recall_per_image << std::endl;
-    std::cout << "- Precision rate:    " << std::fixed << std::setprecision(8) << precision_per_image << std::endl;
-    std::cout << "- Average ambiguity: " << std::fixed << std::setprecision(8) << num_of_target_edges_per_source_edge_avg << std::endl;
-    std::cout << "========================================================\n"
-              << std::endl;
-}
+//     std::cout << "Stereo Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx << std::endl;
+//     std::cout << "- Recall rate:       " << std::fixed << std::setprecision(8) << recall_per_image << std::endl;
+//     std::cout << "- Precision rate:    " << std::fixed << std::setprecision(8) << precision_per_image << std::endl;
+//     std::cout << "- Average ambiguity: " << std::fixed << std::setprecision(8) << num_of_target_edges_per_source_edge_avg << std::endl;
+//     std::cout << "========================================================\n"
+//               << std::endl;
+// }
 
 void EBVO::Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_pair> &temporal_edge_mates,
-                                               size_t frame_idx, const std::string &stage_name)
+                                               size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates)
 {
-    //> For each temporal_edge_pair: recall = 1 if candidates contain at least one veridical; precision = |veridical in candidates| / |candidates|; ambiguity = |candidates|. Average over all pairs.
-    const size_t N = temporal_edge_mates.size();
-    if (N == 0)
+    if (temporal_edge_mates.empty())
     {
-        std::cout << "Temporal Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx << " (no pairs)" << std::endl;
+        std::cout << "Temporal Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx << std::endl;
+        std::cout << " (NO PAIRS FOUND)" << std::endl;
         std::cout << "========================================================\n" << std::endl;
         return;
     }
 
-    double sum_recall = 0.0;
-    double sum_precision = 0.0;
-    double sum_ambiguity = 0.0;
-
+    double recall_per_temporal_image = 0.0;
+    double precision_per_temporal_image = 0.0;
+    double ambiguity_per_temporal_image = 0.0;
     for (const temporal_edge_pair &tp : temporal_edge_mates)
     {
         const std::vector<int> &candidates = tp.candidate_CF_stereo_edge_mate_indices;
@@ -1411,25 +1444,25 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_p
                 num_veridical_in_candidates++;
         }
 
-        double recall_i = (num_veridical_in_candidates >= 1) ? 1.0 : 0.0;
-        double precision_i = (candidates.empty()) ? 0.0 : (static_cast<double>(num_veridical_in_candidates) / static_cast<double>(candidates.size()));
-        double ambiguity_i = static_cast<double>(candidates.size());
+        double recall_per_edge = (num_veridical_in_candidates >= 1) ? 1.0 : 0.0;
+        double precision_per_edge = (candidates.empty()) ? 0.0 : (static_cast<double>(num_veridical_in_candidates) / static_cast<double>(candidates.size()));
+        double ambiguity_per_edge = static_cast<double>(candidates.size());
 
-        sum_recall += recall_i;
-        sum_precision += precision_i;
-        sum_ambiguity += ambiguity_i;
+        recall_per_temporal_image += recall_per_edge;
+        precision_per_temporal_image += precision_per_edge;
+        ambiguity_per_temporal_image += ambiguity_per_edge;
     }
 
-    double recall_per_image = sum_recall / static_cast<double>(N);
-    double precision_per_image = sum_precision / static_cast<double>(N);
-    double ambiguity_avg = sum_ambiguity / static_cast<double>(N);
+    double recall_per_image = recall_per_temporal_image / static_cast<double>(temporal_edge_mates.size());
+    double precision_per_image = precision_per_temporal_image / static_cast<double>(temporal_edge_mates.size());
+    double ambiguity_avg = ambiguity_per_temporal_image / static_cast<double>(temporal_edge_mates.size());
 
-    std::cout << "Temporal Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx << std::endl;
+    std::cout << "Temporal Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx;
+    std::cout << " (Side: " << which_side_of_temporal_edge_mates << ")" << std::endl;
     std::cout << "- Recall rate:       " << std::fixed << std::setprecision(8) << recall_per_image << std::endl;
     std::cout << "- Precision rate:    " << std::fixed << std::setprecision(8) << precision_per_image << std::endl;
     std::cout << "- Average ambiguity: " << std::fixed << std::setprecision(8) << ambiguity_avg << std::endl;
-    std::cout << "========================================================\n"
-              << std::endl;
+    std::cout << "========================================================\n" << std::endl;
 }
 
 void EBVO::augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::pair<cv::Mat, cv::Mat>> &edge_descriptors, bool is_left)

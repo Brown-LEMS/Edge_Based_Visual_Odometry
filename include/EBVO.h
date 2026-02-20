@@ -43,7 +43,10 @@ public:
 
     //> filtering methods
     void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
-    void apply_orientation_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double orientation_threshold, bool is_left);
+    // void apply_orientation_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double orientation_threshold, bool is_left);
+    void apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
+                                     const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
+                                     double orientation_threshold, bool b_is_left);
 
     void apply_SIFT_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double sift_dist_threshold, bool is_left);
     void apply_NCC_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, const Stereo_Edge_Pairs &keyframe_stereo, const Stereo_Edge_Pairs &current_stereo, double ncc_val_threshold,
@@ -71,11 +74,11 @@ public:
                                                    Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
                                                    SpatialGrid &spatial_grid, bool b_is_left, double gt_dist_threshold = 1.0);
     //> Evaluations
-    void Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &KF_CF_edge_pairs,
-                                             Stereo_Edge_Pairs &keyframe_stereo, Stereo_Edge_Pairs &current_stereo,
-                                             size_t frame_idx, const std::string &stage_name);
+    // void Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &KF_CF_edge_pairs,
+    //                                          Stereo_Edge_Pairs &keyframe_stereo, Stereo_Edge_Pairs &current_stereo,
+    //                                          size_t frame_idx, const std::string &stage_name);
     void Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_pair> &temporal_edge_mates,
-                                             size_t frame_idx, const std::string &stage_name);
+                                             size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates);
 
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
 
