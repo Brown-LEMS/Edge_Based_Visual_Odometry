@@ -56,7 +56,8 @@ public:
                              const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                              double ncc_val_threshold,
                              const cv::Mat &keyframe_image, const cv::Mat &current_image, bool b_is_left);
-    void apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC);
+    // void apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC);
+    void apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, double threshold, const std::string scoring_type);
 
     void min_Edge_Photometric_Residual_by_Gauss_Newton(
         /* inputs */

@@ -201,10 +201,17 @@ void EBVO::PerformEdgeBasedVO()
             apply_SIFT_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, 500.0, false);
             Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "SIFT Filtering", "Right");
 
-            // apply_best_nearly_best_filtering(KF_CF_edge_pairs_left, 0.8, true);
-            // Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "BNB NCC Filtering");
-            // apply_best_nearly_best_filtering(KF_CF_edge_pairs_left, 0.3, false);
-            // Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "BNB SIFT Filtering");
+            //> Stage 5: Best-Nearly-Best filtering (NCC scoring)
+            apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.8, "NCC");
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Left");
+            apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.8, "NCC");
+            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Right");
+
+            //> Stage 6: Best-Nearly-Best filtering (SIFT scoring)
+            apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.4, "SIFT");
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Left");
+            apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.4, "SIFT");
+            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Right");
 
             // //> Stage 4: Stereo consistency filtering
             // apply_stereo_filtering(KF_CF_edge_pairs_left, KF_CF_edge_pairs_right,
@@ -751,85 +758,143 @@ void EBVO::apply_SIFT_filtering(std::vector<temporal_edge_pair> &temporal_edge_m
     }
 }
 
-void EBVO::apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC)
+// void EBVO::apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC)
+// {
+//     std::string test_name = is_NCC ? "BNB_NCC" : "BNB_SIFT";
+
+//     // Get the correct edge vector based on is_left flag
+//     const std::vector<Edge> &kf_edges = KF_CF_edge_pairs.is_left ? kf_edges_left : kf_edges_right;
+
+// #pragma omp parallel
+//     {
+// #pragma omp for schedule(dynamic)
+//         for (int i = 0; i < static_cast<int>(KF_CF_edge_pairs.kf_edges.size()); ++i)
+//         {
+
+//             int edge_idx = KF_CF_edge_pairs.kf_edges[i];
+//             // Bounds check to prevent segfault
+//             if (edge_idx < 0 || edge_idx >= static_cast<int>(kf_edges.size()))
+//             {
+//                 continue;
+//             }
+
+//             Edge left_edge = kf_edges[edge_idx];
+//             int stereo_idx = KF_CF_edge_pairs.key_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(KF_CF_edge_pairs.kf_edges[i]);
+//             auto &m_ind = KF_CF_edge_pairs.matching_cf_edges_indices[i];
+//             size_t num_clusters = m_ind.size();
+
+//             if (num_clusters < 2)
+//                 continue;
+
+//             // 1. Create an index map to sort clusters based on score without losing original indices
+//             // Assuming higher score is better (NCC). If SIFT (lower better), flip the comparison logic.
+//             std::vector<size_t> indices(num_clusters);
+//             std::iota(indices.begin(), indices.end(), 0);
+//             if (is_NCC)
+//                 std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
+//                           { return KF_CF_edge_pairs.matching_scores[i][a].ncc_score > KF_CF_edge_pairs.matching_scores[i][b].ncc_score; });
+//             else
+//                 std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
+//                           { return KF_CF_edge_pairs.matching_scores[i][a].sift_score < KF_CF_edge_pairs.matching_scores[i][b].sift_score; });
+//             // 2. Determine how many candidates pass the recursive ratio test
+//             size_t keep_count = 1; // Always keep the best
+
+//             double best_score = is_NCC ? KF_CF_edge_pairs.matching_scores[i][indices[0]].ncc_score : KF_CF_edge_pairs.matching_scores[i][indices[0]].sift_score;
+
+//             for (size_t j = 0; j < num_clusters - 1; ++j)
+//             {
+//                 double next_score = is_NCC ? KF_CF_edge_pairs.matching_scores[i][indices[j + 1]].ncc_score : KF_CF_edge_pairs.matching_scores[i][indices[j + 1]].sift_score;
+//                 if (best_score == 0)
+//                     break;
+//                 // Ratio: next_best / current_best
+//                 // If the ratio is high (e.g., 0.9), they are "nearly best."
+//                 // If the ratio is low (e.g., 0.4), the next one is significantly worse.
+
+//                 double ratio = is_NCC ? next_score / best_score : best_score / next_score;
+//                 if (ratio >= threshold)
+//                 {
+//                     keep_count++;
+//                 }
+//                 else
+//                 {
+//                     break; // Significant drop detected, stop including further matches
+//                 }
+//             }
+
+//             // 3. If we aren't keeping everything, rebuild the vectors
+//             if (keep_count < num_clusters)
+//             {
+
+//                 std::vector<int> surviving_cf_matches;
+//                 std::vector<scores> surviving_scores;
+
+//                 for (size_t k = 0; k < keep_count; ++k)
+//                 {
+//                     size_t idx = indices[k];
+//                     surviving_cf_matches.push_back(KF_CF_edge_pairs.matching_cf_edges_indices[i][idx]);
+//                     surviving_scores.push_back(KF_CF_edge_pairs.matching_scores[i][idx]);
+//                 }
+//                 KF_CF_edge_pairs.matching_cf_edges_indices[i] = std::move(surviving_cf_matches);
+//                 KF_CF_edge_pairs.matching_scores[i] = std::move(surviving_scores);
+//             }
+//         }
+//     }
+// }
+
+void EBVO::apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, double threshold, const std::string scoring_type)
 {
-    std::string test_name = is_NCC ? "BNB_NCC" : "BNB_SIFT";
-
-    // Get the correct edge vector based on is_left flag
-    const std::vector<Edge> &kf_edges = KF_CF_edge_pairs.is_left ? kf_edges_left : kf_edges_right;
-
-#pragma omp parallel
+    bool is_NCC = scoring_type == "NCC";
+#pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < static_cast<int>(temporal_edge_mates.size()); ++i)
     {
-#pragma omp for schedule(dynamic)
-        for (int i = 0; i < static_cast<int>(KF_CF_edge_pairs.kf_edges.size()); ++i)
+        temporal_edge_pair &tp = temporal_edge_mates[i];
+        size_t num_of_clusters = tp.candidate_CF_stereo_edge_mate_indices.size();
+
+        if (num_of_clusters < 2)
+            continue;
+
+        std::vector<size_t> indices(num_of_clusters);
+        std::iota(indices.begin(), indices.end(), 0);
+        if (is_NCC)
         {
+            std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
+                      { return tp.matching_scores[a].ncc_score > tp.matching_scores[b].ncc_score; });
+        }
+        else
+        {
+            std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
+                      { return tp.matching_scores[a].sift_score < tp.matching_scores[b].sift_score; });
+        }
 
-            int edge_idx = KF_CF_edge_pairs.kf_edges[i];
-            // Bounds check to prevent segfault
-            if (edge_idx < 0 || edge_idx >= static_cast<int>(kf_edges.size()))
-            {
-                continue;
-            }
-
-            Edge left_edge = kf_edges[edge_idx];
-            int stereo_idx = KF_CF_edge_pairs.key_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(KF_CF_edge_pairs.kf_edges[i]);
-            auto &m_ind = KF_CF_edge_pairs.matching_cf_edges_indices[i];
-            size_t num_clusters = m_ind.size();
-
-            if (num_clusters < 2)
-                continue;
-
-            // 1. Create an index map to sort clusters based on score without losing original indices
-            // Assuming higher score is better (NCC). If SIFT (lower better), flip the comparison logic.
-            std::vector<size_t> indices(num_clusters);
-            std::iota(indices.begin(), indices.end(), 0);
-            if (is_NCC)
-                std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
-                          { return KF_CF_edge_pairs.matching_scores[i][a].ncc_score > KF_CF_edge_pairs.matching_scores[i][b].ncc_score; });
+        size_t keep_count = 1;
+        double best_score = is_NCC ? tp.matching_scores[indices[0]].ncc_score : tp.matching_scores[indices[0]].sift_score;
+        for (size_t j = 0; j < num_of_clusters - 1; ++j)
+        {
+            double next_score = is_NCC ? tp.matching_scores[indices[j + 1]].ncc_score : tp.matching_scores[indices[j + 1]].sift_score;
+            if (best_score == 0)
+                break;
+            double ratio = is_NCC ? next_score / best_score : best_score / next_score;
+            if (ratio >= threshold)
+                keep_count++;
             else
-                std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
-                          { return KF_CF_edge_pairs.matching_scores[i][a].sift_score < KF_CF_edge_pairs.matching_scores[i][b].sift_score; });
-            // 2. Determine how many candidates pass the recursive ratio test
-            size_t keep_count = 1; // Always keep the best
+                break;
+        }
 
-            double best_score = is_NCC ? KF_CF_edge_pairs.matching_scores[i][indices[0]].ncc_score : KF_CF_edge_pairs.matching_scores[i][indices[0]].sift_score;
-
-            for (size_t j = 0; j < num_clusters - 1; ++j)
+        if (keep_count < num_of_clusters)
+        {
+            std::vector<int> surviving_candidates;
+            std::vector<scores> surviving_scores;
+            surviving_candidates.reserve(keep_count);
+            surviving_scores.reserve(keep_count);
+            for (size_t k = 0; k < keep_count; ++k)
             {
-                double next_score = is_NCC ? KF_CF_edge_pairs.matching_scores[i][indices[j + 1]].ncc_score : KF_CF_edge_pairs.matching_scores[i][indices[j + 1]].sift_score;
-                if (best_score == 0)
-                    break;
-                // Ratio: next_best / current_best
-                // If the ratio is high (e.g., 0.9), they are "nearly best."
-                // If the ratio is low (e.g., 0.4), the next one is significantly worse.
-
-                double ratio = is_NCC ? next_score / best_score : best_score / next_score;
-                if (ratio >= threshold)
-                {
-                    keep_count++;
-                }
-                else
-                {
-                    break; // Significant drop detected, stop including further matches
-                }
+                size_t idx = indices[k];
+                int cf_stereo_mate_idx = tp.candidate_CF_stereo_edge_mate_indices[idx];
+                surviving_candidates.push_back(cf_stereo_mate_idx);
+                surviving_scores.push_back(tp.matching_scores[idx]);
             }
-
-            // 3. If we aren't keeping everything, rebuild the vectors
-            if (keep_count < num_clusters)
-            {
-
-                std::vector<int> surviving_cf_matches;
-                std::vector<scores> surviving_scores;
-
-                for (size_t k = 0; k < keep_count; ++k)
-                {
-                    size_t idx = indices[k];
-                    surviving_cf_matches.push_back(KF_CF_edge_pairs.matching_cf_edges_indices[i][idx]);
-                    surviving_scores.push_back(KF_CF_edge_pairs.matching_scores[i][idx]);
-                }
-                KF_CF_edge_pairs.matching_cf_edges_indices[i] = std::move(surviving_cf_matches);
-                KF_CF_edge_pairs.matching_scores[i] = std::move(surviving_scores);
-            }
+            tp.candidate_CF_stereo_edge_mate_indices = std::move(surviving_candidates);
+            tp.matching_scores = std::move(surviving_scores);
         }
     }
 }
