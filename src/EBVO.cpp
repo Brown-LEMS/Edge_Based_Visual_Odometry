@@ -121,10 +121,8 @@ void EBVO::PerformEdgeBasedVO()
             Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_left, frame_idx);
 
             //> Finalize the stereo edge pairs for the keyframe
-            stereo_edge_matcher.construct_candidate_set(last_keyframe_stereo_left, keyframe_stereo_edge_pairs);
+            stereo_edge_matcher.finalize_stereo_edge_mates(last_keyframe_stereo_left, keyframe_stereo_edge_pairs);
 
-            if (!last_keyframe_stereo_left.b_is_size_consistent())
-                last_keyframe_stereo_left.print_size_consistency();
             b_is_keyframe = false;
         }
         else
@@ -149,13 +147,8 @@ void EBVO::PerformEdgeBasedVO()
             Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, current_frame_stereo_left, frame_idx);
 
             //> Finalize the stereo edge pairs for the keyframe
-            stereo_edge_matcher.construct_candidate_set(current_frame_stereo_left, current_frame_stereo_edge_pairs);
-            // stereo_edge_matcher.construct_candidate_set(current_frame_stereo_left, cf_edges_right, cf_right_eval);
-            // std::cout << "Size of candidate set = " << cf_edges_right.size() << std::endl;
-            //> extract SIFT descriptor for each left edge of current_frame_stereo
-            // stereo_edge_matcher.augment_Edge_Data(current_frame_stereo_left, true);
-            if (!current_frame_stereo_left.b_is_size_consistent())
-                current_frame_stereo_left.print_size_consistency();
+            stereo_edge_matcher.finalize_stereo_edge_mates(current_frame_stereo_left, current_frame_stereo_edge_pairs);
+
 
             add_edges_to_spatial_grid(current_frame_stereo_left, left_grid, true);
             std::cout << "Finish adding left edges of the current frame to spatial grid with cell size " << GRID_SIZE << std::endl;

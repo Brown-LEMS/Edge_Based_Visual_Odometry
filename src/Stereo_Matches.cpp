@@ -1351,13 +1351,31 @@ void Stereo_Matches::remove_empty_clusters(Stereo_Edge_Pairs &stereo_frame_edge_
     }
 }
 
-void Stereo_Matches::construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<final_stereo_edge_pair> &final_stereo_edge_pairs)
+void Stereo_Matches::finalize_stereo_edge_mates(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<final_stereo_edge_pair> &final_stereo_edge_pairs)
 {
-    cv::Mat right_image;
-    stereo_frame_edge_pairs.stereo_frame->right_image.convertTo(right_image, CV_64F);
+    cv::Mat right_image = stereo_frame_edge_pairs.stereo_frame->right_image_undistorted;
+    cv::Mat right_image_64f;
+    stereo_frame_edge_pairs.stereo_frame->right_image_undistorted.convertTo(right_image_64f, CV_64F);
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
 
+    //> First, check to see if the vector sizes are consistent
+    if (stereo_frame_edge_pairs.focused_edge_indices.size() != stereo_frame_edge_pairs.matching_edge_clusters.size() ||
+        stereo_frame_edge_pairs.focused_edge_indices.size() != stereo_frame_edge_pairs.Gamma_in_left_cam_coord.size() ||
+        stereo_frame_edge_pairs.focused_edge_indices.size() != stereo_frame_edge_pairs.Gamma_in_right_cam_coord.size() ||
+        stereo_frame_edge_pairs.focused_edge_indices.size() != stereo_frame_edge_pairs.left_edge_patches.size() ||
+        stereo_frame_edge_pairs.focused_edge_indices.size() != stereo_frame_edge_pairs.left_edge_descriptors.size() ||
+        stereo_frame_edge_pairs.focused_edge_indices.size() != stereo_frame_edge_pairs.GT_locations_from_left_edges.size())
+    {
+        LOG_ERROR("Vector sizes are not consistent in finalize_stereo_edge_mates");
+        return;
+    }
+
     final_stereo_edge_pairs.clear();
+    final_stereo_edge_pairs.resize(stereo_frame_edge_pairs.focused_edge_indices.size());
+
+#pragma omp parallel
+{
+    #pragma omp for schedule(dynamic)
     for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
     {
         final_stereo_edge_pair stereo_mate;
@@ -1370,7 +1388,7 @@ void Stereo_Matches::construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edg
 
         //> Left and right edge patches
         stereo_mate.left_edge_patches = stereo_frame_edge_pairs.left_edge_patches[i];
-        stereo_mate.right_edge_patches = utility_tool->get_edge_patches(right_edge, right_image);
+        stereo_mate.right_edge_patches = utility_tool->get_edge_patches(right_edge, right_image_64f);
 
         //> Left and right edge descriptors
         stereo_mate.left_edge_descriptors = stereo_frame_edge_pairs.left_edge_descriptors[i];
@@ -1393,6 +1411,9 @@ void Stereo_Matches::construct_candidate_set(Stereo_Edge_Pairs &stereo_frame_edg
         stereo_mate.b_is_TP = (cv::norm(right_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH) ? (true) : (false);
     
         //> Push back the stereo edge pair
-        final_stereo_edge_pairs.push_back(stereo_mate);
+        final_stereo_edge_pairs[i] = stereo_mate;
     }
+}
+
+    std::cout << "Size of finalized stereo edge pairs = " << final_stereo_edge_pairs.size() << std::endl;
 }
