@@ -48,7 +48,10 @@ public:
                                      const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                      double orientation_threshold, bool b_is_left);
 
-    void apply_SIFT_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double sift_dist_threshold, bool is_left);
+    // void apply_SIFT_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double sift_dist_threshold, bool is_left);
+    void apply_SIFT_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
+                             const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
+                             double sift_dist_threshold, bool b_is_left);
     void apply_NCC_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                              const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                              double ncc_val_threshold,
