@@ -41,8 +41,8 @@ void EBVO::PerformEdgeBasedVO()
     Stereo_Matches stereo_edge_matcher;
 
     //> Final 1-1 stereo edge pairs for keyframe and current frame
-    std::vector<final_stereo_edge_pair> keyframe_stereo_edge_pairs;
-    std::vector<final_stereo_edge_pair> current_frame_stereo_edge_pairs;
+    std::vector<final_stereo_edge_pair> keyframe_stereo_edge_mates;
+    std::vector<final_stereo_edge_pair> current_frame_stereo_edge_mates;
 
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
 
@@ -84,8 +84,8 @@ void EBVO::PerformEdgeBasedVO()
             TOED = std::shared_ptr<ThirdOrderEdgeDetectionCPU>(new ThirdOrderEdgeDetectionCPU(dataset.get_height(), dataset.get_width()));
 
             // Initialize the spatial grids with a cell size of defined GRID_SIZE
-            left_grid = SpatialGrid(dataset.get_width(), dataset.get_height(), GRID_SIZE);
-            right_grid = SpatialGrid(dataset.get_width(), dataset.get_height(), GRID_SIZE);
+            left_spatial_grids = SpatialGrid(dataset.get_width(), dataset.get_height(), GRID_SIZE);
+            right_spatial_grids = SpatialGrid(dataset.get_width(), dataset.get_height(), GRID_SIZE);
         }
 
         ProcessEdges(left_cur_undistorted, TOED, dataset.left_edges);
@@ -121,7 +121,7 @@ void EBVO::PerformEdgeBasedVO()
             Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_left, frame_idx);
 
             //> Finalize the stereo edge pairs for the keyframe
-            stereo_edge_matcher.finalize_stereo_edge_mates(last_keyframe_stereo_left, keyframe_stereo_edge_pairs);
+            stereo_edge_matcher.finalize_stereo_edge_mates(last_keyframe_stereo_left, keyframe_stereo_edge_mates);
 
             b_is_keyframe = false;
         }
@@ -147,28 +147,26 @@ void EBVO::PerformEdgeBasedVO()
             Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, current_frame_stereo_left, frame_idx);
 
             //> Finalize the stereo edge pairs for the keyframe
-            stereo_edge_matcher.finalize_stereo_edge_mates(current_frame_stereo_left, current_frame_stereo_edge_pairs);
+            stereo_edge_matcher.finalize_stereo_edge_mates(current_frame_stereo_left, current_frame_stereo_edge_mates);
 
-
-            add_edges_to_spatial_grid(current_frame_stereo_left, left_grid, true);
-            std::cout << "Finish adding left edges of the current frame to spatial grid with cell size " << GRID_SIZE << std::endl;
-            add_edges_to_spatial_grid(current_frame_stereo_left, right_grid, false);
-            std::cout << "Finish adding right edges of the current frame to spatial grid with cell size " << GRID_SIZE << std::endl;
+            //> Assign edges to spatial grids
+            add_edges_to_spatial_grid(current_frame_stereo_edge_mates, left_spatial_grids, right_spatial_grids);
+            std::cout << "Finish adding left and right edges of the current frame to spatial grid with cell size " << GRID_SIZE << std::endl;
             //> Construct correspondences structure between last keyframe and the current frame
             KF_CF_EdgeCorrespondence KF_CF_edge_pairs_left, KF_CF_edge_pairs_right;
 
             // Use ALL-edges grid for temporal matching
-            Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, left_grid, true);
+            Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, left_spatial_grids, true);
             std::cout << "Size of veridical edge pairs (left) = " << KF_CF_edge_pairs_left.kf_edges.size() << std::endl;
             // Use ALL-edges grid for temporal matching
-            Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, right_grid, false);
+            Find_Veridical_Edge_Correspondences_on_CF(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, right_spatial_grids, false);
             std::cout << "Size of veridical edge pairs (right) = " << KF_CF_edge_pairs_right.kf_edges.size() << std::endl;
 
             //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             //> Stage 1: Apply spatial grid to the current frame
-            apply_spatial_grid_filtering(KF_CF_edge_pairs_left, left_grid, 30.0);
+            apply_spatial_grid_filtering(KF_CF_edge_pairs_left, left_spatial_grids, 30.0);
             Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Spatial Grid");
-            apply_spatial_grid_filtering(KF_CF_edge_pairs_right, right_grid, 30.0);
+            apply_spatial_grid_filtering(KF_CF_edge_pairs_right, right_spatial_grids, 30.0);
             Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_right, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Spatial Grid");
 
             // //> Stage 2: Do orientation filtering
@@ -210,45 +208,42 @@ void EBVO::PerformEdgeBasedVO()
     }
 }
 
-void EBVO::add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid, bool is_left)
+void EBVO::add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids)
 {
-    //> Add left edges to spatial grid. This is done on the current image only.
-    const std::vector<int> &left_toed_index = stereo_frame.focused_edge_indices;
-    stereo_frame.grid_indices.resize(left_toed_index.size());
-
-    // Pre-compute grid cell assignments in parallel (read-only, no race conditions)
-    std::vector<std::pair<int, int>> edge_to_grid(left_toed_index.size()); // <edge_idx, grid_cell_idx>
+    // Pre-compute grid cell assignments in parallel (read-only)
+    std::vector<std::pair<int, int>> left_edge_to_grid(stereo_edge_mates.size());
+    std::vector<std::pair<int, int>> right_edge_to_grid(stereo_edge_mates.size());
 
 #pragma omp parallel for schedule(dynamic)
-    for (int i = 0; i < static_cast<int>(left_toed_index.size()); ++i)
+    for (int i = 0; i < static_cast<int>(stereo_edge_mates.size()); ++i)
     {
-        cv::Point2d edge_location = stereo_frame.get_focused_edge_by_Stereo_Edge_Pairs_index(i).location;
-        is_left ? edge_location = edge_location : edge_location = stereo_frame.matching_edge_clusters[i].edge_clusters[0].center_edge.location; //> at this point left edge has one and only one correspondence in the right edge
-        int grid_x = static_cast<int>(edge_location.x) / spatial_grid.cell_size;
-        int grid_y = static_cast<int>(edge_location.y) / spatial_grid.cell_size;
+        const cv::Point2d &left_loc = stereo_edge_mates[i].left_edge.location;
+        const cv::Point2d &right_loc = stereo_edge_mates[i].right_edge.location;
 
-        if (grid_x >= 0 && grid_x < spatial_grid.grid_width &&
-            grid_y >= 0 && grid_y < spatial_grid.grid_height)
-        {
-            int grid_idx = grid_y * spatial_grid.grid_width + grid_x;
-            edge_to_grid[i] = {i, grid_idx};
-            stereo_frame.grid_indices[i] = grid_idx;
-        }
+        int lx = static_cast<int>(left_loc.x) / left_spatial_grids.cell_size;
+        int ly = static_cast<int>(left_loc.y) / left_spatial_grids.cell_size;
+        if (lx >= 0 && lx < left_spatial_grids.grid_width && ly >= 0 && ly < left_spatial_grids.grid_height)
+            left_edge_to_grid[i] = {i, ly * left_spatial_grids.grid_width + lx};
         else
-        {
-            edge_to_grid[i] = {i, -1}; // Mark as invalid
-            stereo_frame.grid_indices[i] = -1;
-        }
+            left_edge_to_grid[i] = {i, -1};
+
+        int rx = static_cast<int>(right_loc.x) / right_spatial_grids.cell_size;
+        int ry = static_cast<int>(right_loc.y) / right_spatial_grids.cell_size;
+        if (rx >= 0 && rx < right_spatial_grids.grid_width && ry >= 0 && ry < right_spatial_grids.grid_height)
+            right_edge_to_grid[i] = {i, ry * right_spatial_grids.grid_width + rx};
+        else
+            right_edge_to_grid[i] = {i, -1};
     }
 
-    for (int i = 0; i < static_cast<int>(left_toed_index.size()); ++i)
+    for (size_t i = 0; i < stereo_edge_mates.size(); ++i)
     {
-        int grid_idx = edge_to_grid[i].second;
-        if (grid_idx >= 0 && grid_idx < static_cast<int>(spatial_grid.grid.size()))
-        {
-            int idx_to_store = is_left ? left_toed_index[i] : i;
-            spatial_grid.grid[grid_idx].push_back(idx_to_store); // Store actual TOED edge index or the representative indices
-        }
+        int left_grid_idx = left_edge_to_grid[i].second;
+        if (left_grid_idx >= 0 && left_grid_idx < static_cast<int>(left_spatial_grids.grid.size()))
+            left_spatial_grids.grid[left_grid_idx].push_back(i);
+
+        int right_grid_idx = right_edge_to_grid[i].second;
+        if (right_grid_idx >= 0 && right_grid_idx < static_cast<int>(right_spatial_grids.grid.size()))
+            right_spatial_grids.grid[right_grid_idx].push_back(i);
     }
 }
 

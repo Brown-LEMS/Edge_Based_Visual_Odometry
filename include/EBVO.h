@@ -39,7 +39,7 @@ public:
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
     void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::Mat occlusion_mask, bool is_left, Stereo_Edge_Pairs &stereo_frame_edge_pairs);
-    void add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame, SpatialGrid &spatial_grid, bool is_left);
+    void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids);
 
     //> filtering methods
     void apply_spatial_grid_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, SpatialGrid &spatial_grid, double grid_radius = 1.0);
@@ -86,8 +86,8 @@ private:
     std::shared_ptr<ThirdOrderEdgeDetectionCPU> TOED = nullptr;
     //> JH: dataset we are working on and its corresponding spatial grid
     Dataset dataset;
-    SpatialGrid left_grid;
-    SpatialGrid right_grid;
+    SpatialGrid left_spatial_grids;
+    SpatialGrid right_spatial_grids;
     //> third order edges
     std::vector<Edge> kf_edges_left;  //> 3rd order edges in the keyframe-left
     std::vector<Edge> kf_edges_right; //> Representative edges in the keyframe-right

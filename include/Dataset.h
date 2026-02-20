@@ -342,20 +342,9 @@ struct final_stereo_edge_pair
 
 struct temporal_edge_pair
 {
-    Edge KF_left_edge;
-    Edge KF_right_edge;
-    Edge CF_left_edge;
-    Edge CF_right_edge;
-
-    std::pair<cv::Mat, cv::Mat> KF_left_edge_patches;
-    std::pair<cv::Mat, cv::Mat> KF_right_edge_patches;
-    std::pair<cv::Mat, cv::Mat> CF_left_edge_patches;
-    std::pair<cv::Mat, cv::Mat> CF_right_edge_patches;
-
-    std::pair<cv::Mat, cv::Mat> KF_left_edge_descriptors;
-    std::pair<cv::Mat, cv::Mat> KF_right_edge_descriptors;
-    std::pair<cv::Mat, cv::Mat> CF_left_edge_descriptors;
-    std::pair<cv::Mat, cv::Mat> CF_right_edge_descriptors;
+    //> pointers to the stereo edge pairs
+    const final_stereo_edge_pair *KF_stereo_edge_mate;
+    const final_stereo_edge_pair *CF_stereo_edge_mate;
 };
 
 struct scores
