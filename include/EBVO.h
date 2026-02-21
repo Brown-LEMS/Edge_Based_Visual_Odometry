@@ -67,6 +67,8 @@ public:
                                       const StereoFrame &keyframe, const StereoFrame &current_frame,
                                       bool b_is_left);
 
+    void apply_temporal_edge_clustering(std::vector<temporal_edge_pair> &temporal_edge_mates, bool b_cluster_by_orientation = true);
+
     void min_Edge_Photometric_Residual_by_Gauss_Newton(
         /* inputs */
         Edge kf_edge, Edge cf_edge, Eigen::Vector2d init_disp, const cv::Mat &kf_image_undistorted,

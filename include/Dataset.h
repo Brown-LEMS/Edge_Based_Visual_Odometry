@@ -325,12 +325,13 @@ struct scores
 //> One CF candidate per cluster. This mirrors EdgeCluster in stereo matching.
 struct Temporal_CF_Edge_Cluster
 {
-    int cf_stereo_edge_mate_index;          //> index into CF_stereo_edge_mates, when one CF edge is one cluster
-    Edge center_edge;                       //> CF edge (left or right) in the cluster; refined location stored here
-    std::vector<Edge> contributing_edges;   //> CF edges that contribute to the cluster
-    scores matching_scores;                 //> matching scores (either NCC or SIFT) of the cluster
-    double refine_final_score = 1e6;        //> populated by photometric refinement
-    bool refine_validity = false;           //> populated by photometric refinement
+    int cf_stereo_edge_mate_index;                    //> primary index (used when cluster has one candidate)
+    std::vector<int> contributing_cf_stereo_indices;  //> all cf indices in merged cluster; for mate consistency intersection
+    Edge center_edge;                                 //> CF edge (left or right) in the cluster; refined location stored here
+    std::vector<Edge> contributing_edges;             //> CF edges that contribute to the cluster
+    scores matching_scores;                           //> matching scores (either NCC or SIFT) of the cluster
+    double refine_final_score = 1e6;                  //> populated by photometric refinement
+    bool refine_validity = false;                     //> populated by photometric refinement
 };
 
 struct temporal_edge_pair

@@ -5,6 +5,8 @@
 #include <chrono>
 #include <omp.h>
 #include "EBVO.h"
+#include "EdgeClusterer.h"
+#include "definitions.h"
 #include <opencv2/core/eigen.hpp>
 
 EBVO::EBVO(YAML::Node config_map) : dataset(config_map) {}
@@ -213,16 +215,22 @@ void EBVO::PerformEdgeBasedVO()
             apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.3, "SIFT");
             Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Right");
 
-            //> Stage 7: Mate consistency filtering
-            apply_mate_consistency_filtering(left_temporal_edge_mates, right_temporal_edge_mates);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Left");
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Right");
-
-            //> Stage 8: Photometric refinement
+            //> Stage 7: Photometric refinement
             apply_photometric_refinement(left_temporal_edge_mates, current_frame_stereo_edge_mates, last_keyframe, current_frame, true);
             apply_photometric_refinement(right_temporal_edge_mates, current_frame_stereo_edge_mates, last_keyframe, current_frame, false);
             Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Photometric Refinement", "Left");
             Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Photometric Refinement", "Right");
+
+            //> Stage 8: Temporal edge clustering (merge nearby CF candidates per KF mate)
+            apply_temporal_edge_clustering(left_temporal_edge_mates, true);
+            apply_temporal_edge_clustering(right_temporal_edge_mates, true);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Left");
+            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Right");
+
+            //> Stage 9: Mate consistency filtering
+            apply_mate_consistency_filtering(left_temporal_edge_mates, right_temporal_edge_mates);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Left");
+            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Right");
 
             break;
         }
@@ -347,6 +355,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(
 
                 Temporal_CF_Edge_Cluster cluster;
                 cluster.cf_stereo_edge_mate_index = curr_e_index;
+                cluster.contributing_cf_stereo_indices = {curr_e_index};
                 cluster.center_edge = cf_edge;
                 cluster.matching_scores = score;
                 clusters.push_back(std::move(cluster));
@@ -635,6 +644,7 @@ void EBVO::apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &tempora
         {
             Temporal_CF_Edge_Cluster cluster;
             cluster.cf_stereo_edge_mate_index = cf_stereo_idx;
+            cluster.contributing_cf_stereo_indices = {cf_stereo_idx};
             cluster.center_edge = b_is_left ? CF_stereo_edge_mates[cf_stereo_idx].left_edge : CF_stereo_edge_mates[cf_stereo_idx].right_edge;
             cluster.matching_scores = scores{-1.0, 900.0};
             clusters.push_back(std::move(cluster));
@@ -954,8 +964,82 @@ void EBVO::apply_photometric_refinement(std::vector<temporal_edge_pair> &tempora
                 cluster.center_edge.location.x = kf_edge.location.x - refined_disp[0];
                 cluster.center_edge.location.y = kf_edge.location.y - refined_disp[1];
             }
-            // else: keep original center_edge.location (from cf_edge) so evaluation uses unfiltered location
         }
+    }
+}
+
+void EBVO::apply_temporal_edge_clustering(std::vector<temporal_edge_pair> &temporal_edge_mates, bool b_cluster_by_orientation)
+{
+    //> Cluster nearby CF edge candidates per temporal pair, mirroring consolidate_redundant_edge_hypothesis in stereo
+    for (temporal_edge_pair &tp : temporal_edge_mates)
+    {
+        if (tp.matching_CF_edge_clusters.size() < 2)
+            continue;
+
+        std::vector<Edge> shifted_edges;
+        std::vector<int> cf_indices;
+        std::vector<double> refine_scores;
+        shifted_edges.reserve(tp.matching_CF_edge_clusters.size());
+        cf_indices.reserve(tp.matching_CF_edge_clusters.size());
+        refine_scores.reserve(tp.matching_CF_edge_clusters.size());
+
+        for (const Temporal_CF_Edge_Cluster &cluster : tp.matching_CF_edge_clusters)
+        {
+            shifted_edges.push_back(cluster.center_edge);
+            cf_indices.push_back(cluster.cf_stereo_edge_mate_index);
+            refine_scores.push_back(cluster.refine_final_score);
+        }
+
+        EdgeClusterer edge_cluster_engine(shifted_edges, cf_indices, b_cluster_by_orientation);
+        edge_cluster_engine.setRefineScores(refine_scores);
+        edge_cluster_engine.performClustering();
+
+        //> Map EdgeCluster output back to Temporal_CF_Edge_Cluster structure; pick primary cf_index from merged cluster (best refine score)
+        std::vector<Temporal_CF_Edge_Cluster> new_clusters;
+        new_clusters.reserve(edge_cluster_engine.returned_clusters.size());
+
+        for (const EdgeCluster &ec : edge_cluster_engine.returned_clusters)
+        {
+            Temporal_CF_Edge_Cluster tc;
+            tc.center_edge = ec.center_edge;
+            tc.contributing_edges = ec.contributing_edges;
+
+            //> Collect all cf_indices that contributed to this merged cluster
+            std::unordered_set<int> merged_cf_indices;
+            int best_orig_idx = -1;
+            double best_score = 1e10;
+            for (const Edge &contrib : ec.contributing_edges)
+            {
+                for (size_t i = 0; i < shifted_edges.size(); ++i)
+                {
+                    if (cv::norm(contrib.location - shifted_edges[i].location) < 1e-3)
+                    {
+                        merged_cf_indices.insert(cf_indices[i]);
+                        if (refine_scores[i] < best_score)
+                        {
+                            best_score = refine_scores[i];
+                            best_orig_idx = static_cast<int>(i);
+                        }
+                        break;
+                    }
+                }
+            }
+            tc.contributing_cf_stereo_indices.assign(merged_cf_indices.begin(), merged_cf_indices.end());
+            if (best_orig_idx >= 0)
+            {
+                const Temporal_CF_Edge_Cluster &orig = tp.matching_CF_edge_clusters[best_orig_idx];
+                tc.cf_stereo_edge_mate_index = orig.cf_stereo_edge_mate_index;
+                tc.matching_scores = orig.matching_scores;
+                tc.refine_final_score = orig.refine_final_score;
+                tc.refine_validity = orig.refine_validity;
+            }
+            else
+            {
+                tc.cf_stereo_edge_mate_index = tc.contributing_cf_stereo_indices.empty() ? -1 : tc.contributing_cf_stereo_indices[0];
+            }
+            new_clusters.push_back(std::move(tc));
+        }
+        tp.matching_CF_edge_clusters = std::move(new_clusters);
     }
 }
 
@@ -991,26 +1075,58 @@ void EBVO::apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &lef
 
         std::unordered_set<int> right_cf_indices;
         for (const Temporal_CF_Edge_Cluster &c : right_tp.matching_CF_edge_clusters)
-            right_cf_indices.insert(c.cf_stereo_edge_mate_index);
+        {
+            if (!c.contributing_cf_stereo_indices.empty())
+                for (int idx : c.contributing_cf_stereo_indices)
+                    right_cf_indices.insert(idx);
+            else
+                right_cf_indices.insert(c.cf_stereo_edge_mate_index);
+        }
 
         std::vector<Temporal_CF_Edge_Cluster> left_filtered;
         left_filtered.reserve(left_tp.matching_CF_edge_clusters.size());
         for (Temporal_CF_Edge_Cluster &cluster : left_tp.matching_CF_edge_clusters)
         {
-            if (right_cf_indices.count(cluster.cf_stereo_edge_mate_index))
+            bool has_overlap = false;
+            const auto &left_indices = cluster.contributing_cf_stereo_indices.empty()
+                                          ? std::vector<int>{cluster.cf_stereo_edge_mate_index}
+                                          : cluster.contributing_cf_stereo_indices;
+            for (int idx : left_indices)
+                if (right_cf_indices.count(idx))
+                {
+                    has_overlap = true;
+                    break;
+                }
+            if (has_overlap)
                 left_filtered.push_back(std::move(cluster));
         }
         left_tp.matching_CF_edge_clusters = std::move(left_filtered);
 
         std::unordered_set<int> left_cf_indices;
         for (const Temporal_CF_Edge_Cluster &c : left_tp.matching_CF_edge_clusters)
-            left_cf_indices.insert(c.cf_stereo_edge_mate_index);
+        {
+            if (!c.contributing_cf_stereo_indices.empty())
+                for (int idx : c.contributing_cf_stereo_indices)
+                    left_cf_indices.insert(idx);
+            else
+                left_cf_indices.insert(c.cf_stereo_edge_mate_index);
+        }
 
         std::vector<Temporal_CF_Edge_Cluster> right_filtered;
         right_filtered.reserve(right_tp.matching_CF_edge_clusters.size());
         for (Temporal_CF_Edge_Cluster &cluster : right_tp.matching_CF_edge_clusters)
         {
-            if (left_cf_indices.count(cluster.cf_stereo_edge_mate_index))
+            bool has_overlap = false;
+            const auto &right_indices = cluster.contributing_cf_stereo_indices.empty()
+                                           ? std::vector<int>{cluster.cf_stereo_edge_mate_index}
+                                           : cluster.contributing_cf_stereo_indices;
+            for (int idx : right_indices)
+                if (left_cf_indices.count(idx))
+                {
+                    has_overlap = true;
+                    break;
+                }
+            if (has_overlap)
                 right_filtered.push_back(std::move(cluster));
         }
         right_tp.matching_CF_edge_clusters = std::move(right_filtered);
