@@ -179,9 +179,9 @@ void EBVO::PerformEdgeBasedVO()
             //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             //> Stage 1: Apply spatial grid to the current frame
             apply_spatial_grid_filtering(left_temporal_edge_mates, left_spatial_grids, 30.0, true);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Spatial Grid", "Left");
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Limited Disparity", "Left");
             apply_spatial_grid_filtering(right_temporal_edge_mates, right_spatial_grids, 30.0, false);
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Spatial Grid", "Right");
+            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Limited Disparity", "Right");
 
             //> Stage 2: Do orientation filtering
             apply_orientation_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 35.0, true);
@@ -208,17 +208,16 @@ void EBVO::PerformEdgeBasedVO()
             Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Right");
 
             //> Stage 6: Best-Nearly-Best filtering (SIFT scoring)
-            apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.4, "SIFT");
+            apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.3, "SIFT");
             Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Left");
-            apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.4, "SIFT");
+            apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.3, "SIFT");
             Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Right");
 
-            // //> Stage 4: Stereo consistency filtering
-            // apply_stereo_filtering(KF_CF_edge_pairs_left, KF_CF_edge_pairs_right,
-            //                        last_keyframe_stereo_left, current_frame_stereo_left,
-            //                        last_keyframe_stereo_right, current_frame_stereo_right,
-            //                        frame_idx);
-            // Evaluate_KF_CF_Edge_Correspondences(KF_CF_edge_pairs_left, last_keyframe_stereo_left, current_frame_stereo_left, frame_idx, "Mate consistency Filtering");
+            //> Stage 7: Mate consistency filtering
+            apply_mate_consistency_filtering(left_temporal_edge_mates, right_temporal_edge_mates);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Left");
+            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Right");
+
             break;
         }
 
@@ -895,6 +894,85 @@ void EBVO::apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &tem
             }
             tp.candidate_CF_stereo_edge_mate_indices = std::move(surviving_candidates);
             tp.matching_scores = std::move(surviving_scores);
+        }
+    }
+}
+
+void EBVO::apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
+                                            std::vector<temporal_edge_pair> &right_temporal_edge_mates)
+{
+    //> For each left temporal pair, its stereo mate (right) must have the same CF candidate in the right temporal pair.
+    //> Build KF_stereo_edge_mate -> right temporal pair index map
+    std::unordered_map<const final_stereo_edge_pair *, size_t> kf_mate_to_right_idx;
+    for (size_t i = 0; i < right_temporal_edge_mates.size(); ++i)
+        kf_mate_to_right_idx[right_temporal_edge_mates[i].KF_stereo_edge_mate] = i;
+
+    //> Build KF_stereo_edge_mate -> left temporal pair index map
+    std::unordered_map<const final_stereo_edge_pair *, size_t> kf_mate_to_left_idx;
+    for (size_t i = 0; i < left_temporal_edge_mates.size(); ++i)
+        kf_mate_to_left_idx[left_temporal_edge_mates[i].KF_stereo_edge_mate] = i;
+
+    //> For each KF mate that appears in both left and right, keep only the intersection of candidates
+    for (const auto &kv : kf_mate_to_left_idx)
+    {
+        const final_stereo_edge_pair *kf_mate = kv.first;
+        size_t left_idx = kv.second;
+        auto it_right = kf_mate_to_right_idx.find(kf_mate);
+        if (it_right == kf_mate_to_right_idx.end())
+        {
+            //> Not passing the mate consistency check: Right mate has no temporal pair - remove all left candidates
+            left_temporal_edge_mates[left_idx].candidate_CF_stereo_edge_mate_indices.clear();
+            left_temporal_edge_mates[left_idx].matching_scores.clear();
+            continue;
+        }
+        size_t right_idx = it_right->second;
+
+        temporal_edge_pair &left_tp = left_temporal_edge_mates[left_idx];
+        temporal_edge_pair &right_tp = right_temporal_edge_mates[right_idx];
+
+        //> Keep only the intersection of candidates
+        std::unordered_set<int> right_candidates(right_tp.candidate_CF_stereo_edge_mate_indices.begin(),
+                                                 right_tp.candidate_CF_stereo_edge_mate_indices.end());
+
+        std::vector<int> left_filtered;
+        std::vector<scores> left_scores_filtered;
+        for (size_t j = 0; j < left_tp.candidate_CF_stereo_edge_mate_indices.size(); ++j)
+        {
+            int cf_idx = left_tp.candidate_CF_stereo_edge_mate_indices[j];
+            if (right_candidates.count(cf_idx))
+            {
+                left_filtered.push_back(cf_idx);
+                left_scores_filtered.push_back(j < left_tp.matching_scores.size() ? left_tp.matching_scores[j] : scores{-1.0, 900.0});
+            }
+        }
+        left_tp.candidate_CF_stereo_edge_mate_indices = std::move(left_filtered);
+        left_tp.matching_scores = std::move(left_scores_filtered);
+
+        std::unordered_set<int> left_filtered_set(left_tp.candidate_CF_stereo_edge_mate_indices.begin(),
+                                                  left_tp.candidate_CF_stereo_edge_mate_indices.end());
+
+        std::vector<int> right_filtered;
+        std::vector<scores> right_scores_filtered;
+        for (size_t j = 0; j < right_tp.candidate_CF_stereo_edge_mate_indices.size(); ++j)
+        {
+            int cf_idx = right_tp.candidate_CF_stereo_edge_mate_indices[j];
+            if (left_filtered_set.count(cf_idx))
+            {
+                right_filtered.push_back(cf_idx);
+                right_scores_filtered.push_back(j < right_tp.matching_scores.size() ? right_tp.matching_scores[j] : scores{-1.0, 900.0});
+            }
+        }
+        right_tp.candidate_CF_stereo_edge_mate_indices = std::move(right_filtered);
+        right_tp.matching_scores = std::move(right_scores_filtered);
+    }
+
+    //> For right pairs with no matching left pair, clear candidates
+    for (const auto &kv : kf_mate_to_right_idx)
+    {
+        if (kf_mate_to_left_idx.count(kv.first) == 0)
+        {
+            right_temporal_edge_mates[kv.second].candidate_CF_stereo_edge_mate_indices.clear();
+            right_temporal_edge_mates[kv.second].matching_scores.clear();
         }
     }
 }
@@ -1597,8 +1675,12 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_p
     double recall_per_temporal_image = 0.0;
     double precision_per_temporal_image = 0.0;
     double ambiguity_per_temporal_image = 0.0;
+    int num_of_KF_stereo_TP_edge_mates = 0;
     for (const temporal_edge_pair &tp : temporal_edge_mates)
     {
+        if (!tp.KF_stereo_edge_mate->b_is_TP)
+            continue;
+
         const std::vector<int> &candidates = tp.candidate_CF_stereo_edge_mate_indices;
         const std::vector<int> &veridical = tp.veridical_CF_stereo_edge_mate_indices;
 
@@ -1617,11 +1699,13 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_p
         recall_per_temporal_image += recall_per_edge;
         precision_per_temporal_image += precision_per_edge;
         ambiguity_per_temporal_image += ambiguity_per_edge;
+
+        num_of_KF_stereo_TP_edge_mates++;
     }
 
-    double recall_per_image = recall_per_temporal_image / static_cast<double>(temporal_edge_mates.size());
-    double precision_per_image = precision_per_temporal_image / static_cast<double>(temporal_edge_mates.size());
-    double ambiguity_avg = ambiguity_per_temporal_image / static_cast<double>(temporal_edge_mates.size());
+    double recall_per_image = recall_per_temporal_image / static_cast<double>(num_of_KF_stereo_TP_edge_mates);
+    double precision_per_image = precision_per_temporal_image / static_cast<double>(num_of_KF_stereo_TP_edge_mates);
+    double ambiguity_avg = ambiguity_per_temporal_image / static_cast<double>(num_of_KF_stereo_TP_edge_mates);
 
     std::cout << "Temporal Edge Correspondences Evaluation: Stage: " << stage_name << " | Frame: " << frame_idx;
     std::cout << " (Side: " << which_side_of_temporal_edge_mates << ")" << std::endl;

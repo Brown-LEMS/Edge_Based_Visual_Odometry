@@ -59,6 +59,9 @@ public:
     // void apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC);
     void apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, double threshold, const std::string scoring_type);
 
+    void apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
+                                          std::vector<temporal_edge_pair> &right_temporal_edge_mates);
+
     void min_Edge_Photometric_Residual_by_Gauss_Newton(
         /* inputs */
         Edge left_edge, Eigen::Vector2d init_disp, const cv::Mat &left_image_undistorted,
