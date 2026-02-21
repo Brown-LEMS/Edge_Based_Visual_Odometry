@@ -303,22 +303,6 @@ void Dataset::LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int n
 #endif
 }
 
-void Dataset::WriteDisparityToBinary(const std::string &filepath, const cv::Mat &disparity_map)
-{
-    std::ofstream ofs(filepath, std::ios::binary);
-    if (!ofs.is_open())
-    {
-        std::cerr << "ERROR: Could not write disparity to: " << filepath << std::endl;
-        return;
-    }
-
-    int rows = disparity_map.rows;
-    int cols = disparity_map.cols;
-    ofs.write(reinterpret_cast<const char *>(&rows), sizeof(rows));
-    ofs.write(reinterpret_cast<const char *>(&cols), sizeof(cols));
-    ofs.write(reinterpret_cast<const char *>(disparity_map.ptr<float>(0)), sizeof(float) * rows * cols);
-}
-
 cv::Mat Dataset::readPFM(const std::string &file_path)
 {
     std::ifstream file(file_path, std::ios::binary);

@@ -124,30 +124,6 @@ struct SpatialGrid
     }
 };
 
-struct Edge3D
-{
-    Eigen::Vector3d location;
-    Eigen::Vector3d orientation; // unit 3D vector T
-
-    bool b_isEmpty;   //> check if this struct is value-assigned
-    int frame_source; //> which frame this edge is constructed from
-    int index;        //> index of the edge in the original edge list
-    Edge3D() : location(Eigen::Vector3d(-1.0, -1.0, -1.0)), orientation(Eigen::Vector3d(-100, -100, -100)), b_isEmpty(true), frame_source(-1), index(-1) {}
-    Edge3D(Eigen::Vector3d location, Eigen::Vector3d orientation, bool b_isEmpty, int frame_source) : location(location), orientation(orientation), b_isEmpty(b_isEmpty), frame_source(frame_source) {}
-
-    bool operator==(const Edge3D &other) const
-    {
-
-        return location.x() == other.location.x() &&
-               location.y() == other.location.y() &&
-               location.z() == other.location.z() &&
-               orientation.x() == other.orientation.x() &&
-               orientation.y() == other.orientation.y() &&
-               orientation.z() == other.orientation.z() &&
-               b_isEmpty == other.b_isEmpty;
-    }
-};
-
 struct FileInfo
 {
     std::string dataset_type;
@@ -558,18 +534,6 @@ private:
     std::vector<cv::Mat> LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left = true);
 
     void LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int num_maps, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps);
-
-    void WriteDisparityToBinary(const std::string &filepath, const cv::Mat &disparity_map);
-
-    cv::Mat ReadDisparityFromBinary(const std::string &filepath);
-
-    cv::Mat LoadDisparityFromCSV(const std::string &path);
-
-    void CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image);
-
-    void Load_GT_Poses(std::string GT_Poses_File_Path);
-
-    void Align_Images_and_GT_Poses();
 
     cv::Mat Small_Patch_Radius_Map;
     Utility::Ptr utility_tool = nullptr;
