@@ -346,20 +346,31 @@ struct scores
     double sift_score;
 };
 
+//> One CF candidate per cluster. This mirrors EdgeCluster in stereo matching.
+struct Temporal_CF_Edge_Cluster
+{
+    int cf_stereo_edge_mate_index;          //> index into CF_stereo_edge_mates, when one CF edge is one cluster
+    Edge center_edge;                       //> CF edge (left or right) in the cluster; refined location stored here
+    std::vector<Edge> contributing_edges;   //> CF edges that contribute to the cluster
+    scores matching_scores;                 //> matching scores (either NCC or SIFT) of the cluster
+    double refine_final_score = 1e6;        //> populated by photometric refinement
+    bool refine_validity = false;           //> populated by photometric refinement
+};
+
 struct temporal_edge_pair
 {
     //> pointers to the stereo edge pairs
     const final_stereo_edge_pair *KF_stereo_edge_mate;
-    // const std::vector<final_stereo_edge_pair> *CF_stereo_edge_mates;
 
     //> On the current frame
     Eigen::Vector3d projected_point;
     double projected_orientation;
 
-    //> pointer to a set of final_stereo_edge_pair on the current frame
+    //> Veridical (ground-truth) CF stereo edge mate indices
     std::vector<int> veridical_CF_stereo_edge_mate_indices;
-    std::vector<int> candidate_CF_stereo_edge_mate_indices;
-    std::vector<scores> matching_scores;
+
+    //> Matching CF candidates as clusters (one cluster per candidate, like stereo EdgeCluster)
+    std::vector<Temporal_CF_Edge_Cluster> matching_CF_edge_clusters;
 };
 
 struct KF_CF_EdgeCorrespondence

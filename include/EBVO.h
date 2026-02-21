@@ -42,7 +42,7 @@ public:
     void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids);
 
     //> filtering methods
-    void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
+    void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
     // void apply_orientation_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double orientation_threshold, bool is_left);
     void apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                      const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
@@ -62,12 +62,17 @@ public:
     void apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
                                           std::vector<temporal_edge_pair> &right_temporal_edge_mates);
 
+    void apply_photometric_refinement(std::vector<temporal_edge_pair> &temporal_edge_mates,
+                                      const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
+                                      const StereoFrame &keyframe, const StereoFrame &current_frame,
+                                      bool b_is_left);
+
     void min_Edge_Photometric_Residual_by_Gauss_Newton(
         /* inputs */
-        Edge left_edge, Eigen::Vector2d init_disp, const cv::Mat &left_image_undistorted,
-        const cv::Mat &right_image_undistorted, const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y,
+        Edge kf_edge, Edge cf_edge, Eigen::Vector2d init_disp, const cv::Mat &kf_image_undistorted,
+        const cv::Mat &cf_image_undistorted, const cv::Mat &cf_image_gradients_x, const cv::Mat &cf_image_gradients_y,
         /* outputs */
-        Eigen::Vector2d &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,
+        Eigen::Vector2d &refined_disparity, double &refined_final_score, bool &refined_validity, std::vector<double> &residual_log,
         /* optional inputs */
         int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
 
