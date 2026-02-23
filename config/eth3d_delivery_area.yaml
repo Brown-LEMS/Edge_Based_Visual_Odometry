@@ -3,7 +3,6 @@
 # Dataset Details
 dataset_dir: "/oscar/data/bkimia/Datasets"
 output_dir: "/oscar/data/bkimia/jhan192/jue_dev_ebvo/Edge_Based_Visual_Odometry/outputs"
-# output_dir: "/oscar/data/bkimia/cchien3/Edge_Based_Visual_Odometry/outputs"
 sequence_name: "ETH3D/stereo/delivery_area"
 dataset_type: "ETH3D"
 

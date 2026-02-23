@@ -5,3 +5,4 @@ build/
 *.log
 outputs
 outputs_original
+output_files

@@ -11,6 +11,7 @@
 
 #include "Dataset.h"
 #include "definitions.h"
+#include "toed/cpu_toed.hpp"
 
 // =======================================================================================================
 // utility Dataset: Fetch data from dataset specified in the configuration file
@@ -57,6 +58,105 @@ double Utility::getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Co
 double Utility::getTangentialDistance2EpipolarLine( Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection ) {
   Eigen::Vector3d edge(edges(index, 0), edges(index, 1), edges(index, 2));
   return getTangentialDistance2EpipolarLine( Epip_Line_Coeffs, edge, x_intersection, y_intersection );
+}
+
+std::pair<cv::Point2d, cv::Point2d> Utility::get_Orthogonal_Shifted_Points(const Edge edgel)
+{
+    double shifted_x1 = edgel.location.x + ORTHOGONAL_SHIFT_MAG * (std::sin(edgel.orientation));
+    double shifted_y1 = edgel.location.y + ORTHOGONAL_SHIFT_MAG * (-std::cos(edgel.orientation));
+    double shifted_x2 = edgel.location.x + ORTHOGONAL_SHIFT_MAG * (-std::sin(edgel.orientation));
+    double shifted_y2 = edgel.location.y + ORTHOGONAL_SHIFT_MAG * (std::cos(edgel.orientation));
+
+    cv::Point2d shifted_point_plus(shifted_x1, shifted_y1);
+    cv::Point2d shifted_point_minus(shifted_x2, shifted_y2);
+
+    return {shifted_point_plus, shifted_point_minus};
+}
+
+std::pair<cv::Point2d, cv::Point2d> Utility::get_Orthogonal_Shifted_Points(const Edge edgel, double shift_magnitude)
+{
+    double shifted_x1 = edgel.location.x + shift_magnitude * (std::sin(edgel.orientation));
+    double shifted_y1 = edgel.location.y + shift_magnitude * (-std::cos(edgel.orientation));
+    double shifted_x2 = edgel.location.x + shift_magnitude * (-std::sin(edgel.orientation));
+    double shifted_y2 = edgel.location.y + shift_magnitude * (std::cos(edgel.orientation));
+
+    cv::Point2d shifted_point_plus(shifted_x1, shifted_y1);
+    cv::Point2d shifted_point_minus(shifted_x2, shifted_y2);
+
+    return {shifted_point_plus, shifted_point_minus};
+}
+
+void Utility::get_patch_on_one_edge_side(cv::Point2d shifted_point, double theta,
+                                         cv::Mat &patch_coord_x, cv::Mat &patch_coord_y,
+                                         cv::Mat &patch_val, const cv::Mat img)
+{
+  const int half_patch_size = floor(PATCH_SIZE / 2);
+  for (int i = -half_patch_size; i <= half_patch_size; i++)
+  {
+    for (int j = -half_patch_size; j <= half_patch_size; j++)
+    {
+      //> get the rotated coordinate
+      cv::Point2d rotated_point(cos(theta) * (i)-sin(theta) * (j) + shifted_point.x, sin(theta) * (i) + cos(theta) * (j) + shifted_point.y);
+      patch_coord_x.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.x;
+      patch_coord_y.at<double>(i + half_patch_size, j + half_patch_size) = rotated_point.y;
+
+      //> get the image intensity of the rotated coordinate
+      // double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
+      double interp_val = Bilinear_Interpolation<double>(img, rotated_point);
+      patch_val.at<double>(i + half_patch_size, j + half_patch_size) = interp_val;
+    }
+  }
+}
+
+double Utility::get_patch_similarity(const cv::Mat patch_one, const cv::Mat patch_two)
+{
+    double mean_one = (cv::mean(patch_one))[0];
+    double mean_two = (cv::mean(patch_two))[0];
+    double sum_of_squared_one = (cv::sum((patch_one - mean_one).mul(patch_one - mean_one))).val[0];
+    double sum_of_squared_two = (cv::sum((patch_two - mean_two).mul(patch_two - mean_two))).val[0];
+
+    const double epsilon = 1e-10;
+    if (sum_of_squared_one < epsilon || sum_of_squared_two < epsilon)
+        return -1.0;
+
+    double denom_one = sqrt(sum_of_squared_one);
+    double denom_two = sqrt(sum_of_squared_two);
+
+    cv::Mat norm_one = (patch_one - mean_one) / denom_one;
+    cv::Mat norm_two = (patch_two - mean_two) / denom_two;
+    return norm_one.dot(norm_two);
+}
+
+std::pair<cv::Mat, cv::Mat> Utility::get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug)
+{
+    std::pair<cv::Point2d, cv::Point2d> shifted_points = get_Orthogonal_Shifted_Points(edge);
+    cv::Mat patch_val_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_val_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_x_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_y_plus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_x_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    cv::Mat patch_coord_y_minus = cv::Mat_<double>(PATCH_SIZE, PATCH_SIZE);
+    get_patch_on_one_edge_side(shifted_points.first, edge.orientation, patch_coord_x_plus, patch_coord_y_plus, patch_val_plus, img);
+    get_patch_on_one_edge_side(shifted_points.second, edge.orientation, patch_coord_x_minus, patch_coord_y_minus, patch_val_minus, img);
+
+    if (b_debug)
+    {
+        std::cout << "Edge location: " << edge.location << std::endl;
+        std::cout << "Edge orientation: " << edge.orientation << std::endl;
+        std::cout << "Patch (+) coordinates: " << std::endl;
+        std::cout << patch_coord_x_plus << std::endl;
+        std::cout << patch_coord_y_plus << std::endl;
+        std::cout << "Patch (-) coordinates: " << std::endl;
+        std::cout << patch_coord_x_minus << std::endl;
+        std::cout << patch_coord_y_minus << std::endl;
+    }
+
+    if (patch_val_plus.type() != CV_32F)
+        patch_val_plus.convertTo(patch_val_plus, CV_32F);
+    if (patch_val_minus.type() != CV_32F)
+        patch_val_minus.convertTo(patch_val_minus, CV_32F);
+
+    return {patch_val_plus, patch_val_minus};
 }
 
 //> Display images and features via OpenCV

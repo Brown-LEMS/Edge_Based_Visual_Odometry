@@ -14,44 +14,49 @@
 #endif
 
 //> Stereo edge matching settings
+#define EPIPOLAR_LINE_DIST_THRESH (0.5)  //> in pixels
 #define EPIP_TENGENCY_ORIENT_THRESH (12) //> in degrees
 #define EPIP_TENGENCY_PROXIM_THRESH (4)  //> in pixels
-#define MAX_DISPARITY (23.0063)
+#define MAX_DISPARITY (25)
 #define EDGE_CLUSTER_THRESH (0.3) //> in pixels
 #define ORTHOGONAL_SHIFT_MAG (5)  //> in pixels
 #define PATCH_SIZE (7)            //> in pixels
-#define NCC_THRESH_STRONG_BOTH_SIDES (0.5)
-#define NCC_THRESH_WEAK_BOTH_SIDES (0.25)
-#define NCC_THRESH_STRONG_ONE_SIDE (0.65)
-#define MATCH_TOL (3) //> in pixels
+#define NCC_THRESH (0.6)
 
-#define EPIP_TANGENCY_DISPL_THRESH      (3)         //> in pixels
-#define LOCATION_PERTURBATION           (0.4)         //> in pixels
-#define ORIENT_PERTURBATION             (0.174533)  //> in radians. 0.174533 is 10 degrees
-#define CLUSTER_DIST_THRESH             (1)         //> τc, in pixels
-#define CLUSTER_ORIENT_THRESH           (20.0)      //> in degrees
-#define MAX_CLUSTER_SIZE                (10)        //> max number of edges per cluster
-#define CLUSTER_ORIENT_GAUSS_SIGMA      (2.0)
+#define EPIP_TANGENCY_DISPL_THRESH (3) //> in pixels
+#define LOCATION_PERTURBATION (0.4)    //> in pixels
+#define ORIENT_PERTURBATION (0.174533) //> in radians. 0.174533 is 10 degrees
+#define CLUSTER_DIST_THRESH (1)        //> τc, in pixels
+#define CLUSTER_ORIENT_THRESH (20.0)   //> in degrees
+#define MAX_CLUSTER_SIZE (10)          //> max number of edges per cluster
+#define CLUSTER_ORIENT_GAUSS_SIGMA (2.0)
+#define BNB_SIFT (0.4)
+#define BNB_NCC (0.9)
+#define HUBER_DELTA (1.0) //> Huber threshold
+#define LOWES_RATIO (0.8) //> Suggested in Lowe's paper
 
-#define PYRAMID_LEVELS (4) //> Number of pyramid levels for optical flow
-#define GRID_SIZE (20)     //> Size of the spatial grid cells in pixels
+#define BIDIRECTIONAL_FILTERING (false)
+
+#define SIFT_THRESHOLD (500.0)
+//> precision-recall experiments
+#define DIST_TO_GT_THRESH (1.0) //> in pixels
+
+#define GRID_SIZE (15)     //> Size of the spatial grid cells in pixels
 
 #define MEASURE_TIMINGS (false)
 
-//> For quick processing
-#define WRITE_TOED_EDGES (true)
-#define READ_TOED_EDGES_FROM_FILES (false)
-
-//> Writing some intermediate data for debugging
-#define WRITE_KF_CF_GT_EDGE_PAIRS (true)
 
 //> Generic definitions
 #define RANSAC_NUM_OF_ITERATIONS (500)
 #define EPSILON (1e-12)
 #define REPROJ_ERROR_THRESH (2) //> in pixels
 
-#define DEPTH_GRAD_GAUSSIAN_SIGMA (3)
-#define GAUSSIAN_KERNEL_WINDOW_LENGTH (2 * 4 * DEPTH_GRAD_GAUSSIAN_SIGMA + 1)
+//> Verbose
+#define DATASET_LOAD_VERBOSE             (false)
+#define STEREO_EDGE_MATCH_EVAL_VERBOSE   (true)
+
+//> Output for visualization
+#define RECORD_FILTER_DISTRIBUTIONS      (false)
 
 //> DEBUGGING PURPOSE
 #define SHOW_YAML_FILE_DATA (false)
@@ -63,6 +68,7 @@
 #define WRITE_CORRESPONDENCES_TO_FILE (false)
 #define OPENCV_DISPLAY_FEATURES (false)
 #define OPENCV_DISPLAY_CORRESPONDENCES (false)
+//> ----------------------------------------------
 
 //> Third-Order Edge Detection Parameters
 #define TOED_KERNEL_SIZE (17)
@@ -74,8 +80,6 @@
 #define SIFT_CONTRAST_THRESHOLD (0.04)
 #define SIFT_EDGE_THRESHOLD (10)
 #define SIFT_GAUSSIAN_SIGMA (1.6)
-
-#define LOWES_RATIO (0.8) //> Suggested in Lowe's paper
 #define K_IN_KNN_MATCHING (2)
 
 //> Print outs
@@ -84,6 +88,7 @@
 #define LOG_ERROR(err_msg) printf("\033[1;31m[ERROR] %s\033[0m\n", std::string(err_msg).c_str());
 #define LOG_TEST(test_msg) printf("\033[1;30m[TEST] %s\033[0m\n", std::string(test_msg).c_str());
 #define LOG_FILE_ERROR(err_msg) printf("\033[1;31m[ERROR] File %s not found!\033[0m\n", std::string(err_msg).c_str());
+#define LOG_TRACE(msg) std::cout << "\033[1;30m[TRACE] " << __func__ << ":" << __LINE__ << " " << msg << "\033[0m" << std::endl;
 #define LOG_PRINT_HELP_MESSAGE printf("Usage: ./main_VO [flag] [argument]\n\n"                 \
                                       "options:\n"                                             \
                                       "  -h, --help         show this help message and exit\n" \

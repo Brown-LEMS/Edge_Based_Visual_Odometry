@@ -1,0 +1,81 @@
+NCC Patch Statistics for Frame 1, Edge 8
+===============================================
+
+Previous Edge:
+  Location: (410.37, 483.08)
+  Orientation: -1.5800
+
+  Plus Patch - Mean: 28.0814, Variance: 2.5034
+  Minus Patch - Mean: 36.6480, Variance: 24.9186
+
+Ground Truth Edge:
+  Location: (425.04, 474.71)
+  Orientation: -1.3690
+
+  Plus Patch - Mean: 28.4525, Variance: 3.4201
+  Minus Patch - Mean: 36.1645, Variance: 25.8015
+
+NCC Scores between Previous and GT:
+  Plus-Plus: 0.7449
+  Minus-Minus: 0.8602
+  Plus-Minus: 0.4917
+  Minus-Plus: 0.2540
+  Max: 0.8602
+
+Candidate Edges: 5
+
+Candidate 1:
+  Location: (425.45, 474.02)
+  Orientation: -1.7190
+  Distance to GT: 0.8033
+  NCC Scores with Previous:
+    Plus-Plus: 0.7053
+    Minus-Minus: 0.9152
+    Plus-Minus: 0.3741
+    Minus-Plus: 0.0494
+    Max: 0.9152
+
+Candidate 2:
+  Location: (425.53, 474.49)
+  Orientation: -1.7380
+  Distance to GT: 0.5338
+  NCC Scores with Previous:
+    Plus-Plus: 0.6244
+    Minus-Minus: 0.9196
+    Plus-Minus: 0.4067
+    Minus-Plus: -0.0239
+    Max: 0.9196
+
+Candidate 3:
+  Location: (425.61, 474.94)
+  Orientation: -1.7650
+  Distance to GT: 0.6137
+  NCC Scores with Previous:
+    Plus-Plus: 0.5595
+    Minus-Minus: 0.9140
+    Plus-Minus: 0.4302
+    Minus-Plus: -0.1298
+    Max: 0.9140
+
+Candidate 4:
+  Location: (425.71, 475.37)
+  Orientation: -1.7990
+  Distance to GT: 0.9419
+  NCC Scores with Previous:
+    Plus-Plus: 0.5116
+    Minus-Minus: 0.9003
+    Plus-Minus: 0.4379
+    Minus-Plus: -0.2261
+    Max: 0.9003
+
+Candidate 5:
+  Location: (425.80, 475.64)
+  Orientation: -1.9150
+  Distance to GT: 1.2031
+  NCC Scores with Previous:
+    Plus-Plus: 0.3097
+    Minus-Minus: 0.8472
+    Plus-Minus: 0.4707
+    Minus-Plus: -0.4054
+    Max: 0.8472
+

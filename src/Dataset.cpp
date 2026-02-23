@@ -16,7 +16,7 @@
 #include <chrono>
 #include <utility>
 #include <cmath>
-#include "Matches.h"
+#include "Stereo_Matches.h"
 
 #include "Dataset.h"
 #include "definitions.h"
@@ -30,19 +30,6 @@
 #else
 #include <boost/filesystem.hpp>
 #endif
-
-cv::Mat merged_visualization_global;
-
-// =======================================================================================================
-// Class Dataset: Fetch data from dataset specified in the configuration file
-//
-// ChangeLogs
-//    Lopez  25-01-26    Modified for euroc dataset support.
-//    Chien  23-01-17    Initially created.
-//
-//> (c) LEMS, Brown University
-//> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu)
-// =======================================================================================================
 
 auto load_matrix = [](const YAML::Node &node) -> Eigen::Matrix3d
 {
@@ -96,10 +83,10 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         camera_info.left.intrinsics = left_cam["intrinsics"].as<std::vector<double>>();
         camera_info.left.distortion = left_cam["distortion_coefficients"].as<std::vector<double>>();
         Eigen::Matrix3d calib_left = Eigen::Matrix3d::Identity();
-        calib_left(0,0) = camera_info.left.intrinsics[0];
-        calib_left(0,2) = camera_info.left.intrinsics[2];
-        calib_left(1,1) = camera_info.left.intrinsics[1];
-        calib_left(1,2) = camera_info.left.intrinsics[3];
+        calib_left(0, 0) = camera_info.left.intrinsics[0];
+        calib_left(0, 2) = camera_info.left.intrinsics[2];
+        calib_left(1, 1) = camera_info.left.intrinsics[1];
+        calib_left(1, 2) = camera_info.left.intrinsics[3];
         camera_info.left.K = calib_left;
 
         // Right camera
@@ -107,10 +94,10 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         camera_info.right.intrinsics = right_cam["intrinsics"].as<std::vector<double>>();
         camera_info.right.distortion = right_cam["distortion_coefficients"].as<std::vector<double>>();
         Eigen::Matrix3d calib_right = Eigen::Matrix3d::Identity();
-        calib_right(0,0) = camera_info.right.intrinsics[0];
-        calib_right(0,2) = camera_info.right.intrinsics[2];
-        calib_right(1,1) = camera_info.right.intrinsics[1];
-        calib_right(1,2) = camera_info.right.intrinsics[3];
+        calib_right(0, 0) = camera_info.right.intrinsics[0];
+        calib_right(0, 2) = camera_info.right.intrinsics[2];
+        calib_right(1, 1) = camera_info.right.intrinsics[1];
+        calib_right(1, 2) = camera_info.right.intrinsics[3];
         camera_info.right.K = calib_right;
 
         // Stereo right-from-left (R21, T21, F21)
@@ -176,6 +163,9 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
 
 void Dataset::load_dataset(const std::string &dataset_type,
                            std::vector<cv::Mat> &left_ref_disparity_maps,
+                           std::vector<cv::Mat> &right_ref_disparity_maps,
+                           std::vector<cv::Mat> &left_occlusion_masks,
+                           std::vector<cv::Mat> &right_occlusion_masks,
                            int num_pairs)
 {
     if (dataset_type == "EuRoC")
@@ -197,13 +187,15 @@ void Dataset::load_dataset(const std::string &dataset_type,
     {
         std::string stereo_pairs_path = file_info.dataset_path + "/" + file_info.sequence_name + "/stereo_pairs";
         stereo_iterator = Iterators::createETH3DIterator(stereo_pairs_path);
-        left_ref_disparity_maps = LoadETH3DLeftReferenceMaps(stereo_pairs_path, num_pairs);
+        LoadETH3DDisparityMaps(stereo_pairs_path, num_pairs, left_ref_disparity_maps, right_ref_disparity_maps);
+        left_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, true);
+        right_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, false);
     }
 }
 
-std::vector<cv::Mat> Dataset::LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps)
+std::vector<cv::Mat> Dataset::LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left)
 {
-    std::vector<cv::Mat> disparity_maps;
+    std::vector<cv::Mat> occlusion_masks;
     std::vector<std::string> stereo_folders;
 
     for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path))
@@ -219,217 +211,435 @@ std::vector<cv::Mat> Dataset::LoadETH3DLeftReferenceMaps(const std::string &ster
     for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++)
     {
         std::string folder_path = stereo_folders[i];
-        std::string disparity_csv_path = folder_path + "/disparity_map.csv";
-        std::string disparity_bin_path = folder_path + "/disparity_map.bin";
+        std::string mask_filename = left ? "mask0nocc.png" : "mask1nocc.png";
+        std::string mask_path = folder_path + "/" + mask_filename;
 
-        cv::Mat disparity_map;
-
-        if (std::filesystem::exists(disparity_bin_path))
+        cv::Mat mask;
+        if (std::filesystem::exists(mask_path))
         {
-            // std::cout << "Loading disparity data from: " << disparity_bin_path << std::endl;
-            disparity_map = ReadDisparityFromBinary(disparity_bin_path);
+            mask = cv::imread(mask_path, cv::IMREAD_GRAYSCALE);
+            if (mask.empty())
+            {
+                std::cerr << "Warning: Could not load occlusion mask: " << mask_path << std::endl;
+            }
         }
         else
         {
-            // std::cout << "Parsing and storing disparity data from: " << disparity_csv_path << std::endl;
-            disparity_map = LoadDisparityFromCSV(disparity_csv_path);
-            if (!disparity_map.empty())
-            {
-                WriteDisparityToBinary(disparity_bin_path, disparity_map);
-                // std::cout << "Saved disparity data to: " << disparity_bin_path << std::endl;
-            }
+            std::cerr << "Warning: Occlusion mask not found: " << mask_path << std::endl;
         }
+        occlusion_masks.push_back(mask);
+    }
 
-        if (!disparity_map.empty())
+    return occlusion_masks;
+}
+void Dataset::LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int num_maps, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps)
+{
+    std::vector<std::string> stereo_folders;
+
+    for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path))
+    {
+        if (entry.is_directory())
         {
-            disparity_maps.push_back(disparity_map);
+            stereo_folders.push_back(entry.path().string());
         }
     }
 
-    return disparity_maps;
-}
+    std::sort(stereo_folders.begin(), stereo_folders.end());
 
-void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image)
-{
-    reverse_gt_data.clear();
-
-    static size_t total_rows_written = 0;
-    static int file_index = 1;
-    static std::ofstream csv_file;
-    static const size_t max_rows_per_file = 1'000'000;
-
-    if (!csv_file.is_open())
+    for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++)
     {
-        std::string filename = "valid_reverse_disparities_part_" + std::to_string(file_index) + ".csv";
-        csv_file.open(filename, std::ios::out);
-    }
+        std::string folder_path = stereo_folders[i];
+        std::string disparity_pfm_left_path = folder_path + "/disp0GT.pfm";
+        std::string disparity_pfm_right_path = folder_path + "/disp1GT.pfm";
 
-    for (size_t i = 0; i < right_third_order_edges_locations.size(); i++)
-    {
-        const cv::Point2d &right_edge = right_third_order_edges_locations[i];
-        double orientation = right_third_order_edges_orientation[i];
+        cv::Mat left_disparity_map, right_disparity_map;
 
-        double disparity = Bilinear_Interpolation(disparity_map_right_reference, right_edge);
-
-        if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
-        {
-            continue;
-        }
-
-        cv::Point2d left_edge(right_edge.x + disparity, right_edge.y);
-
-        reverse_gt_data.emplace_back(right_edge, left_edge, orientation);
-
-        if (total_rows_written >= max_rows_per_file)
-        {
-            csv_file.close();
-            ++file_index;
-            total_rows_written = 0;
-            std::string next_filename = "valid_reverse_disparities_part_" + std::to_string(file_index) + ".csv";
-            csv_file.open(next_filename, std::ios::out);
-        }
-
-        csv_file << disparity << "\n";
-        ++total_rows_written;
-    }
-
-    csv_file.flush();
-}
-
-// std::vector<cv::Mat> Dataset::LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps) {
-//     std::vector<cv::Mat> disparity_maps;
-//     std::vector<std::string> stereo_folders;
-
-//     for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path)) {
-//         if (entry.is_directory()) {
-//             stereo_folders.push_back(entry.path().string());
-//         }
-//     }
-
-//     std::sort(stereo_folders.begin(), stereo_folders.end());
-
-//     for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++) {
-//         std::string folder_path = stereo_folders[i];
-//         std::string disparity_csv_path = folder_path + "/disparity_map_right.csv";
-//         std::string disparity_bin_path = folder_path + "/disparity_map_right.bin";
-
-//         cv::Mat disparity_map;
-
-//         if (std::filesystem::exists(disparity_bin_path)) {
-//             disparity_map = ReadDisparityFromBinary(disparity_bin_path);
-//         } else {
-//             disparity_map = LoadDisparityFromCSV(disparity_csv_path);
-//             if (!disparity_map.empty()) {
-//                 WriteDisparityToBinary(disparity_bin_path, disparity_map);
-//             }
-//         }
-
-//         if (!disparity_map.empty()) {
-//             disparity_maps.push_back(disparity_map);
-//         }
-//     }
-
-//     return disparity_maps;
-// }
-
-void Dataset::WriteDisparityToBinary(const std::string &filepath, const cv::Mat &disparity_map)
-{
-    std::ofstream ofs(filepath, std::ios::binary);
-    if (!ofs.is_open())
-    {
-        std::cerr << "ERROR: Could not write disparity to: " << filepath << std::endl;
-        return;
-    }
-
-    int rows = disparity_map.rows;
-    int cols = disparity_map.cols;
-    ofs.write(reinterpret_cast<const char *>(&rows), sizeof(rows));
-    ofs.write(reinterpret_cast<const char *>(&cols), sizeof(cols));
-    ofs.write(reinterpret_cast<const char *>(disparity_map.ptr<float>(0)), sizeof(float) * rows * cols);
-}
-
-cv::Mat Dataset::ReadDisparityFromBinary(const std::string &filepath)
-{
-    std::ifstream ifs(filepath, std::ios::binary);
-    if (!ifs.is_open())
-    {
-        std::cerr << "ERROR: Could not read disparity from: " << filepath << std::endl;
-        return {};
-    }
-
-    int rows, cols;
-    ifs.read(reinterpret_cast<char *>(&rows), sizeof(rows));
-    ifs.read(reinterpret_cast<char *>(&cols), sizeof(cols));
-
-    cv::Mat disparity_map(rows, cols, CV_32F);
-    ifs.read(reinterpret_cast<char *>(disparity_map.ptr<float>(0)), sizeof(float) * rows * cols);
-
-    return disparity_map;
-}
-
-cv::Mat Dataset::LoadDisparityFromCSV(const std::string &path)
-{
-    std::ifstream file(path);
-    if (!file.is_open())
-    {
-        std::cerr << "ERROR: Could not open disparity CSV: " << path << std::endl;
-        return {};
-    }
-
-    std::vector<std::vector<float>> data;
-    std::string line;
-
-    while (std::getline(file, line))
-    {
-        std::stringstream ss(line);
-        std::string value;
-        std::vector<float> row;
-
-        while (std::getline(ss, value, ','))
+        // Load left disparity
+        if (std::filesystem::exists(disparity_pfm_left_path))
         {
             try
             {
-                float d = std::stof(value);
-
-                if (value == "nan" || value == "NaN")
-                {
-                    d = std::numeric_limits<float>::quiet_NaN();
-                }
-                else if (value == "inf" || value == "Inf")
-                {
-                    d = std::numeric_limits<float>::infinity();
-                }
-                else if (value == "-inf" || value == "-Inf")
-                {
-                    d = -std::numeric_limits<float>::infinity();
-                }
-
-                row.push_back(d);
+                left_disparity_map = readPFM(disparity_pfm_left_path);
             }
             catch (const std::exception &e)
             {
-                std::cerr << "WARNING: Invalid value in file: " << path << " -> " << value << std::endl;
-                row.push_back(std::numeric_limits<float>::quiet_NaN());
+                std::cerr << "Error reading left PFM file: " << e.what() << std::endl;
+            }
+        }
+        else
+        {
+            std::cerr << "Warning: Left PFM file not found: " << disparity_pfm_left_path << std::endl;
+        }
+
+        // Load right disparity
+        if (std::filesystem::exists(disparity_pfm_right_path))
+        {
+            try
+            {
+                right_disparity_map = readPFM(disparity_pfm_right_path);
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "Error reading right PFM file: " << e.what() << std::endl;
+            }
+        }
+        else
+        {
+            std::cerr << "Warning: Right PFM file not found: " << disparity_pfm_right_path << std::endl;
+        }
+
+        if (!left_disparity_map.empty())
+        {
+            left_disparity_maps.push_back(left_disparity_map);
+        }
+
+        if (!right_disparity_map.empty())
+        {
+            right_disparity_maps.push_back(right_disparity_map);
+        }
+    }
+#if DATASET_LOAD_VERBOSE
+    std::cout << "Loaded " << left_disparity_maps.size() << " left disparity maps and " << right_disparity_maps.size() << " right disparity maps" << std::endl;
+#endif
+}
+
+cv::Mat Dataset::readPFM(const std::string &file_path)
+{
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open())
+    {
+        throw std::runtime_error("Cannot open PFM file: " + file_path);
+    }
+
+    // Read header line (PF or Pf)
+    std::string header;
+    std::getline(file, header);
+
+    bool is_color = false;
+    if (header == "PF")
+    {
+        is_color = true;
+    }
+    else if (header == "Pf")
+    {
+        is_color = false;
+    }
+    else
+    {
+        throw std::runtime_error("Not a PFM file: " + file_path);
+    }
+
+    // Read dimensions (width height)
+    std::string dim_line;
+    std::getline(file, dim_line);
+
+    int width, height;
+    std::istringstream dim_stream(dim_line);
+    if (!(dim_stream >> width >> height))
+    {
+        throw std::runtime_error("Malformed PFM header (dimensions): " + file_path);
+    }
+
+    // Read scale (determines endianness)
+    std::string scale_line;
+    std::getline(file, scale_line);
+    float scale = std::stof(scale_line);
+
+    bool little_endian = (scale < 0);
+    if (scale < 0)
+    {
+        scale = -scale;
+    }
+
+    // Read binary float data
+    int num_channels = is_color ? 3 : 1;
+    int num_elements = width * height * num_channels;
+
+    std::vector<float> data(num_elements);
+    file.read(reinterpret_cast<char *>(data.data()), num_elements * sizeof(float));
+
+    if (file.gcount() != num_elements * sizeof(float))
+    {
+        throw std::runtime_error("Failed to read all data from PFM file: " + file_path);
+    }
+
+    // Handle endianness conversion if needed
+    // Check system endianness
+    union
+    {
+        uint32_t i;
+        char c[4];
+    } test_endian = {0x01020304};
+    bool system_is_little_endian = (test_endian.c[0] == 0x04);
+
+    // If file endianness doesn't match system endianness, swap bytes
+    if (little_endian != system_is_little_endian)
+    {
+        for (int i = 0; i < num_elements; i++)
+        {
+            char *bytes = reinterpret_cast<char *>(&data[i]);
+            std::swap(bytes[0], bytes[3]);
+            std::swap(bytes[1], bytes[2]);
+        }
+    }
+
+    // Reshape data into Mat (height, width, channels)
+    cv::Mat mat;
+    if (is_color)
+    {
+        mat = cv::Mat(height, width, CV_32FC3, data.data()).clone();
+    }
+    else
+    {
+        mat = cv::Mat(height, width, CV_32FC1, data.data()).clone();
+    }
+
+    // Flip vertically (PFM format stores top-to-bottom, OpenCV expects bottom-to-top)
+    cv::flip(mat, mat, 0);
+
+    return mat;
+}
+
+bool Dataset::readDispMiddlebury(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask)
+{
+    try
+    {
+        // Extract base path and construct mask path
+        // disp_file_path: .../disp0GT.pfm
+        // mask_path: .../mask0nocc.png
+        std::string mask_path = disp_file_path;
+        size_t pos = mask_path.find("disp0.pfm");
+        if (pos == std::string::npos)
+        {
+            std::cerr << "Error: disp_file_path must contain 'disp0.pfm'" << std::endl;
+            return false;
+        }
+        mask_path.replace(pos, 11, "mask0nocc.png");
+
+        // Read disparity from PFM file
+        cv::Mat disp_full = readPFM(disp_file_path);
+
+        // Ensure it's single channel (2D)
+        if (disp_full.channels() != 1)
+        {
+            // If it's 3-channel, take first channel or convert to grayscale
+            if (disp_full.channels() == 3)
+            {
+                std::vector<cv::Mat> channels;
+                cv::split(disp_full, channels);
+                disparity = channels[0].clone();
+            }
+            else
+            {
+                std::cerr << "Error: Unexpected number of channels in PFM file" << std::endl;
+                return false;
+            }
+        }
+        else
+        {
+            disparity = disp_full.clone();
+        }
+
+        // Convert to float32 if needed
+        if (disparity.type() != CV_32F)
+        {
+            disparity.convertTo(disparity, CV_32F);
+        }
+
+        // Read non-occlusion mask from PNG
+        cv::Mat mask_img = cv::imread(mask_path, cv::IMREAD_GRAYSCALE);
+        if (mask_img.empty())
+        {
+            std::cerr << "Error: Cannot read mask file: " << mask_path << std::endl;
+            return false;
+        }
+
+        // Create validity mask: mask == 255 (non-occluded pixels)
+        // Mirrors: nocc_pix = imageio.imread(nocc_pix) == 255
+        valid_mask = (mask_img == 255);
+        valid_mask.convertTo(valid_mask, CV_8U); // Convert bool to uint8 (0 or 255)
+
+        // Verify mask has valid pixels
+        if (cv::countNonZero(valid_mask) == 0)
+        {
+            std::cerr << "Warning: No valid pixels in mask" << std::endl;
+            return false;
+        }
+
+        // Ensure disparity and mask have same dimensions
+        if (disparity.size() != valid_mask.size())
+        {
+            std::cerr << "Error: Disparity and mask size mismatch" << std::endl;
+            return false;
+        }
+
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error reading Middlebury disparity: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool Dataset::readDispETH3D(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask)
+{
+    try
+    {
+        // Extract base path and construct mask path
+        // disp_file_path: .../disp0GT.pfm
+        // mask_path: .../mask0nocc.png
+        std::string mask_path = disp_file_path;
+        size_t pos = mask_path.find("disp0GT.pfm");
+        if (pos == std::string::npos)
+        {
+            std::cerr << "Error: disp_file_path must contain 'disp0GT.pfm'" << std::endl;
+            return false;
+        }
+        mask_path.replace(pos, 11, "mask0nocc.png");
+
+        // Read disparity from PFM file
+        cv::Mat disp_full = readPFM(disp_file_path);
+
+        // Ensure it's single channel (2D)
+        if (disp_full.channels() != 1)
+        {
+            // If it's 3-channel, take first channel or convert to grayscale
+            if (disp_full.channels() == 3)
+            {
+                std::vector<cv::Mat> channels;
+                cv::split(disp_full, channels);
+                disparity = channels[0].clone();
+            }
+            else
+            {
+                std::cerr << "Error: Unexpected number of channels in PFM file" << std::endl;
+                return false;
+            }
+        }
+        else
+        {
+            disparity = disp_full.clone();
+        }
+
+        // Convert to float32 if needed
+        if (disparity.type() != CV_32F)
+        {
+            disparity.convertTo(disparity, CV_32F);
+        }
+
+        // Read non-occlusion mask from PNG
+        cv::Mat mask_img = cv::imread(mask_path, cv::IMREAD_GRAYSCALE);
+        if (mask_img.empty())
+        {
+            std::cerr << "Error: Cannot read mask file: " << mask_path << std::endl;
+            return false;
+        }
+
+        // Create validity mask: mask == 255 (non-occluded pixels)
+        // This mirrors the Python code: occ_mask == 255
+        valid_mask = (mask_img == 255);
+        valid_mask.convertTo(valid_mask, CV_8U); // Convert bool to uint8 (0 or 255)
+
+        // Ensure disparity and mask have same dimensions
+        if (disparity.size() != valid_mask.size())
+        {
+            std::cerr << "Error: Disparity and mask size mismatch" << std::endl;
+            return false;
+        }
+
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error reading ETH3D disparity: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool Dataset::read_edges_and_disparities_from_file(const std::string &file_path, std::vector<Edge> &edges, std::vector<double> &edge_disparities)
+{
+    try
+    {
+        std::ifstream file(file_path);
+        if (!file.is_open())
+        {
+            std::cerr << "Error: Could not open file: " << file_path << std::endl;
+            return false;
+        }
+
+        edges.clear();
+        edge_disparities.clear();
+
+        std::string line;
+        int edge_index = 0;
+
+        while (std::getline(file, line))
+        {
+            // Skip empty lines and comments
+            if (line.empty() || line[0] == '#')
+            {
+                continue;
+            }
+
+            // Parse the line - support both space and tab separators
+            std::istringstream iss(line);
+            std::vector<std::string> tokens;
+            std::string token;
+
+            while (iss >> token)
+            {
+                tokens.push_back(token);
+            }
+
+            // Expect 4 columns: x, y, orientation, disparity
+            if (tokens.size() < 4)
+            {
+                std::cerr << "Warning: Skipping line with insufficient columns: " << line << std::endl;
+                continue;
+            }
+
+            try
+            {
+                double y = std::stod(tokens[0]);
+                double x = std::stod(tokens[1]);
+                double orientation = std::stod(tokens[2]);
+                double disparity = std::stod(tokens[3]);
+
+                // Create Edge object
+                cv::Point2d location(x, y);
+                Edge edge(location, orientation, false, 0); // b_isEmpty=false, frame_source=0
+                edge.index = edge_index;
+
+                edges.push_back(edge);
+                edge_disparities.push_back(disparity);
+
+                edge_index++;
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "Warning: Error parsing line: " << line << " - " << e.what() << std::endl;
+                continue;
             }
         }
 
-        if (!row.empty())
-            data.push_back(row);
-    }
+        file.close();
 
-    int rows = data.size();
-    int cols = data[0].size();
-    cv::Mat disparity(rows, cols, CV_32F);
-
-    for (int r = 0; r < rows; ++r)
-    {
-        for (int c = 0; c < cols; ++c)
+        if (edges.empty())
         {
-            disparity.at<float>(r, c) = data[r][c];
+            std::cerr << "Warning: No valid edge data found in file: " << file_path << std::endl;
+            return false;
         }
+#if DATASET_LOAD_VERBOSE
+        std::cout << "Successfully loaded " << edges.size() << " third-order edges from: " << file_path << std::endl;
+#endif
+        return true;
     }
-
-    return disparity;
+    catch (const std::exception &e)
+    {
+        std::cerr << "Error reading third-order edges from file: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 void Dataset::PrintDatasetInfo()
@@ -472,7 +682,8 @@ void Dataset::PrintDatasetInfo()
 
     std::cout << "\nStereo Camera Parameters: \n";
     std::cout << "Focal Length: " << camera_info.focal_length << " pixels" << std::endl;
-    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl << std::endl;
+    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl
+              << std::endl;
 }
 
 #endif
