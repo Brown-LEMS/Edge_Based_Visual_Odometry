@@ -90,10 +90,6 @@ int main(int argc, char **argv)
 		std::cerr << "File does not exist!" << std::endl;
 	}
 
-	// Dataset::Ptr dataset_ = Dataset::Ptr(new Dataset(config_map));
-
-	// dataset_->PerformEdgeBasedVO();
-
 	EBVO ebvo(config_map);
 	ebvo.PerformEdgeBasedVO();
 	return 0;

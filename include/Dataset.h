@@ -19,17 +19,6 @@
 #include "./toed/cpu_toed.hpp"
 #include "Stereo_Iterator.h"
 
-// =======================================================================================================
-// class Dataset: Fetch data from dataset specified in the configuration file
-//
-// ChangeLogs
-//    Jue    25-06-17    Modified data structure for readability.
-//    Lopez  25-01-26    Modified for euroc dataset support.
-//    Chien  23-01-17    Initially created.
-//
-//> (c) LEMS, Brown University
-//> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu), Jue Han (jhan192@brown.edu)
-// =======================================================================================================
 struct SpatialGrid
 {
     int cell_size;
@@ -350,59 +339,6 @@ struct temporal_edge_pair
     std::vector<Temporal_CF_Edge_Cluster> matching_CF_edge_clusters;
 };
 
-struct KF_CF_EdgeCorrespondence
-{
-    bool is_left = true;       //> whether the keyframe is left or right
-    std::vector<int> kf_edges; //> stores the 3rd order edge indices in the keyframe-left / stores reprsentative edge indices in the keyframe-right
-    std::vector<double> gt_orientation_on_cf;
-    std::vector<cv::Point2d> gt_location_on_cf;
-
-    const Stereo_Edge_Pairs *key_frame_pairs;
-    const Stereo_Edge_Pairs *current_frame_pairs;
-
-    std::vector<std::vector<int>> veridical_cf_edges_indices; //> corresponding veridical edge indices in the current frame
-    std::vector<std::vector<int>> matching_cf_edges_indices;  // corresponding edge indices in the current frame after filtering
-    std::vector<std::vector<scores>> matching_scores;
-    // getters:
-    // Edge get_kf_edge_by_index(size_t i) const
-    // {
-    //     // returns the edge in keyframe given index in keyframe edge list
-    //     if (i >= kf_edges.size())
-    //     {
-    //         std::cerr << "ERROR: keyframe edge index " << i << " out of bounds!" << std::endl;
-    //         return Edge();
-    //     }
-    //     int idx = kf_edges[i];
-    //     Edge e = is_left ? key_frame_pairs->get_focused_edge_by_toed_index(idx) : key_frame_pairs->matching_edge_clusters[key_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(idx)].edge_clusters[0].center_edge;
-    //     return e;
-    // }
-    // Edge get_cf_edge_by_indexij(size_t i, size_t j) const
-    // {
-    //     // returns the edge in current frame given index in keyframe edge list and index in corresponding cf edge list
-    //     if (i >= kf_edges.size() || j >= matching_cf_edges_indices[i].size())
-    //     {
-    //         std::cerr << "ERROR: current frame edge index " << i << " out of bounds!" << std::endl;
-    //         return Edge();
-    //     }
-    //     int idx = matching_cf_edges_indices[i][j];
-    //     Edge e = is_left ? current_frame_pairs->get_focused_edge_by_toed_index(idx) : current_frame_pairs->matching_edge_clusters[current_frame_pairs->get_Stereo_Edge_Pairs_left_id_index(idx)].edge_clusters[0].center_edge;
-    //     return e;
-    // }
-    // Edge get_cf_edge_by_index(size_t i)
-    // {
-    //     // returns the edge in current frame given its toed index
-    //     const std::vector<Edge> &cf_edges = is_left
-    //                                             ? current_frame_pairs->stereo_frame->left_edges
-    //                                             : current_frame_pairs->stereo_frame->right_edges;
-    //     if (i >= cf_edges.size())
-    //     {
-    //         std::cerr << "ERROR: current frame edge index " << i << " out of bounds!" << std::endl;
-    //         return Edge();
-    //     }
-    //     return cf_edges[i];
-    // }
-};
-
 extern cv::Mat merged_visualization_global;
 class Dataset
 {
@@ -520,9 +456,6 @@ private:
     unsigned Total_Num_Of_Imgs;
     int img_height, img_width;
 
-    // didn't find this:
-    double max_disparity;
-
     // functions
     void PrintDatasetInfo();
 
@@ -536,7 +469,6 @@ private:
 
     void LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int num_maps, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps);
 
-    cv::Mat Small_Patch_Radius_Map;
     Utility::Ptr utility_tool = nullptr;
 };
 

@@ -38,17 +38,14 @@ public:
     void ProcessEdges(const cv::Mat &image,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
-    void Find_Stereo_GT_Locations(const cv::Mat left_disparity_map, const cv::Mat occlusion_mask, bool is_left, Stereo_Edge_Pairs &stereo_frame_edge_pairs);
     void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids);
 
     //> filtering methods
     void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
-    // void apply_orientation_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double orientation_threshold, bool is_left);
     void apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                      const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                      double orientation_threshold, bool b_is_left);
 
-    // void apply_SIFT_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double sift_dist_threshold, bool is_left);
     void apply_SIFT_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                               const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                               double sift_dist_threshold, bool b_is_left);
@@ -56,7 +53,6 @@ public:
                              const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                              double ncc_val_threshold,
                              const cv::Mat &keyframe_image, const cv::Mat &current_image, bool b_is_left);
-    // void apply_best_nearly_best_filtering(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, double threshold, bool is_NCC);
     void apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, double threshold, const std::string scoring_type);
 
     void apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
@@ -80,28 +76,16 @@ public:
         /* optional inputs */
         int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
 
-    // void Find_Veridical_Edge_Correspondences_on_CF(KF_CF_EdgeCorrespondence &KF_CF_edge_pairs, Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo, SpatialGrid &spatial_grid, bool is_left, double gt_dist_threshold = 1.0);
     void Find_Veridical_Edge_Correspondences_on_CF(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                                    const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
                                                    const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                                    Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
                                                    SpatialGrid &spatial_grid, bool b_is_left, double gt_dist_threshold = 1.0);
     //> Evaluations
-    // void Evaluate_KF_CF_Edge_Correspondences(const KF_CF_EdgeCorrespondence &KF_CF_edge_pairs,
-    //                                          Stereo_Edge_Pairs &keyframe_stereo, Stereo_Edge_Pairs &current_stereo,
-    //                                          size_t frame_idx, const std::string &stage_name);
     void Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_pair> &temporal_edge_mates,
                                              size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates);
 
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
-
-    void augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::pair<cv::Mat, cv::Mat>> &edge_descriptors, bool is_left);
-
-    void EvaluateEdgeMatchPerformance(const std::unordered_map<Edge, std::vector<Edge>> &Edge_match,
-                                      const std::unordered_map<Edge, EdgeGTMatchInfo> &gt_correspondences,
-                                      size_t frame_idx,
-                                      const std::string &stage_name,
-                                      double distance_threshold = 3.0);
 
     double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset);
 
@@ -112,19 +96,6 @@ private:
     Dataset dataset;
     SpatialGrid left_spatial_grids;
     SpatialGrid right_spatial_grids;
-    //> third order edges
-    std::vector<Edge> kf_edges_left;  //> 3rd order edges in the keyframe-left
-    std::vector<Edge> kf_edges_right; //> Representative edges in the keyframe-right
-    std::vector<bool> kf_right_eval;  //> whether the representative edges in the keyframe-right are veridical
-    std::vector<Edge> cf_edges_left;  //> 3rd order edges in the current frame-left
-    std::vector<Edge> cf_edges_right; //> Representative edges in the current frame-right
-    std::vector<bool> cf_right_eval;  //> whether the representative edges in the current frame-right are veridical
-    // SIFT descriptor cache for efficient temporal matching
-
-    std::vector<std::pair<cv::Mat, cv::Mat>> current_frame_descriptors_left; // Maps previous frame edge index to its descriptor
-    std::vector<std::pair<cv::Mat, cv::Mat>> current_frame_descriptors_right;
-
-    std::vector<int> previous_edge_indices; // Track which edges have descriptors
 };
 
 #endif // EBVO_H
