@@ -791,7 +791,59 @@ void Stereo_Matches::apply_Best_Nearly_Best_Test(Stereo_Edge_Pairs &stereo_frame
         }
     }
 }
+void Stereo_Matches::apply_orientation_filter(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double orientation_threshold, const std::string &output_dir, size_t frame_idx)
+{
+    //> Storage for orientation differences
+    std::vector<double> orientation_differences;
+    std::vector<int> is_veridical;
 
+#pragma omp parallel
+    {
+        //> Thread-local storage for orientation differences
+        std::vector<double> thread_local_orientation_diffs;
+        std::vector<int> thread_local_is_veridical;
+
+#pragma omp for schedule(dynamic)
+        for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
+        {
+            //> Get the left edge
+            Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
+
+            //> Get the right edge patches
+            std::vector<EdgeCluster> surviving_edge_clusters;
+            for (int j = 0; j < stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size(); j++)
+            {
+                const auto &edge_cluster = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j];
+                Edge right_edge = edge_cluster.center_edge;
+                double orientation_diff = std::abs(rad_to_deg<double>(left_edge.orientation - right_edge.orientation));
+                if (orientation_diff > 180.0)
+                    orientation_diff = 360.0 - orientation_diff;
+
+                //> Record orientation difference for all candidate edges
+                thread_local_orientation_diffs.push_back(orientation_diff);
+
+                //> Check if this edge is veridical (in ground truth)
+                int right_edge_index = edge_cluster.contributing_edges_toed_indices[0];
+                bool is_gt = std::find(stereo_frame_edge_pairs.veridical_right_edges_indices[i].begin(),
+                                       stereo_frame_edge_pairs.veridical_right_edges_indices[i].end(),
+                                       right_edge_index) != stereo_frame_edge_pairs.veridical_right_edges_indices[i].end();
+                thread_local_is_veridical.push_back(is_gt ? 1 : 0);
+
+                if (orientation_diff < orientation_threshold || std::abs(orientation_diff - 180.0) < orientation_threshold)
+                {
+                    surviving_edge_clusters.push_back(std::move(edge_cluster));
+                }
+            }
+            stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = std::move(surviving_edge_clusters);
+        }
+
+#pragma omp critical
+        {
+            orientation_differences.insert(orientation_differences.end(), thread_local_orientation_diffs.begin(), thread_local_orientation_diffs.end());
+            is_veridical.insert(is_veridical.end(), thread_local_is_veridical.begin(), thread_local_is_veridical.end());
+        }
+    }
+}
 void Stereo_Matches::apply_Lowe_Ratio_Test(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double lowe_ratio_threshold, const std::string &output_dir, size_t frame_idx)
 {
 
@@ -1235,6 +1287,11 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
                                          evaluation_statistics);
     frame_metrics.stages["Maximal Disparity Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
 
+    apply_orientation_filter(stereo_frame_edge_pairs, 10.0, "output_files", frame_idx);
+    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Orientation Filtering",
+                                         recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
+                                         evaluation_statistics);
+    frame_metrics.stages["Orientation Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
     //> Augment edge data with SIFT descriptors
     augment_Edge_Data(stereo_frame_edge_pairs, true);
 
@@ -1374,46 +1431,46 @@ void Stereo_Matches::finalize_stereo_edge_mates(Stereo_Edge_Pairs &stereo_frame_
     final_stereo_edge_pairs.resize(stereo_frame_edge_pairs.focused_edge_indices.size());
 
 #pragma omp parallel
-{
-    #pragma omp for schedule(dynamic)
-    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
     {
-        final_stereo_edge_pair stereo_mate;
+#pragma omp for schedule(dynamic)
+        for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
+        {
+            final_stereo_edge_pair stereo_mate;
 
-        //> Left and right edges
-        Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
-        Edge right_edge = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[0].center_edge;
-        stereo_mate.left_edge = left_edge;
-        stereo_mate.right_edge = right_edge;
+            //> Left and right edges
+            Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
+            Edge right_edge = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[0].center_edge;
+            stereo_mate.left_edge = left_edge;
+            stereo_mate.right_edge = right_edge;
 
-        //> Left and right edge patches
-        stereo_mate.left_edge_patches = stereo_frame_edge_pairs.left_edge_patches[i];
-        stereo_mate.right_edge_patches = utility_tool->get_edge_patches(right_edge, right_image_64f);
+            //> Left and right edge patches
+            stereo_mate.left_edge_patches = stereo_frame_edge_pairs.left_edge_patches[i];
+            stereo_mate.right_edge_patches = utility_tool->get_edge_patches(right_edge, right_image_64f);
 
-        //> Left and right edge descriptors
-        stereo_mate.left_edge_descriptors = stereo_frame_edge_pairs.left_edge_descriptors[i];
+            //> Left and right edge descriptors
+            stereo_mate.left_edge_descriptors = stereo_frame_edge_pairs.left_edge_descriptors[i];
 
-        std::vector<cv::KeyPoint> edge_keypoints;
-        std::pair<cv::Point2d, cv::Point2d> shifted_points = utility_tool->get_Orthogonal_Shifted_Points(right_edge, 8); //> augment the edge by adding shifted points along the orthogonal direction
-        cv::KeyPoint edge_kp1(shifted_points.first, 1, 180 / M_PI * right_edge.orientation);
-        cv::KeyPoint edge_kp2(shifted_points.second, 1, 180 / M_PI * right_edge.orientation);
-        edge_keypoints.push_back(edge_kp1);
-        edge_keypoints.push_back(edge_kp2);
-        cv::Mat right_edge_descriptors;
-        sift->compute(right_image, edge_keypoints, right_edge_descriptors);
-        stereo_mate.right_edge_descriptors = std::make_pair(right_edge_descriptors.row(0).clone(), right_edge_descriptors.row(1).clone());
+            std::vector<cv::KeyPoint> edge_keypoints;
+            std::pair<cv::Point2d, cv::Point2d> shifted_points = utility_tool->get_Orthogonal_Shifted_Points(right_edge, 8); //> augment the edge by adding shifted points along the orthogonal direction
+            cv::KeyPoint edge_kp1(shifted_points.first, 1, 180 / M_PI * right_edge.orientation);
+            cv::KeyPoint edge_kp2(shifted_points.second, 1, 180 / M_PI * right_edge.orientation);
+            edge_keypoints.push_back(edge_kp1);
+            edge_keypoints.push_back(edge_kp2);
+            cv::Mat right_edge_descriptors;
+            sift->compute(right_image, edge_keypoints, right_edge_descriptors);
+            stereo_mate.right_edge_descriptors = std::make_pair(right_edge_descriptors.row(0).clone(), right_edge_descriptors.row(1).clone());
 
-        //> 3D points in left and right camera coordinates
-        stereo_mate.Gamma_in_left_cam_coord = stereo_frame_edge_pairs.Gamma_in_left_cam_coord[i];
-        stereo_mate.Gamma_in_right_cam_coord = stereo_frame_edge_pairs.Gamma_in_right_cam_coord[i];
+            //> 3D points in left and right camera coordinates
+            stereo_mate.Gamma_in_left_cam_coord = stereo_frame_edge_pairs.Gamma_in_left_cam_coord[i];
+            stereo_mate.Gamma_in_right_cam_coord = stereo_frame_edge_pairs.Gamma_in_right_cam_coord[i];
 
-        //> Whether the stereo edge pair is true positive
-        stereo_mate.b_is_TP = (cv::norm(right_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH) ? (true) : (false);
-    
-        //> Push back the stereo edge pair
-        final_stereo_edge_pairs[i] = stereo_mate;
+            //> Whether the stereo edge pair is true positive
+            stereo_mate.b_is_TP = (cv::norm(right_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH) ? (true) : (false);
+
+            //> Push back the stereo edge pair
+            final_stereo_edge_pairs[i] = stereo_mate;
+        }
     }
-}
 
     std::cout << "Size of finalized stereo edge pairs = " << final_stereo_edge_pairs.size() << std::endl;
 }

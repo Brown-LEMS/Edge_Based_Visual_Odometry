@@ -52,9 +52,10 @@ function plot_distribution(filter_name, frame_idx, output_dir)
     end
     
     % Transform NCC scores to dissimilarity (1 - ncc_score)
-    if strcmp(filter_name, 'ncc_score')
+    is_ncc_filter = contains(filter_name, 'ncc_score');
+    if is_ncc_filter || strcmp(filter_name, 'ncc_score')
         data = 1 - data;
-        filter_display_name = 'ncc dissimilarity (1 - ncc)';
+        filter_display_name = 'NCC dissimilarity (1 - NCC)';
     elseif strcmp(filter_name, 'location_error')
         filter_display_name = 'disparity difference';
     else
@@ -68,7 +69,6 @@ function plot_distribution(filter_name, frame_idx, output_dir)
     fprintf('Loaded %d values from %s\n', length(data), filename);
     
     % Check which filter to determine if zoomed inset plot is needed
-    is_ncc = strcmp(filter_name, 'ncc_score');
     is_epipolar = strcmp(filter_name, 'epipolar_distance');
     is_location = strcmp(filter_name, 'location_error');
     
@@ -121,14 +121,14 @@ function plot_distribution(filter_name, frame_idx, output_dir)
     zoom_min = 0; zoom_max = 0;
     zoom_title = '';
     
-    if is_ncc
+    if is_ncc_filter
         plot_inset = true;
         zoom_min = 0; zoom_max = 0.5;
-        zoom_title = 'Zoomed: NCC 0.5-1.0';
+        zoom_title = 'Zoomed: 1-NCC [0, 0.5]';
     elseif is_epipolar
         plot_inset = true;
         zoom_min = 0; zoom_max = 2;
-        zoom_title = 'Zoomed: EP 1-3 pixels';
+        zoom_title = 'Zoomed: EP 0-2 pixels';
     elseif is_location
         plot_inset = true;
         zoom_min = 0; zoom_max = 20;

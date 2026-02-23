@@ -14,7 +14,8 @@ frame_idx = 0;  % Change this to plot different frames
 output_dir = '../outputs';  % Change this to the appropriate output directory
 
 % List of filters to plot
-filters = {'sift_distance_temp'};
+filters = {'temporal_orientation_difference_left', ...
+           'temporal_orientation_difference_right'};
 
 % List of stages for ambiguity plots (match output file names exactly)
 ambiguity_stages = {'epipolar','disparity','ncc','sift','BNB_NCC','BNB_SIFT'};
