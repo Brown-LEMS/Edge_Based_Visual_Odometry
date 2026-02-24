@@ -69,8 +69,6 @@ namespace std
 
 class ThirdOrderEdgeDetectionCPU
 {
-
-  typedef std::shared_ptr<ThirdOrderEdgeDetectionCPU> Ptr;
   int img_height;
   int img_width;
   int interp_img_height;
@@ -112,6 +110,8 @@ public:
 
   std::vector<Edge> toed_edges;
   int Total_Num_Of_TOED;
+
+  typedef std::shared_ptr<ThirdOrderEdgeDetectionCPU> Ptr;
 };
 
 #endif // TOED_HPP

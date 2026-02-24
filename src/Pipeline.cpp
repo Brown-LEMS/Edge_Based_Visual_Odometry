@@ -8,150 +8,150 @@
 #include "Pipeline.h"
 #include "definitions.h"
 
+Pipeline::Pipeline(Dataset::Ptr dataset) : dataset_(dataset) {
 
-// =====================================================================================================================
-// class Pipeline: visual odometry pipeline 
-//
-// ChangeLogs
-//    Chien  24-01-17    Initially created.
-//    Chien  24-01-18    Add (SIFT) feature detection, matching, and creating a rank-order list of correspondences
-//
-//> (c) LEMS, Brown University
-//> Chiang-Heng Chien (chiang-heng_chien@brown.edu)
-// ======================================================================================================================
+    //> Loading the dataset
+    dataset_->load_dataset(dataset_->get_dataset_type(), left_ref_disparity_maps, right_ref_disparity_maps, left_occlusion_masks, right_occlusion_masks);
 
-Pipeline::Pipeline() {
-
-    //> Set zeros
-    Num_Of_SIFT_Features = 0;
-    Num_Of_Good_Feature_Matches = 0;
+    //> Initialize the pointers to the classes
+    stereo_matches_engine = std::make_shared<Stereo_Matches>();
+    temporal_matches_engine = std::make_shared<Temporal_Matches>(dataset_);
+    utility_tool = std::make_shared<Utility>();
+    Camera_Motion_Estimate = std::make_shared<MotionTracker>();
 }
 
-bool Pipeline::Add_Frame(Frame::Ptr frame) {
-    //> Set the frame pointer
-    Current_Frame = frame;
+void Pipeline::ProcessEdges(const cv::Mat &image, std::vector<Edge> &edges)
+{
+    std::cout << "Running third-order edge detector..." << std::endl;
+    TOED->get_Third_Order_Edges(image);
+    edges = TOED->toed_edges;
+}
+
+bool Pipeline::Add_Stereo_Frame() {
 
     do {
         switch (status_) {
-            case PipelineStatus::STATUS_INITIALIZATION:
-                //> Initialization: extract SIFT features on the first frame
-                LOG_STATUS("INITIALIZATION");
-                Num_Of_SIFT_Features = get_Features();
-                send_control_to_main = true;
+            case PipelineStatus::STATUS_IMG_PREPARATION:
+                //> Preparing images
+                LOG_STATUS("IMG_PREPARATION");
+                prepare_Stereo_Images();
                 break;
-            case PipelineStatus::STATUS_GET_AND_MATCH_SIFT:
-                //> Extract and match SIFT features of the current frame with the previous frame
-                LOG_STATUS("GET_AND_MATCH_SIFT");
-                Num_Of_SIFT_Features = get_Features();
-                Num_Of_Good_Feature_Matches = get_Feature_Correspondences();
-                std::cout << "Number of good feature correspondences: " << Num_Of_Good_Feature_Matches << std::endl;
-                send_control_to_main = false;
+            case PipelineStatus::STATUS_GET_STEREO_EDGE_CORRESPONDENCES:
+                //> Get stereo edge correspondences
+                LOG_STATUS("GET_STEREO_EDGE_CORRESPONDENCES");
+                get_Stereo_Edge_Correspondences();
                 break;
-            case PipelineStatus::STATUS_ESTIMATE_RELATIVE_POSE:
-                LOG_STATUS("ESTIMATE_RELATIVE_POSE");
-                track_Camera_Motion();
-                send_control_to_main = true;
+            case PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES:
+                //> Get temporal edge correspondences (keyframe <-> current frame)
+                LOG_STATUS("GET_TEMPORAL_EDGE_CORRESPONDENCES");
+                get_Temporal_Edge_Correspondences();
                 break;
         }
     } while ( !send_control_to_main );
 
-    //> Swap the frame
-    Previous_Frame = Current_Frame;
-
     return true;
 }
 
+void Pipeline::prepare_Stereo_Images() {
 
-int Pipeline::get_Features() {
+    current_frame.left_disparity_map = (stereo_frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[stereo_frame_idx] : cv::Mat();
+    current_frame.right_disparity_map = (stereo_frame_idx < right_ref_disparity_maps.size()) ? right_ref_disparity_maps[stereo_frame_idx] : cv::Mat();
 
-    //> SIFT feature detector. Parameters same as the VLFeat default values, defined in Macros.
-    //cv::Ptr<cv::xfeatures2d::SIFT> sift;
-    cv::Ptr<cv::SIFT> sift;
-    sift = cv::SIFT::create(SIFT_NFEATURES, SIFT_NOCTAVE_LAYERS, SIFT_CONTRAST_THRESHOLD, \
-                            SIFT_EDGE_THRESHOLD, SIFT_GAUSSIAN_SIGMA);
+    // //> This is optional
+    // const cv::Mat &left_occlusion_mask = (stereo_frame_idx < left_occlusion_masks.size()) ? left_occlusion_masks[stereo_frame_idx] : cv::Mat();
+    // const cv::Mat &right_occlusion_mask = (stereo_frame_idx < right_occlusion_masks.size()) ? right_occlusion_masks[stereo_frame_idx] : cv::Mat();
 
-    //> Detect SIFT keypoints and extract SIFT descriptor from the image
-    std::vector<cv::KeyPoint> SIFT_Keypoints;
-    cv::Mat SIFT_KeyPoint_Descriptors;
-    sift->detect(Current_Frame->Image, SIFT_Keypoints);
-    sift->compute(Current_Frame->Image, SIFT_Keypoints, SIFT_KeyPoint_Descriptors);
+    std::cout << std::endl << "Stereo Image Pair #" << stereo_frame_idx << std::endl;
 
-    //> Copy to the class Frame
-    Current_Frame->SIFT_Locations = SIFT_Keypoints;
-    Current_Frame->SIFT_Descriptors = SIFT_KeyPoint_Descriptors;
+    cv::Mat left_cur_undistorted, right_cur_undistorted;
+    cv::undistort(current_frame.left_image, left_cur_undistorted, dataset_->get_left_calib_matrix_cvMat(), dataset_->get_left_dist_coeff_mat());
+    cv::undistort(current_frame.right_image, right_cur_undistorted, dataset_->get_right_calib_matrix_cvMat(), dataset_->get_right_dist_coeff_mat());
+    current_frame.left_image_undistorted = left_cur_undistorted;
+    current_frame.right_image_undistorted = right_cur_undistorted;
 
-    //> Change to the next status
-    status_ = PipelineStatus::STATUS_GET_AND_MATCH_SIFT;
-    
-    return SIFT_Keypoints.size();
+    util_compute_Img_Gradients(current_frame.left_image_undistorted, current_frame.left_image_gradients_x, current_frame.left_image_gradients_y);
+    util_compute_Img_Gradients(current_frame.right_image_undistorted, current_frame.right_image_gradients_x, current_frame.right_image_gradients_y);
+
+    //> initialize the pointers of the third-order edge detector and the spatial grids
+    if (dataset_->get_num_imgs() == 0)
+        initialize_TOED_and_Spatial_Grids();
+
+    ProcessEdges(left_cur_undistorted, dataset_->left_edges);
+    std::cout << "Number of edges on the left image: " << dataset_->left_edges.size() << std::endl;
+    current_frame.left_edges = dataset_->left_edges;
+
+    ProcessEdges(right_cur_undistorted, dataset_->right_edges);
+    std::cout << "Number of edges on the right image: " << dataset_->right_edges.size() << std::endl;
+    current_frame.right_edges = dataset_->right_edges;
+
+    dataset_->increment_num_imgs();
+    std::cout << std::endl;
+
+    //> Shift to the next status
+    status_ = PipelineStatus::STATUS_GET_STEREO_EDGE_CORRESPONDENCES;
+    send_control_to_main = false;
 }
 
-int Pipeline::get_Feature_Correspondences() {
+void Pipeline::get_Stereo_Edge_Correspondences() {
 
-    //> Match SIFT features via OpenCV built-in KNN approach
-    //  Matching direction: from previous frame -> current frame
-    cv::BFMatcher matcher;
-    std::vector< std::vector< cv::DMatch > > feature_matches;
-    matcher.knnMatch( Previous_Frame->SIFT_Descriptors, Current_Frame->SIFT_Descriptors, feature_matches, K_IN_KNN_MATCHING );
+    //> Set the stereo left constructor
+    set_Stereo_Left_Constructor();
+
+    //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
+    stereo_matches_engine->Find_Stereo_GT_Locations(dataset_, current_frame.left_disparity_map, current_frame, current_frame_stereo_left_constructor, true);
+    std::cout << "Complete calculating GT locations for left edges of the current_frame..." << std::endl;
+    //> Construct a GT stereo edge pool
+    stereo_matches_engine->get_Stereo_Edge_GT_Pairs(dataset_, current_frame, current_frame_stereo_left_constructor, true);
+    std::cout << "Size of stereo edge correspondences pool = " << current_frame_stereo_left_constructor.focused_edge_indices.size() << std::endl;
     
-    //> Apply Lowe's ratio test
-    std::vector< cv::DMatch > Good_Matches;
-    for (int i = 0; i < feature_matches.size(); ++i) {
-        if (feature_matches[i][0].distance < LOWES_RATIO * feature_matches[i][1].distance) {
-            Good_Matches.push_back(feature_matches[i][0]);
-        }
+    //> construct stereo edge correspondences for the current_frame
+    Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_frame_idx);
+
+    //> Finalize the stereo edge pairs for the current_frame
+    stereo_matches_engine->finalize_stereo_edge_mates(current_frame_stereo_left_constructor, current_frame_stereo_edge_mates);
+
+    //> If the current frame is the first frame, make current frame the keyframe
+    if (stereo_frame_idx == 0) {
+        set_Keyframe();
+        status_ = PipelineStatus::STATUS_IMG_PREPARATION;
+        send_control_to_main = true;
     }
-
-    //> Sort the matches based on their matching score (Euclidean distances of feature descriptors)
-    std::sort( Good_Matches.begin(), Good_Matches.end(), less_than_Eucl_Dist() );
-
-    //> Push back the "valid" match feature locations of the previous and current frames
-    std::vector< std::pair<int, int> > Valid_Good_Matches_Index;
-    for (int fi = 0; fi < Good_Matches.size(); fi++) {
-        cv::DMatch f = Good_Matches[fi];
-
-        //> Push back the match feature locations of the previous and current frames
-        cv::Point2d previous_pt = Previous_Frame->SIFT_Locations[f.queryIdx].pt;
-        cv::Point2d current_pt = Current_Frame->SIFT_Locations[f.trainIdx].pt;
-
-        //> Rule out points unable to do bilinear interpolation
-        if (previous_pt.x < 1 || previous_pt.y < 1 || current_pt.x < 1 || current_pt.y < 1) continue;
-        if (previous_pt.x > (Current_Frame->Image.cols-1) || previous_pt.y > (Current_Frame->Image.rows-1) \
-         || current_pt.x > (Current_Frame->Image.cols-1) || current_pt.y > (Current_Frame->Image.rows-1)) 
-            continue;
-
-        Eigen::Vector3d Previous_Match_Location = {previous_pt.x, previous_pt.y, 1.0};
-        Eigen::Vector3d Current_Match_Location = {current_pt.x, current_pt.y, 1.0};
-
-        //> 2D-3D matches of the previous and current frames
-        Previous_Frame->SIFT_Match_Locations_Pixels.push_back(Previous_Match_Location);
-        Current_Frame->SIFT_Match_Locations_Pixels.push_back(Current_Match_Location);
-        
-        //> Push back indices of valid feature matches
-        Valid_Good_Matches_Index.push_back(std::make_pair(f.queryIdx, f.trainIdx));
+    else {
+        //> Shift to the next status
+        status_ = PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES;
+        send_control_to_main = false;
     }
-
-#if OPENCV_DISPLAY_CORRESPONDENCES
-    utility_tool->Display_Feature_Correspondences(Previous_Frame->Image, Current_Frame->Image, \
-                                                  Previous_Frame->SIFT_Locations, Current_Frame->SIFT_Locations, \
-                                                  Good_Matches ) ;
-#endif
-
-    //> Get 3D matches
-    //std::string ty = UTILITY_TOOLS::cvMat_Type( Current_Frame->Depth.type() );
-    //printf("Depth Image: %s %dx%d \n", ty.c_str(), Current_Frame->Depth.cols, Current_Frame->Depth.rows );
-    //std::cout << Current_Frame->Depth.at<float>(320, 240) << std::endl;
-
-    //> Change to the next status
-    status_ = PipelineStatus::STATUS_ESTIMATE_RELATIVE_POSE;
-
-    return Valid_Good_Matches_Index.size();
-} //> End of get_Feature_Correspondences
-
-bool Pipeline::track_Camera_Motion() {
-
-    return true;
 }
 
+void Pipeline::get_Temporal_Edge_Correspondences() {
+
+    //> construct spatial grids for the current stereo edge mates
+    temporal_matches_engine->add_edges_to_spatial_grid(current_frame_stereo_edge_mates, left_spatial_grids, right_spatial_grids);
+    
+    //> Construct correspondences structure between last keyframe and the current frame
+    temporal_matches_engine->Find_Veridical_Edge_Correspondences_on_CF(
+        left_temporal_edge_mates,
+        keyframe_stereo_edge_mates,
+        current_frame_stereo_edge_mates,
+        keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
+        left_spatial_grids, true, 1.0);
+    std::cout << "Size of veridical edge pairs (left) = " << left_temporal_edge_mates.size() << std::endl;
+    temporal_matches_engine->Find_Veridical_Edge_Correspondences_on_CF(
+        right_temporal_edge_mates,
+        keyframe_stereo_edge_mates,
+        current_frame_stereo_edge_mates,
+        keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
+        right_spatial_grids, false, 1.0);
+    std::cout << "Size of veridical edge pairs (right) = " << right_temporal_edge_mates.size() << std::endl;
+
+    temporal_matches_engine->get_Temporal_Edge_Pairs(
+        current_frame_stereo_edge_mates,
+        left_temporal_edge_mates, right_temporal_edge_mates,
+        left_spatial_grids, right_spatial_grids,
+        keyframe, current_frame,
+        stereo_frame_idx);
+
+    send_control_to_main = true;
+}
 
 #endif

@@ -24,17 +24,26 @@
 class Temporal_Matches
 {
 public:
-    Temporal_Matches(YAML::Node config_map);
+    typedef std::shared_ptr<Temporal_Matches> Ptr;
+
+    Temporal_Matches(Dataset::Ptr dataset);
+
+    void get_Temporal_Edge_Pairs( \
+        std::vector<final_stereo_edge_pair> &current_frame_stereo_edge_mates, \
+        std::vector<temporal_edge_pair> &left_temporal_edge_mates, std::vector<temporal_edge_pair> &right_temporal_edge_mates, \
+        const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids, \
+        const StereoFrame &keyframe, const StereoFrame &current_frame, \
+        size_t frame_idx);
 
     // Main function to perform edge-based visual odometry
     void PerformEdgeBasedVO();
-    void ProcessEdges(const cv::Mat &image,
-                      std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
-                      std::vector<Edge> &edges);
+    // void ProcessEdges(const cv::Mat &image,
+    //                   std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
+    //                   std::vector<Edge> &edges);
     void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids);
 
     //> filtering methods
-    void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
+    void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, const SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
     void apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                      const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                      double orientation_threshold, bool b_is_left);
@@ -82,11 +91,11 @@ public:
 
 private:
     //> CH: shared pointer to the class of third-order edge detector
-    std::shared_ptr<ThirdOrderEdgeDetectionCPU> TOED = nullptr;
+    // std::shared_ptr<ThirdOrderEdgeDetectionCPU> TOED = nullptr;
     //> JH: dataset we are working on and its corresponding spatial grid
-    Dataset dataset;
-    SpatialGrid left_spatial_grids;
-    SpatialGrid right_spatial_grids;
+    Dataset::Ptr dataset;
+    // SpatialGrid left_spatial_grids;
+    // SpatialGrid right_spatial_grids;
 };
 
 #endif // EBVO_H
