@@ -144,6 +144,12 @@ void Pipeline::get_Temporal_Edge_Correspondences() {
         right_spatial_grids, false, 1.0);
     std::cout << "Size of veridical edge pairs (right) = " << right_temporal_edge_mates.size() << std::endl;
 
+    std::vector<KF_Veridical_Quads> veridical_quads_by_kf = temporal_matches_engine->find_Veridical_Quads(left_temporal_edge_mates, right_temporal_edge_mates, current_frame_stereo_edge_mates);
+    size_t num_veridical_quads = 0;
+    for (const auto &kvq : veridical_quads_by_kf)
+        num_veridical_quads += kvq.veridical_CF_stereo_mates.size();
+    std::cout << "Veridical quads: " << veridical_quads_by_kf.size() << " KF stereo correspondences, " << num_veridical_quads << " total quads" << std::endl;
+
     temporal_matches_engine->get_Temporal_Edge_Pairs(
         current_frame_stereo_edge_mates,
         left_temporal_edge_mates, right_temporal_edge_mates,

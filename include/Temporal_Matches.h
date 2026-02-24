@@ -21,6 +21,13 @@
 //> Jue Han (jhan192@brown.edu)
 // =======================================================================================================
 
+//> One KF stereo correspondence -> all veridical CF stereo correspondences (multiple quads per KF)
+struct KF_Veridical_Quads
+{
+    const final_stereo_edge_pair *KF_stereo_mate;
+    std::vector<const final_stereo_edge_pair *> veridical_CF_stereo_mates;
+};
+
 class Temporal_Matches
 {
 public:
@@ -35,11 +42,6 @@ public:
         const StereoFrame &keyframe, const StereoFrame &current_frame, \
         size_t frame_idx);
 
-    // Main function to perform edge-based visual odometry
-    void PerformEdgeBasedVO();
-    // void ProcessEdges(const cv::Mat &image,
-    //                   std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
-    //                   std::vector<Edge> &edges);
     void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids);
 
     //> filtering methods
@@ -59,9 +61,7 @@ public:
 
     void apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
                                           std::vector<temporal_edge_pair> &right_temporal_edge_mates);
-    void apply_length_constraint(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
-                                 std::vector<temporal_edge_pair> &right_temporal_edge_mates,
-                                 const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates);
+
     void apply_photometric_refinement(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                       const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                       const StereoFrame &keyframe, const StereoFrame &current_frame,
@@ -83,19 +83,22 @@ public:
                                                    const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                                    Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
                                                    SpatialGrid &spatial_grid, bool b_is_left, double gt_dist_threshold = 1.0);
-    //> Evaluations
-    void Evaluate_Temporal_Edge_Pairs(const std::vector<temporal_edge_pair> &temporal_edge_mates,
-                                      size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates);
-
+    
+    //> Construct veridical quads grouped by KF: each KF stereo correspondence maps to all veridical CF stereo
+    //> correspondences (left/right agree), so total quads = sum over KF of veridical_CF_stereo_mates.size().
+    std::vector<KF_Veridical_Quads> find_Veridical_Quads(
+        const std::vector<temporal_edge_pair> &left_temporal_edge_mates,
+        const std::vector<temporal_edge_pair> &right_temporal_edge_mates,
+        const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates);
+    
     double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset);
 
 private:
-    //> CH: shared pointer to the class of third-order edge detector
-    // std::shared_ptr<ThirdOrderEdgeDetectionCPU> TOED = nullptr;
-    //> JH: dataset we are working on and its corresponding spatial grid
+    //> Evaluations
+    void Evaluate_Temporal_Edge_Pairs(const std::vector<temporal_edge_pair> &temporal_edge_mates,
+        size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates);
+
     Dataset::Ptr dataset;
-    // SpatialGrid left_spatial_grids;
-    // SpatialGrid right_spatial_grids;
 };
 
 #endif // EBVO_H
