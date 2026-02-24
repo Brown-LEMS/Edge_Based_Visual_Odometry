@@ -1,5 +1,5 @@
-#ifndef EBVO_H
-#define EBVO_H
+#ifndef TEMPORAL_MATCHES_H
+#define TEMPORAL_MATCHES_H
 
 #include "Dataset.h"
 #include "utility.h"
@@ -11,7 +11,7 @@
 #include <omp.h>
 #endif
 // =======================================================================================================
-// EBVO: Main structure of LEMS Edge-Based Visual Odometry
+// Temporal_Matches: Main structure of LEMS Edge-Based Visual Odometry
 //
 // ChangeLogs
 //    Jue  25-06-10    Created to reorganize VO.
@@ -21,17 +21,10 @@
 //> Jue Han (jhan192@brown.edu)
 // =======================================================================================================
 
-struct EdgeGTMatchInfo
-{
-    Edge edge;                        // the edge we want to find the correspondence
-    Edge gt_edge;                     // the ground truth correspondence edge in the next frame
-    std::vector<Edge> vertical_edges; // corresponding vertical edges in the next frame
-};
-
-class EBVO
+class Temporal_Matches
 {
 public:
-    EBVO(YAML::Node config_map);
+    Temporal_Matches(YAML::Node config_map);
 
     // Main function to perform edge-based visual odometry
     void PerformEdgeBasedVO();
@@ -82,10 +75,8 @@ public:
                                                    Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
                                                    SpatialGrid &spatial_grid, bool b_is_left, double gt_dist_threshold = 1.0);
     //> Evaluations
-    void Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_pair> &temporal_edge_mates,
-                                             size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates);
-
-    std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
+    void Evaluate_Temporal_Edge_Pairs(const std::vector<temporal_edge_pair> &temporal_edge_mates,
+                                      size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates);
 
     double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset);
 

@@ -6,7 +6,7 @@
 #include "../include/definitions.h"
 #include "../include/Dataset.h"
 #include "../include/Pipeline.h"
-#include "../include/EBVO.h"
+#include "../include/Temporal_Matches.h"
 
 #if USE_GLOGS
 #include <glog/logging.h>
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
 		std::cerr << "File does not exist!" << std::endl;
 	}
 
-	EBVO ebvo(config_map);
-	ebvo.PerformEdgeBasedVO();
+	Temporal_Matches temporal_matches(config_map);
+	temporal_matches.PerformEdgeBasedVO();
 	return 0;
 }

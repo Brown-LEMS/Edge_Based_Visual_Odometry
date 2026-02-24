@@ -4,15 +4,15 @@
 #include <cmath>
 #include <chrono>
 #include <omp.h>
-#include "EBVO.h"
+#include "Temporal_Matches.h"
 #include "EdgeClusterer.h"
 #include "definitions.h"
 #include <opencv2/core/eigen.hpp>
 
-EBVO::EBVO(YAML::Node config_map) : dataset(config_map) {}
+Temporal_Matches::Temporal_Matches(YAML::Node config_map) : dataset(config_map) {}
 
 //> MARK: MAIN CODE OF EDGE VO
-void EBVO::PerformEdgeBasedVO()
+void Temporal_Matches::PerformEdgeBasedVO()
 {
     // The main processing function that performs edge-based visual odometry on a sequence of stereo image pairs.
     // It loads images, detects edges, matches them, and evaluates the matching performance.
@@ -176,61 +176,61 @@ void EBVO::PerformEdgeBasedVO()
             //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             //> Stage 1: Apply spatial grid to the current frame
             apply_spatial_grid_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, left_spatial_grids, 30.0, true);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Limited Disparity", "Left");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "Limited Disparity", "Left");
             apply_spatial_grid_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, right_spatial_grids, 30.0, false);
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Limited Disparity", "Right");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "Limited Disparity", "Right");
 
             //> Stage 2: Do orientation filtering
             apply_orientation_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 35.0, true);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Orientation Filtering", "Left");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "Orientation Filtering", "Left");
             apply_orientation_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, 35.0, false);
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Orientation Filtering", "Right");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "Orientation Filtering", "Right");
 
             //> Stage 3: Do NCC
             apply_NCC_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 0.6, last_keyframe.left_image, current_frame.left_image, true);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "NCC Filtering", "Left");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "NCC Filtering", "Left");
             apply_NCC_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, 0.6, last_keyframe.right_image, current_frame.right_image, false);
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "NCC Filtering", "Right");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "NCC Filtering", "Right");
 
             //> Stage 4: SIFT filtering
             apply_SIFT_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 500.0, true);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "SIFT Filtering", "Left");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "SIFT Filtering", "Left");
             apply_SIFT_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, 500.0, false);
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "SIFT Filtering", "Right");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "SIFT Filtering", "Right");
 
             //> Stage 5: Best-Nearly-Best filtering (NCC scoring)
             apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.8, "NCC");
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Left");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Left");
             apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.8, "NCC");
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Right");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Right");
 
             //> Stage 6: Best-Nearly-Best filtering (SIFT scoring)
             apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.3, "SIFT");
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Left");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Left");
             apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.3, "SIFT");
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Right");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Right");
 
             //> Stage 7: Photometric refinement
             apply_photometric_refinement(left_temporal_edge_mates, current_frame_stereo_edge_mates, last_keyframe, current_frame, true);
             apply_photometric_refinement(right_temporal_edge_mates, current_frame_stereo_edge_mates, last_keyframe, current_frame, false);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Photometric Refinement", "Left");
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Photometric Refinement", "Right");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "Photometric Refinement", "Left");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "Photometric Refinement", "Right");
 
             //> Stage 8: Temporal edge clustering (merge nearby CF candidates per KF mate)
             apply_temporal_edge_clustering(left_temporal_edge_mates, true);
             apply_temporal_edge_clustering(right_temporal_edge_mates, true);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Left");
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Right");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Left");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Right");
 
             //> Stage 9: Mate consistency filtering
             apply_mate_consistency_filtering(left_temporal_edge_mates, right_temporal_edge_mates);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Left");
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Right");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Left");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "Mate Consistency Filtering", "Right");
 
             //> Stage 10: Length consistency filtering
             apply_length_constraint(left_temporal_edge_mates, right_temporal_edge_mates, current_frame_stereo_edge_mates);
-            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Length Consistency Filtering", "Left");
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Length Consistency Filtering", "Right");
+            Evaluate_Temporal_Edge_Pairs(left_temporal_edge_mates, frame_idx, "Length Consistency Filtering", "Left");
+            Evaluate_Temporal_Edge_Pairs(right_temporal_edge_mates, frame_idx, "Length Consistency Filtering", "Right");
             break;
         }
 
@@ -242,7 +242,7 @@ void EBVO::PerformEdgeBasedVO()
     }
 }
 
-void EBVO::add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids)
+void Temporal_Matches::add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids)
 {
     // Pre-compute grid cell assignments in parallel (read-only)
     std::vector<std::pair<int, int>> left_edge_to_grid(stereo_edge_mates.size());
@@ -281,7 +281,7 @@ void EBVO::add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &
     }
 }
 
-void EBVO::Find_Veridical_Edge_Correspondences_on_CF(
+void Temporal_Matches::Find_Veridical_Edge_Correspondences_on_CF(
     std::vector<temporal_edge_pair> &temporal_edge_mates,
     const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
     const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
@@ -389,7 +389,7 @@ void EBVO::Find_Veridical_Edge_Correspondences_on_CF(
     }
 }
 
-void EBVO::ProcessEdges(const cv::Mat &image,
+void Temporal_Matches::ProcessEdges(const cv::Mat &image,
                         std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                         std::vector<Edge> &edges)
 {
@@ -398,7 +398,7 @@ void EBVO::ProcessEdges(const cv::Mat &image,
     edges = toed->toed_edges;
 }
 
-double EBVO::orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset)
+double Temporal_Matches::orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset)
 {
     // Step 1: Get the stereo baseline rotation (Left -> Right)
     Eigen::Matrix3d R_stereo = dataset.get_relative_rot_left_to_right();
@@ -442,7 +442,7 @@ double EBVO::orientation_mapping(const Edge &e_left, const Edge &e_right, const 
     return atan2(t.y(), t.x());
 }
 
-void EBVO::apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, SpatialGrid &spatial_grid, double grid_radius, bool b_is_left)
+void Temporal_Matches::apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, SpatialGrid &spatial_grid, double grid_radius, bool b_is_left)
 {
     //> For each temporal edge pair (KF mate + projected point on CF), find candidate CF stereo edge mate indices using the spatial grid
 #pragma omp parallel for schedule(dynamic, 64)
@@ -466,7 +466,7 @@ void EBVO::apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &tempora
     }
 }
 
-void EBVO::apply_SIFT_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
+void Temporal_Matches::apply_SIFT_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                 const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                 double sift_dist_threshold, bool b_is_left)
 {
@@ -547,7 +547,7 @@ void EBVO::apply_SIFT_filtering(std::vector<temporal_edge_pair> &temporal_edge_m
     }
 }
 
-void EBVO::apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, double threshold, const std::string scoring_type)
+void Temporal_Matches::apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, double threshold, const std::string scoring_type)
 {
     bool is_NCC = scoring_type == "NCC";
 #pragma omp parallel for schedule(dynamic)
@@ -599,7 +599,7 @@ void EBVO::apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &tem
     }
 }
 
-void EBVO::apply_photometric_refinement(std::vector<temporal_edge_pair> &temporal_edge_mates,
+void Temporal_Matches::apply_photometric_refinement(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                         const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                         const StereoFrame &keyframe, const StereoFrame &current_frame,
                                         bool b_is_left)
@@ -653,7 +653,7 @@ void EBVO::apply_photometric_refinement(std::vector<temporal_edge_pair> &tempora
     }
 }
 
-void EBVO::apply_temporal_edge_clustering(std::vector<temporal_edge_pair> &temporal_edge_mates, bool b_cluster_by_orientation)
+void Temporal_Matches::apply_temporal_edge_clustering(std::vector<temporal_edge_pair> &temporal_edge_mates, bool b_cluster_by_orientation)
 {
     //> Cluster nearby CF edge candidates per temporal pair, mirroring consolidate_redundant_edge_hypothesis in stereo
     for (temporal_edge_pair &tp : temporal_edge_mates)
@@ -728,12 +728,12 @@ void EBVO::apply_temporal_edge_clustering(std::vector<temporal_edge_pair> &tempo
     }
 }
 
-void EBVO::apply_length_constraint(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
+void Temporal_Matches::apply_length_constraint(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
                                    std::vector<temporal_edge_pair> &right_temporal_edge_mates,
                                    const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates)
 {
 }
-void EBVO::apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
+void Temporal_Matches::apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
                                             std::vector<temporal_edge_pair> &right_temporal_edge_mates)
 {
     //> For each left temporal pair, its stereo mate (right) must have the same CF candidate in the right temporal pair.
@@ -829,7 +829,7 @@ void EBVO::apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &lef
     }
 }
 
-void EBVO::apply_NCC_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
+void Temporal_Matches::apply_NCC_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                double ncc_val_threshold, const cv::Mat &keyframe_image, const cv::Mat &current_image, bool b_is_left)
 {
@@ -910,7 +910,7 @@ void EBVO::apply_NCC_filtering(std::vector<temporal_edge_pair> &temporal_edge_ma
     }
 }
 
-void EBVO::min_Edge_Photometric_Residual_by_Gauss_Newton(
+void Temporal_Matches::min_Edge_Photometric_Residual_by_Gauss_Newton(
     /* inputs */
     Edge kf_edge, Edge cf_edge, Eigen::Vector2d init_disp, const cv::Mat &kf_image_undistorted,
     const cv::Mat &cf_image_undistorted, const cv::Mat &cf_image_gradients_x, const cv::Mat &cf_image_gradients_y,
@@ -1028,7 +1028,7 @@ void EBVO::min_Edge_Photometric_Residual_by_Gauss_Newton(
     refined_disparity = d;
 }
 
-void EBVO::apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
+void Temporal_Matches::apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                        const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                        double orientation_threshold, bool b_is_left)
 {
@@ -1097,7 +1097,7 @@ void EBVO::apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal
     }
 }
 
-void EBVO::Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_pair> &temporal_edge_mates,
+void Temporal_Matches::Evaluate_Temporal_Edge_Pairs(const std::vector<temporal_edge_pair> &temporal_edge_mates,
                                                size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates)
 {
     if (temporal_edge_mates.empty())
