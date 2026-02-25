@@ -341,6 +341,22 @@ struct temporal_edge_pair
     std::vector<Temporal_CF_Edge_Cluster> matching_CF_edge_clusters;
 };
 
+//> One veridical quad: KF stereo correspondence + CF stereo correspondence, with cluster-like refinement data.
+//> Used by the quad-centric pipeline
+struct Veridical_Quad_Entry
+{
+    int cf_stereo_edge_mate_index;
+    Edge left_center;   //> refined left CF edge location
+    Edge right_center;  //> refined right CF edge location
+};
+
+struct Candidate_Quad_Entry
+{
+    //> pointers to Temporal_CF_Edge_Cluster
+    const Temporal_CF_Edge_Cluster *CF_left;
+    const Temporal_CF_Edge_Cluster *CF_right;
+};
+
 extern cv::Mat merged_visualization_global;
 class Dataset
 {

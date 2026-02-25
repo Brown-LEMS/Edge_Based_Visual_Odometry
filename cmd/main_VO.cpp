@@ -104,7 +104,7 @@ int main(int argc, char **argv)
             break;
         }
 
-		edge_vo_system->set_Stereo_Frame_Index(frame_idx);
+		edge_vo_system->set_Current_Stereo_Frame_Index(frame_idx);
 		edge_vo_system->Add_Stereo_Frame();
 		frame_idx++;
 

@@ -54,14 +54,14 @@ bool Pipeline::Add_Stereo_Frame() {
 
 void Pipeline::prepare_Stereo_Images() {
 
-    current_frame.left_disparity_map = (stereo_frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[stereo_frame_idx] : cv::Mat();
-    current_frame.right_disparity_map = (stereo_frame_idx < right_ref_disparity_maps.size()) ? right_ref_disparity_maps[stereo_frame_idx] : cv::Mat();
+    current_frame.left_disparity_map = (stereo_current_frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[stereo_current_frame_idx] : cv::Mat();
+    current_frame.right_disparity_map = (stereo_current_frame_idx < right_ref_disparity_maps.size()) ? right_ref_disparity_maps[stereo_current_frame_idx] : cv::Mat();
 
     // //> This is optional
-    // const cv::Mat &left_occlusion_mask = (stereo_frame_idx < left_occlusion_masks.size()) ? left_occlusion_masks[stereo_frame_idx] : cv::Mat();
-    // const cv::Mat &right_occlusion_mask = (stereo_frame_idx < right_occlusion_masks.size()) ? right_occlusion_masks[stereo_frame_idx] : cv::Mat();
+    // const cv::Mat &left_occlusion_mask = (stereo_current_frame_idx < left_occlusion_masks.size()) ? left_occlusion_masks[stereo_current_frame_idx] : cv::Mat();
+    // const cv::Mat &right_occlusion_mask = (stereo_current_frame_idx < right_occlusion_masks.size()) ? right_occlusion_masks[stereo_current_frame_idx] : cv::Mat();
 
-    std::cout << std::endl << "Stereo Image Pair #" << stereo_frame_idx << std::endl;
+    std::cout << std::endl << "Stereo Image Pair #" << stereo_current_frame_idx << std::endl;
 
     cv::Mat left_cur_undistorted, right_cur_undistorted;
     cv::undistort(current_frame.left_image, left_cur_undistorted, dataset_->get_left_calib_matrix_cvMat(), dataset_->get_left_dist_coeff_mat());
@@ -105,13 +105,13 @@ void Pipeline::get_Stereo_Edge_Correspondences() {
     std::cout << "Size of stereo edge correspondences pool = " << current_frame_stereo_left_constructor.focused_edge_indices.size() << std::endl;
     
     //> construct stereo edge correspondences for the current_frame
-    Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_frame_idx);
+    Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_current_frame_idx);
 
     //> Finalize the stereo edge pairs for the current_frame
     stereo_matches_engine->finalize_stereo_edge_mates(current_frame_stereo_left_constructor, current_frame_stereo_edge_mates);
 
     //> If the current frame is the first frame, make current frame the keyframe
-    if (stereo_frame_idx == 0) {
+    if (stereo_current_frame_idx == 0) {
         set_Keyframe();
         status_ = PipelineStatus::STATUS_IMG_PREPARATION;
         send_control_to_main = true;
@@ -127,35 +127,22 @@ void Pipeline::get_Temporal_Edge_Correspondences() {
 
     //> construct spatial grids for the current stereo edge mates
     temporal_matches_engine->add_edges_to_spatial_grid(current_frame_stereo_edge_mates, left_spatial_grids, right_spatial_grids);
-    
-    //> Construct correspondences structure between last keyframe and the current frame
-    temporal_matches_engine->Find_Veridical_Edge_Correspondences_on_CF(
-        left_temporal_edge_mates,
+
+    //> `temporal_quads_by_kf` is a struct that stores quads from KF stereo edge pairs
+    //> One KF stereo edge pair could pair up with multiple veridical CF stereo edge pairs.
+    //> The structure `temporal_quads_by_kf` contains the veridical CF stereo edge pairs, and the matching CF stereo edge pairs
+    std::vector<KF_Veridical_Quads> temporal_quads_by_kf;
+    temporal_matches_engine->build_Veridical_Quads( temporal_quads_by_kf, keyframe_stereo_edge_mates, current_frame_stereo_edge_mates, keyframe_stereo_left_constructor, current_frame_stereo_left_constructor, left_spatial_grids, right_spatial_grids);
+
+    //> Quad-centric pipeline: build veridical quads, apply filters, optionally convert to temporal pairs for backward compatibility
+    temporal_matches_engine->get_Temporal_Edge_Pairs_from_Quads(
+        temporal_quads_by_kf,
         keyframe_stereo_edge_mates,
         current_frame_stereo_edge_mates,
-        keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
-        left_spatial_grids, true, 1.0);
-    std::cout << "Size of veridical edge pairs (left) = " << left_temporal_edge_mates.size() << std::endl;
-    temporal_matches_engine->Find_Veridical_Edge_Correspondences_on_CF(
-        right_temporal_edge_mates,
-        keyframe_stereo_edge_mates,
-        current_frame_stereo_edge_mates,
-        keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
-        right_spatial_grids, false, 1.0);
-    std::cout << "Size of veridical edge pairs (right) = " << right_temporal_edge_mates.size() << std::endl;
-
-    std::vector<KF_Veridical_Quads> veridical_quads_by_kf = temporal_matches_engine->find_Veridical_Quads(left_temporal_edge_mates, right_temporal_edge_mates, current_frame_stereo_edge_mates);
-    size_t num_veridical_quads = 0;
-    for (const auto &kvq : veridical_quads_by_kf)
-        num_veridical_quads += kvq.veridical_CF_stereo_mates.size();
-    std::cout << "Veridical quads: " << veridical_quads_by_kf.size() << " KF stereo correspondences, " << num_veridical_quads << " total quads" << std::endl;
-
-    temporal_matches_engine->get_Temporal_Edge_Pairs(
-        current_frame_stereo_edge_mates,
-        left_temporal_edge_mates, right_temporal_edge_mates,
         left_spatial_grids, right_spatial_grids,
+        keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
         keyframe, current_frame,
-        stereo_frame_idx);
+        stereo_key_frame_idx, stereo_current_frame_idx);
 
     send_control_to_main = true;
 }

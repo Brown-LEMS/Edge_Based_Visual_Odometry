@@ -41,7 +41,7 @@ public:
     void get_Temporal_Edge_Correspondences();
 
     //> setters
-    void set_Stereo_Frame_Index(size_t frame_idx) { stereo_frame_idx = frame_idx; }
+    void set_Current_Stereo_Frame_Index(size_t frame_idx) { stereo_current_frame_idx = frame_idx; }
 
     //> get the pipeline status
     PipelineStatus get_Status() const { return status_; }
@@ -63,7 +63,8 @@ public:
     StereoFrame keyframe, current_frame;
 
 private:
-    size_t stereo_frame_idx;
+    size_t stereo_key_frame_idx;
+    size_t stereo_current_frame_idx;
     SpatialGrid left_spatial_grids;
     SpatialGrid right_spatial_grids;
 
@@ -83,6 +84,8 @@ private:
     void ProcessEdges(const cv::Mat &image, std::vector<Edge> &edges);
 
     void set_Keyframe() {
+        stereo_key_frame_idx = stereo_current_frame_idx;
+        
         keyframe = current_frame;
         keyframe_stereo_edge_mates = current_frame_stereo_edge_mates;
         keyframe_stereo_left_constructor = current_frame_stereo_left_constructor;
