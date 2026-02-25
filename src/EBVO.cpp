@@ -52,6 +52,8 @@ void EBVO::PerformEdgeBasedVO()
 
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
 
+    std::string out_file = dataset.get_output_path() + "/edge_numbers.txt";
+    std::ofstream record_file(out_file);
     bool b_is_keyframe = true;
     std::vector<Frame_Evaluation_Metrics> all_metrics;
     size_t frame_idx = 0;
@@ -108,12 +110,11 @@ void EBVO::PerformEdgeBasedVO()
         {
             //> Update last keyframe
             last_keyframe = current_frame;
-            kf_edges_left = dataset.left_edges;
             last_keyframe_stereo_left.clean_up_vector_data_structures();
             last_keyframe_stereo_left.stereo_frame = &last_keyframe;
             last_keyframe_stereo_left.left_disparity_map = left_disparity_map;
             last_keyframe_stereo_left.right_disparity_map = right_disparity_map;
-
+            record_file << "Frame:" << frame_idx << ", left edge numbers: " << current_frame.left_edges.size() << " right edge numbers: " << current_frame.right_edges.size() << std::endl;
             //> For each left edge, get the corresponding GT location (not right edge) on the right image, and the triangulated 3D point in the left camera coordinate
             stereo_edge_matcher.Find_Stereo_GT_Locations(dataset, left_disparity_map, last_keyframe, last_keyframe_stereo_left, true);
             std::cout << "Complete calculating GT locations for left edges of the keyframe (previous frame)..." << std::endl;
@@ -125,7 +126,7 @@ void EBVO::PerformEdgeBasedVO()
 
             //> construct stereo edge correspondences for the keyframe frame
             Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_left, frame_idx);
-
+            record_file << "Frame:" << frame_idx << ", after stereo left edge numbers: " << last_keyframe_stereo_left.focused_edge_indices.size() << std::endl;
             //> Finalize the stereo edge pairs for the keyframe
             // stereo_edge_matcher.finalize_stereo_edge_mates(last_keyframe_stereo_left, keyframe_stereo_edge_mates);
             all_metrics.push_back(metrics);
@@ -133,7 +134,6 @@ void EBVO::PerformEdgeBasedVO()
         }
         else
         {
-            cf_edges_left = dataset.left_edges;
             current_frame_stereo_left.clean_up_vector_data_structures();
             current_frame_stereo_left.stereo_frame = &current_frame;
             current_frame_stereo_left.left_disparity_map = left_disparity_map;
@@ -239,59 +239,81 @@ void EBVO::PerformEdgeBasedVO()
             break;
         }
 
-        frame_idx++;
-        if (frame_idx > 1)
+        last_keyframe_stereo_left.left_edge_patches.clear();
+        last_keyframe_stereo_left.left_edge_patches.shrink_to_fit();
+
+        // Clear edge descriptors
+        last_keyframe_stereo_left.left_edge_descriptors.clear();
+        last_keyframe_stereo_left.left_edge_descriptors.shrink_to_fit();
+
+        // Clear matching clusters
+        for (auto &cluster_list : last_keyframe_stereo_left.matching_edge_clusters)
         {
-            if (!all_metrics.empty())
+            cluster_list.edge_clusters.clear();
+            cluster_list.edge_clusters.shrink_to_fit();
+            cluster_list.refine_final_scores.clear();
+            cluster_list.refine_confidences.clear();
+            cluster_list.refine_validities.clear();
+        }
+        last_keyframe_stereo_left.matching_edge_clusters.clear();
+        last_keyframe_stereo_left.matching_edge_clusters.shrink_to_fit();
+
+        // Clear veridical data
+        last_keyframe_stereo_left.veridical_right_edges_indices.clear();
+        last_keyframe_stereo_left.veridical_right_edges_indices.shrink_to_fit();
+        last_keyframe_stereo_left.GT_locations_from_left_edges.clear(); // FIXED: Use correct member name
+        last_keyframe_stereo_left.GT_locations_from_left_edges.shrink_to_fit();
+
+        // Clear stereo frame images/edges if no longer needed
+
+        frame_idx++;
+    }
+
+    if (!all_metrics.empty())
+    {
+        // Collect all stage names across all frames
+        std::set<std::string> all_stage_names;
+        for (const auto &frame_metrics : all_metrics)
+        {
+            for (const auto &[stage_name, metrics] : frame_metrics.stages)
             {
-                if (!all_metrics.empty())
+                all_stage_names.insert(stage_name);
+            }
+        }
+
+        // Compute averages for each stage
+        for (const auto &stage_name : all_stage_names)
+        {
+            double avg_recall = 0.0, avg_precision = 0.0, avg_ambiguity = 0.0;
+            int count = 0;
+
+            for (const auto &frame_metrics : all_metrics)
+            {
+                auto it = frame_metrics.stages.find(stage_name);
+                if (it != frame_metrics.stages.end())
                 {
-                    // Collect all stage names across all frames
-                    std::set<std::string> all_stage_names;
-                    for (const auto &frame_metrics : all_metrics)
-                    {
-                        for (const auto &[stage_name, metrics] : frame_metrics.stages)
-                        {
-                            all_stage_names.insert(stage_name);
-                        }
-                    }
-
-                    // Compute averages for each stage
-                    for (const auto &stage_name : all_stage_names)
-                    {
-                        double avg_recall = 0.0, avg_precision = 0.0, avg_ambiguity = 0.0;
-                        int count = 0;
-
-                        for (const auto &frame_metrics : all_metrics)
-                        {
-                            auto it = frame_metrics.stages.find(stage_name);
-                            if (it != frame_metrics.stages.end())
-                            {
-                                avg_recall += it->second.recall;
-                                avg_precision += it->second.precision;
-                                avg_ambiguity += it->second.ambiguity;
-                                count++;
-                            }
-                        }
-
-                        if (count > 0)
-                        {
-                            avg_recall /= count;
-                            avg_precision /= count;
-                            avg_ambiguity /= count;
-
-                            std::cout << "Stage: " << stage_name << std::endl;
-                            std::cout << "  - Average Recall:     " << std::fixed << std::setprecision(8) << avg_recall << std::endl;
-                            std::cout << "  - Average Precision:  " << std::fixed << std::setprecision(8) << avg_precision << std::endl;
-                            std::cout << "  - Average Ambiguity:  " << std::fixed << std::setprecision(8) << avg_ambiguity << std::endl;
-                            std::cout << std::endl;
-                        }
-                    }
+                    avg_recall += it->second.recall;
+                    avg_precision += it->second.precision;
+                    avg_ambiguity += it->second.ambiguity;
+                    count++;
                 }
             }
-            break;
+
+            if (count > 0)
+            {
+                avg_recall /= count;
+                avg_precision /= count;
+                avg_ambiguity /= count;
+
+                std::cout << "Stage: " << stage_name << std::endl;
+                std::cout << "  - Average Recall:     " << std::fixed << std::setprecision(8) << avg_recall << std::endl;
+                std::cout << "  - Average Precision:  " << std::fixed << std::setprecision(8) << avg_precision << std::endl;
+                std::cout << "  - Average Ambiguity:  " << std::fixed << std::setprecision(8) << avg_ambiguity << std::endl;
+                std::cout << std::endl;
+            }
         }
     }
+    record_file.close();
 }
 
 void EBVO::add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids)
@@ -1366,65 +1388,4 @@ void EBVO::Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_p
     std::cout << "- Average ambiguity: " << std::fixed << std::setprecision(8) << ambiguity_avg << std::endl;
     std::cout << "========================================================\n"
               << std::endl;
-}
-
-void EBVO::augment_all_Edge_Data(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<std::pair<cv::Mat, cv::Mat>> &edge_descriptors, bool is_left)
-{
-    Utility util{};
-    edge_descriptors.clear();
-    int size = is_left ? stereo_frame_edge_pairs.focused_edge_indices.size() : cf_edges_right.size();
-
-    // Pre-fill with empty Mats so dropped keypoints are handled safely
-    edge_descriptors.resize(size, std::make_pair(cv::Mat(), cv::Mat()));
-
-    const cv::Mat &image = is_left ? stereo_frame_edge_pairs.stereo_frame->left_image_undistorted
-                                   : stereo_frame_edge_pairs.stereo_frame->right_image_undistorted;
-
-    // 1. Gather all valid keypoints into a single vector
-    std::vector<cv::KeyPoint> all_kps;
-    all_kps.reserve(size * 2);
-
-    for (int i = 0; i < size; ++i)
-    {
-        Edge le = is_left ? stereo_frame_edge_pairs.get_focused_edge_by_toed_index(i) : cf_edges_right[i];
-
-        // Safety check to prevent OpenCV crashing on invalid math
-        if (std::isnan(le.location.x) || std::isnan(le.orientation))
-            continue;
-
-        std::pair<cv::Point2d, cv::Point2d> shifted_points = util.get_Orthogonal_Shifted_Points(le, 8);
-
-        float angle = 180.0f / M_PI * le.orientation;
-
-        // We embed the original edge index 'i' into class_id.
-        // class_id = (i * 2) for the first point, (i * 2 + 1) for the second.
-        all_kps.emplace_back(shifted_points.first, 1.0f, angle, 0, 0, i * 2);
-        all_kps.emplace_back(shifted_points.second, 1.0f, angle, 0, 0, i * 2 + 1);
-    }
-
-    // 2. Compute EVERYTHING in one single, safe OpenCV call
-    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
-    cv::Mat all_descriptors;
-
-    // OpenCV will safely multi-thread this internally! No OpenMP needed.
-    sift->compute(image, all_kps, all_descriptors);
-
-    // 3. Unpack the batch results back into your edge_descriptors array
-    // Note: If OpenCV drops an out-of-bounds keypoint, it naturally removes it
-    // from all_kps. Our class_id check ensures we still map them to the correct edge!
-    for (int j = 0; j < all_kps.size(); ++j)
-    {
-        int original_id = all_kps[j].class_id;
-        int edge_index = original_id / 2;
-        int point_index = original_id % 2;
-
-        if (point_index == 0)
-        {
-            edge_descriptors[edge_index].first = all_descriptors.row(j).clone();
-        }
-        else
-        {
-            edge_descriptors[edge_index].second = all_descriptors.row(j).clone();
-        }
-    }
 }

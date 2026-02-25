@@ -16,7 +16,7 @@
 #include <chrono>
 #include <utility>
 #include <cmath>
-#include "Matches.h"
+#include "Stereo_Matches.h"
 
 #include "Dataset.h"
 #include "definitions.h"
@@ -30,19 +30,6 @@
 #else
 #include <boost/filesystem.hpp>
 #endif
-
-cv::Mat merged_visualization_global;
-
-// =======================================================================================================
-// Class Dataset: Fetch data from dataset specified in the configuration file
-//
-// ChangeLogs
-//    Lopez  25-01-26    Modified for euroc dataset support.
-//    Chien  23-01-17    Initially created.
-//
-//> (c) LEMS, Brown University
-//> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu)
-// =======================================================================================================
 
 auto load_matrix = [](const YAML::Node &node) -> Eigen::Matrix3d
 {
@@ -201,7 +188,6 @@ void Dataset::load_dataset(const std::string &dataset_type,
         std::string stereo_pairs_path = file_info.dataset_path + "/" + file_info.sequence_name + "/stereo_pairs";
         stereo_iterator = Iterators::createETH3DIterator(stereo_pairs_path);
         LoadETH3DDisparityMaps(stereo_pairs_path, num_pairs, left_ref_disparity_maps, right_ref_disparity_maps);
-        // right_ref_disparity_maps = LoadETH3DRightReferenceMaps(stereo_pairs_path, num_pairs);
         left_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, true);
         right_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, false);
     }
@@ -312,239 +298,9 @@ void Dataset::LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int n
             right_disparity_maps.push_back(right_disparity_map);
         }
     }
-
+#if DATASET_LOAD_VERBOSE
     std::cout << "Loaded " << left_disparity_maps.size() << " left disparity maps and " << right_disparity_maps.size() << " right disparity maps" << std::endl;
-}
-
-std::vector<cv::Mat> Dataset::LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps)
-{
-    std::vector<cv::Mat> disparity_maps;
-    std::vector<std::string> stereo_folders;
-
-    for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path))
-    {
-        if (entry.is_directory())
-        {
-            stereo_folders.push_back(entry.path().string());
-        }
-    }
-
-    std::sort(stereo_folders.begin(), stereo_folders.end());
-
-    for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++)
-    {
-        std::string folder_path = stereo_folders[i];
-        std::string disparity_csv_path = folder_path + "/disparity_map.csv";
-        std::string disparity_bin_path = folder_path + "/disparity_map.bin";
-
-        cv::Mat disparity_map;
-
-        if (std::filesystem::exists(disparity_bin_path))
-        {
-            // std::cout << "Loading disparity data from: " << disparity_bin_path << std::endl;
-            disparity_map = ReadDisparityFromBinary(disparity_bin_path);
-        }
-        else
-        {
-            // std::cout << "Parsing and storing disparity data from: " << disparity_csv_path << std::endl;
-            disparity_map = LoadDisparityFromCSV(disparity_csv_path);
-            if (!disparity_map.empty())
-            {
-                WriteDisparityToBinary(disparity_bin_path, disparity_map);
-                // std::cout << "Saved disparity data to: " << disparity_bin_path << std::endl;
-            }
-        }
-
-        if (!disparity_map.empty())
-        {
-            disparity_maps.push_back(disparity_map);
-        }
-    }
-
-    return disparity_maps;
-}
-
-void Dataset::CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image)
-{
-    reverse_gt_data.clear();
-
-    static size_t total_rows_written = 0;
-    static int file_index = 1;
-    static std::ofstream csv_file;
-    static const size_t max_rows_per_file = 1'000'000;
-
-    if (!csv_file.is_open())
-    {
-        std::string filename = "valid_reverse_disparities_part_" + std::to_string(file_index) + ".csv";
-        csv_file.open(filename, std::ios::out);
-    }
-
-    for (size_t i = 0; i < right_third_order_edges_locations.size(); i++)
-    {
-        const cv::Point2d &right_edge = right_third_order_edges_locations[i];
-        double orientation = right_third_order_edges_orientation[i];
-
-        double disparity = Bilinear_Interpolation(disparity_map_right_reference, right_edge);
-
-        if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
-        {
-            continue;
-        }
-
-        cv::Point2d left_edge(right_edge.x + disparity, right_edge.y);
-
-        reverse_gt_data.emplace_back(right_edge, left_edge, orientation);
-
-        if (total_rows_written >= max_rows_per_file)
-        {
-            csv_file.close();
-            ++file_index;
-            total_rows_written = 0;
-            std::string next_filename = "valid_reverse_disparities_part_" + std::to_string(file_index) + ".csv";
-            csv_file.open(next_filename, std::ios::out);
-        }
-
-        csv_file << disparity << "\n";
-        ++total_rows_written;
-    }
-
-    csv_file.flush();
-}
-
-// std::vector<cv::Mat> Dataset::LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps) {
-//     std::vector<cv::Mat> disparity_maps;
-//     std::vector<std::string> stereo_folders;
-
-//     for (const auto &entry : std::filesystem::directory_iterator(stereo_pairs_path)) {
-//         if (entry.is_directory()) {
-//             stereo_folders.push_back(entry.path().string());
-//         }
-//     }
-
-//     std::sort(stereo_folders.begin(), stereo_folders.end());
-
-//     for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++) {
-//         std::string folder_path = stereo_folders[i];
-//         std::string disparity_csv_path = folder_path + "/disparity_map_right.csv";
-//         std::string disparity_bin_path = folder_path + "/disparity_map_right.bin";
-
-//         cv::Mat disparity_map;
-
-//         if (std::filesystem::exists(disparity_bin_path)) {
-//             disparity_map = ReadDisparityFromBinary(disparity_bin_path);
-//         } else {
-//             disparity_map = LoadDisparityFromCSV(disparity_csv_path);
-//             if (!disparity_map.empty()) {
-//                 WriteDisparityToBinary(disparity_bin_path, disparity_map);
-//             }
-//         }
-
-//         if (!disparity_map.empty()) {
-//             disparity_maps.push_back(disparity_map);
-//         }
-//     }
-
-//     return disparity_maps;
-// }
-
-void Dataset::WriteDisparityToBinary(const std::string &filepath, const cv::Mat &disparity_map)
-{
-    std::ofstream ofs(filepath, std::ios::binary);
-    if (!ofs.is_open())
-    {
-        std::cerr << "ERROR: Could not write disparity to: " << filepath << std::endl;
-        return;
-    }
-
-    int rows = disparity_map.rows;
-    int cols = disparity_map.cols;
-    ofs.write(reinterpret_cast<const char *>(&rows), sizeof(rows));
-    ofs.write(reinterpret_cast<const char *>(&cols), sizeof(cols));
-    ofs.write(reinterpret_cast<const char *>(disparity_map.ptr<float>(0)), sizeof(float) * rows * cols);
-}
-
-cv::Mat Dataset::ReadDisparityFromBinary(const std::string &filepath)
-{
-    std::ifstream ifs(filepath, std::ios::binary);
-    if (!ifs.is_open())
-    {
-        std::cerr << "ERROR: Could not read disparity from: " << filepath << std::endl;
-        return {};
-    }
-
-    int rows, cols;
-    ifs.read(reinterpret_cast<char *>(&rows), sizeof(rows));
-    ifs.read(reinterpret_cast<char *>(&cols), sizeof(cols));
-
-    cv::Mat disparity_map(rows, cols, CV_32F);
-    ifs.read(reinterpret_cast<char *>(disparity_map.ptr<float>(0)), sizeof(float) * rows * cols);
-
-    return disparity_map;
-}
-
-cv::Mat Dataset::LoadDisparityFromCSV(const std::string &path)
-{
-    std::ifstream file(path);
-    if (!file.is_open())
-    {
-        std::cerr << "ERROR: Could not open disparity CSV: " << path << std::endl;
-        return {};
-    }
-
-    std::vector<std::vector<float>> data;
-    std::string line;
-
-    while (std::getline(file, line))
-    {
-        std::stringstream ss(line);
-        std::string value;
-        std::vector<float> row;
-
-        while (std::getline(ss, value, ','))
-        {
-            try
-            {
-                float d = std::stof(value);
-
-                if (value == "nan" || value == "NaN")
-                {
-                    d = std::numeric_limits<float>::quiet_NaN();
-                }
-                else if (value == "inf" || value == "Inf")
-                {
-                    d = std::numeric_limits<float>::infinity();
-                }
-                else if (value == "-inf" || value == "-Inf")
-                {
-                    d = -std::numeric_limits<float>::infinity();
-                }
-
-                row.push_back(d);
-            }
-            catch (const std::exception &e)
-            {
-                std::cerr << "WARNING: Invalid value in file: " << path << " -> " << value << std::endl;
-                row.push_back(std::numeric_limits<float>::quiet_NaN());
-            }
-        }
-
-        if (!row.empty())
-            data.push_back(row);
-    }
-
-    int rows = data.size();
-    int cols = data[0].size();
-    cv::Mat disparity(rows, cols, CV_32F);
-
-    for (int r = 0; r < rows; ++r)
-    {
-        for (int c = 0; c < cols; ++c)
-        {
-            disparity.at<float>(r, c) = data[r][c];
-        }
-    }
-
-    return disparity;
+#endif
 }
 
 cv::Mat Dataset::readPFM(const std::string &file_path)
@@ -874,8 +630,9 @@ bool Dataset::read_edges_and_disparities_from_file(const std::string &file_path,
             std::cerr << "Warning: No valid edge data found in file: " << file_path << std::endl;
             return false;
         }
-
+#if DATASET_LOAD_VERBOSE
         std::cout << "Successfully loaded " << edges.size() << " third-order edges from: " << file_path << std::endl;
+#endif
         return true;
     }
     catch (const std::exception &e)

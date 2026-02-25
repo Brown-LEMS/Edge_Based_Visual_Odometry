@@ -5,7 +5,7 @@ set (control_sources
         utility.cpp
         MotionTracker.cpp
         toed/cpu_toed.cpp
-        Matches.cpp
+        Stereo_Matches.cpp
         EBVO.cpp
         Stereo_Iterator.cpp
         EdgeClusterer.cpp

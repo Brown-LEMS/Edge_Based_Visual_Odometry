@@ -19,17 +19,6 @@
 #include "./toed/cpu_toed.hpp"
 #include "Stereo_Iterator.h"
 
-// =======================================================================================================
-// class Dataset: Fetch data from dataset specified in the configuration file
-//
-// ChangeLogs
-//    Jue    25-06-17    Modified data structure for readability.
-//    Lopez  25-01-26    Modified for euroc dataset support.
-//    Chien  23-01-17    Initially created.
-//
-//> (c) LEMS, Brown University
-//> Chiang-Heng Chien (chiang-heng_chien@brown.edu), Saul Lopez Lucas (saul_lopez_lucas@brown.edu), Jue Han (jhan192@brown.edu)
-// =======================================================================================================
 struct SpatialGrid
 {
     int cell_size;
@@ -37,9 +26,9 @@ struct SpatialGrid
     std::vector<std::vector<int>> grid;
 
     // Default constructor
-    SpatialGrid() : cell_size(30), grid_width(0), grid_height(0) {}
+    SpatialGrid() : cell_size(35), grid_width(0), grid_height(0) {}
 
-    SpatialGrid(int img_width, int img_height, int cell_sz = 30)
+    SpatialGrid(int img_width, int img_height, int cell_sz = 35)
         : cell_size(cell_sz)
     {
         grid_width = (img_width + cell_size - 1) / cell_size;
@@ -124,30 +113,6 @@ struct SpatialGrid
     }
 };
 
-struct Edge3D
-{
-    Eigen::Vector3d location;
-    Eigen::Vector3d orientation; // unit 3D vector T
-
-    bool b_isEmpty;   //> check if this struct is value-assigned
-    int frame_source; //> which frame this edge is constructed from
-    int index;        //> index of the edge in the original edge list
-    Edge3D() : location(Eigen::Vector3d(-1.0, -1.0, -1.0)), orientation(Eigen::Vector3d(-100, -100, -100)), b_isEmpty(true), frame_source(-1), index(-1) {}
-    Edge3D(Eigen::Vector3d location, Eigen::Vector3d orientation, bool b_isEmpty, int frame_source) : location(location), orientation(orientation), b_isEmpty(b_isEmpty), frame_source(frame_source) {}
-
-    bool operator==(const Edge3D &other) const
-    {
-
-        return location.x() == other.location.x() &&
-               location.y() == other.location.y() &&
-               location.z() == other.location.z() &&
-               orientation.x() == other.orientation.x() &&
-               orientation.y() == other.orientation.y() &&
-               orientation.z() == other.orientation.z() &&
-               b_isEmpty == other.b_isEmpty;
-    }
-};
-
 struct FileInfo
 {
     std::string dataset_type;
@@ -193,14 +158,6 @@ struct EdgeCluster
     bool b_is_TP = false;
 };
 
-struct EdgeMatch
-{
-    Edge edge;
-    double final_score;
-
-    std::vector<Edge> contributing_edges;
-};
-
 struct Evaluation_Statistics
 {
     std::map<std::string, std::vector<EdgeCluster>> edge_clusters_in_each_step;
@@ -209,56 +166,6 @@ struct Evaluation_Statistics
     std::vector<double> refine_validities;
     std::vector<double> FN_dist_error_to_GT;
     std::vector<EdgeCluster> false_negative_edge_clusters;
-};
-
-struct RecallMetrics
-{
-    double epi_distance_recall;
-    double max_disparity_recall;
-    double epi_shift_recall;
-    double epi_cluster_recall;
-    double ncc_recall;
-    double lowe_recall;
-
-    std::vector<int> epi_input_counts;
-    std::vector<int> epi_output_counts;
-    std::vector<int> disp_input_counts;
-    std::vector<int> disp_output_counts;
-    std::vector<int> shift_input_counts;
-    std::vector<int> shift_output_counts;
-    std::vector<int> clust_input_counts;
-    std::vector<int> clust_output_counts;
-    std::vector<int> patch_input_counts;
-    std::vector<int> patch_output_counts;
-    std::vector<int> ncc_input_counts;
-    std::vector<int> ncc_output_counts;
-    std::vector<int> lowe_input_counts;
-    std::vector<int> lowe_output_counts;
-
-    double per_image_epi_precision;
-    double per_image_disp_precision;
-    double per_image_shift_precision;
-    double per_image_clust_precision;
-    double per_image_ncc_precision;
-    double per_image_lowe_precision;
-
-    int lowe_true_positive;
-    int lowe_false_negative;
-
-    double per_image_epi_time;
-    double per_image_disp_time;
-    double per_image_shift_time;
-    double per_image_clust_time;
-    double per_image_patch_time;
-    double per_image_ncc_time;
-    double per_image_lowe_time;
-    double per_image_total_time;
-};
-
-struct EdgeMatchResult
-{
-    RecallMetrics recall_metrics;
-    std::vector<std::pair<Edge, EdgeMatch>> edge_to_cluster_matches;
 };
 
 struct Stereo_Matching_Edge_Clusters
@@ -274,25 +181,28 @@ struct Stereo_Matching_Edge_Clusters
 
 struct Stereo_Edge_Pairs
 {
+    //> This struct is designed to hold all the relevant information for matching edges between a pair of stereo frames
+
+    //> dataset related
     const StereoFrame *stereo_frame; //> pointer to StereoFrame without owning the data of StereoFrame
     cv::Mat left_disparity_map;
     cv::Mat right_disparity_map;
-    std::vector<int> focused_edge_indices;                          //> indices into source edges (left for left->right, right for right->left)
+    //> Edge related --> Populated at the start and would be changed when finished
+    std::vector<int> focused_edge_indices;                          //> indices into source edges
     std::vector<int> candidate_edge_indices;                        //> indices into candidate edges
     std::vector<cv::Point2d> GT_locations_from_left_edges;          //> GT locations of the source edges on the candidate image
     std::vector<std::vector<int>> veridical_right_edges_indices;    //> indices into candidate edges that are veridical to the source edges
     std::vector<Eigen::Vector3d> Gamma_in_left_cam_coord;           //> 3D points under the left camera coordinate
+    std::vector<Eigen::Vector3d> Gamma_in_right_cam_coord;          //> 3D points under the right camera coordinate
     std::vector<std::pair<cv::Mat, cv::Mat>> left_edge_descriptors; //> SIFT descriptors of source edges on both sides
     std::vector<int> grid_indices;                                  //> grid indices of source edges
     std::vector<Eigen::Vector3d> epip_line_coeffs_of_left_edges;    //> epipolar line coefficients of source edges
     std::vector<std::pair<cv::Mat, cv::Mat>> left_edge_patches;     //> patches on the two sides of the source edges
     std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
     std::unordered_map<Edge, int> final_candidate_set; //> find the corresponeding left edge when given right edge, would be populated after Best filter
-    bool is_left_to_right = true;                      //> focusing on left frame or right frame
+
     //> Matching edge clusters for each left edge
     std::vector<Stereo_Matching_Edge_Clusters> matching_edge_clusters;
-
-    // std::vector<cv::Point2d> GT_locations_from_right_edges;
 
     //> Constructor: defining which StereoFrame it points to
     Stereo_Edge_Pairs(const StereoFrame *stereo_frame_ptr) : stereo_frame(stereo_frame_ptr) {}
@@ -328,7 +238,7 @@ struct Stereo_Edge_Pairs
         }
         return stereo_frame->left_edges[i];
     }
-    Edge get_focused_edge_by_Stereo_Edge_Pairs_index(size_t i) const { return is_left_to_right ? stereo_frame->left_edges[focused_edge_indices[i]] : stereo_frame->right_edges[focused_edge_indices[i]]; }
+    Edge get_focused_edge_by_Stereo_Edge_Pairs_index(size_t i) const { return stereo_frame->left_edges[focused_edge_indices[i]]; }
     Edge get_focused_edge_by_toed_index(size_t i) const { return get_focused_edge_by_Stereo_Edge_Pairs_index(get_Stereo_Edge_Pairs_left_id_index(i)); }
     //> Return the number of left and right edge pairs
     size_t size() const { return focused_edge_indices.size(); }
@@ -339,7 +249,7 @@ struct Stereo_Edge_Pairs
         std::vector<Edge> subset;
         subset.reserve(focused_edge_indices.size());
         for (int idx : focused_edge_indices)
-            subset.push_back(is_left_to_right ? stereo_frame->left_edges[idx] : stereo_frame->right_edges[idx]);
+            subset.push_back(stereo_frame->left_edges[idx]);
         return subset;
     }
 
@@ -349,7 +259,7 @@ struct Stereo_Edge_Pairs
         std::vector<Edge> subset;
         subset.reserve(candidate_edge_indices.size());
         for (int idx : candidate_edge_indices)
-            subset.push_back(is_left_to_right ? stereo_frame->right_edges[idx] : stereo_frame->left_edges[idx]);
+            subset.push_back(stereo_frame->right_edges[idx]);
         return subset;
     }
 
@@ -378,46 +288,21 @@ struct Stereo_Edge_Pairs
     }
 };
 
-//> This struct defines a pool of GT edge correspondences in a stereo image pair
-struct StereoEdgeCorrespondencesGT
+struct final_stereo_edge_pair
 {
-    std::vector<int> focused_edges;                       //> the edges index we consider for matching
-    std::vector<cv::Point2d> GT_locations_from_disparity; //> GT location on the right/left image from the left edge and the GT disparity
-    std::vector<std::vector<int>> GT_corresponding_edges; //> veridical right/left edges: A set of right/left edges that are "very close" to the GT location from disparity
-    std::vector<int> Closest_GT_veridical_edges;          //> GT locations on the current image
-    std::vector<Eigen::Vector3d> Gamma_in_cam_coord;      //> 3D points under the left/right camera coordinate
-    // std::unordered_map<int, cv::Mat> edge_SIFT_descriptors; //> SIFT descriptors of all left edges
-    std::vector<cv::Mat> edge_descriptors;
-    std::vector<int> grid_indices;
-    std::unordered_map<int, int> edge_idx_to_stereo_frame_idx; //> Fast lookup: edge_index -> index in focused_edges vector (O(1) instead of O(n) search)
+    Edge left_edge;
+    Edge right_edge;
 
-    bool b_is_size_consistent()
-    {
-        return focused_edges.size() == GT_locations_from_disparity.size() && focused_edges.size() == GT_corresponding_edges.size() && focused_edges.size() == Gamma_in_cam_coord.size() && focused_edges.size() == edge_descriptors.size() && focused_edges.size() == Closest_GT_veridical_edges.size();
-    }
+    std::pair<cv::Mat, cv::Mat> left_edge_patches;
+    std::pair<cv::Mat, cv::Mat> right_edge_patches;
 
-    void print_size_consistency()
-    {
-        std::cout << "The sizes of the StereoEdgeCorrespondencesGT are not consistent!" << std::endl;
-        std::cout << "- Size of the focused_edges = " << focused_edges.size() << std::endl;
-        std::cout << "- Size of the GT_locations_from_disparity = " << GT_locations_from_disparity.size() << std::endl;
-        std::cout << "- Size of the GT_corresponding_edges = " << GT_corresponding_edges.size() << std::endl;
-        std::cout << "- Size of the Closest_GT_veridical_edges = " << Closest_GT_veridical_edges.size() << std::endl;
-        std::cout << "- Size of the Gamma_in_cam_coord = " << Gamma_in_cam_coord.size() << std::endl;
-        std::cout << "- Size of the edge_descriptors = " << edge_descriptors.size() << std::endl;
-    }
+    std::pair<cv::Mat, cv::Mat> left_edge_descriptors;
+    std::pair<cv::Mat, cv::Mat> right_edge_descriptors;
 
-    void clear_all()
-    {
-        focused_edges.clear();
-        GT_locations_from_disparity.clear();
-        GT_corresponding_edges.clear();
-        Closest_GT_veridical_edges.clear();
-        Gamma_in_cam_coord.clear();
-        edge_descriptors.clear();
-        grid_indices.clear();
-        edge_idx_to_stereo_frame_idx.clear();
-    }
+    Eigen::Vector3d Gamma_in_left_cam_coord;
+    Eigen::Vector3d Gamma_in_right_cam_coord;
+
+    bool b_is_TP;
 };
 
 struct scores
@@ -426,56 +311,32 @@ struct scores
     double sift_score;
 };
 
-struct KF_CF_EdgeCorrespondence
+//> One CF candidate per cluster. This mirrors EdgeCluster in stereo matching.
+struct Temporal_CF_Edge_Cluster
 {
-    bool is_left_to_right;     //> whether the keyframe is left or right
-    std::vector<int> kf_edges; //> stores the 3rd order edges / stores reprsentative edge indices
-    std::vector<double> gt_orientation_on_cf;
-    std::vector<cv::Point2d> gt_location_on_cf;
+    int cf_stereo_edge_mate_index;                   //> primary index (used when cluster has one candidate)
+    std::vector<int> contributing_cf_stereo_indices; //> all cf indices in merged cluster; for mate consistency intersection
+    Edge center_edge;                                //> CF edge (left or right) in the cluster; refined location stored here
+    std::vector<Edge> contributing_edges;            //> CF edges that contribute to the cluster
+    scores matching_scores;                          //> matching scores (either NCC or SIFT) of the cluster
+    double refine_final_score = 1e6;                 //> populated by photometric refinement
+    bool refine_validity = false;                    //> populated by photometric refinement
+};
 
-    const Stereo_Edge_Pairs *key_frame_pairs;
-    const Stereo_Edge_Pairs *current_frame_pairs;
+struct temporal_edge_pair
+{
+    //> pointers to the stereo edge pairs
+    const final_stereo_edge_pair *KF_stereo_edge_mate;
 
-    std::vector<std::vector<int>> veridical_cf_edges_indices; // corresponding vertical edges in the current frame
-    std::vector<std::vector<int>> matching_cf_edges_indices;  // corresponding edge indices in the current frame after filtering
-    std::vector<std::vector<scores>> matching_scores;
-    // getters:
-    Edge get_kf_edge_by_index(size_t i) const
-    {
-        // returns the edge in keyframe given index in keyframe edge list
-        if (i >= kf_edges.size())
-        {
-            std::cerr << "ERROR: keyframe edge index " << i << " out of bounds!" << std::endl;
-            return Edge();
-        }
-        int idx = kf_edges[i];
-        return key_frame_pairs->get_focused_edge_by_toed_index(idx);
-    }
-    Edge get_cf_edge_by_indexij(size_t i, size_t j) const
-    {
-        // returns the edge in current frame given index in keyframe edge list and index in corresponding cf edge list
-        if (i >= kf_edges.size() || j >= matching_cf_edges_indices[i].size())
-        {
-            std::cerr << "ERROR: current frame edge index " << i << " out of bounds!" << std::endl;
-            return Edge();
-        }
-        int idx = matching_cf_edges_indices[i][j];
+    //> On the current frame
+    Eigen::Vector3d projected_point;
+    double projected_orientation;
 
-        return current_frame_pairs->get_focused_edge_by_toed_index(idx);
-    }
-    Edge get_cf_edge_by_index(size_t i)
-    {
-        // returns the edge in current frame given its toed index
-        const std::vector<Edge> &cf_edges = current_frame_pairs->is_left_to_right
-                                                ? current_frame_pairs->stereo_frame->left_edges
-                                                : current_frame_pairs->stereo_frame->right_edges;
-        if (i >= cf_edges.size())
-        {
-            std::cerr << "ERROR: current frame edge index " << i << " out of bounds!" << std::endl;
-            return Edge();
-        }
-        return cf_edges[i];
-    }
+    //> Veridical (ground-truth) CF stereo edge mate indices
+    std::vector<int> veridical_CF_stereo_edge_mate_indices;
+
+    //> Matching CF candidates as clusters (one cluster per candidate, like stereo EdgeCluster)
+    std::vector<Temporal_CF_Edge_Cluster> matching_CF_edge_clusters;
 };
 
 extern cv::Mat merged_visualization_global;
@@ -595,9 +456,6 @@ private:
     unsigned Total_Num_Of_Imgs;
     int img_height, img_width;
 
-    // didn't find this:
-    double max_disparity;
-
     // functions
     void PrintDatasetInfo();
 
@@ -605,29 +463,12 @@ private:
 
     std::vector<std::pair<cv::Mat, cv::Mat>> LoadETH3DImages(const std::string &stereo_pairs_path, int num_images);
 
-    //    std::vector<double> LoadMaximumDisparityValues(const std::string& stereo_pairs_path, int num_images);
-
     std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
 
     std::vector<cv::Mat> LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left = true);
 
-    //    std::vector<cv::Mat> LoadETH3DRightReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
-
     void LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int num_maps, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps);
 
-    void WriteDisparityToBinary(const std::string &filepath, const cv::Mat &disparity_map);
-
-    cv::Mat ReadDisparityFromBinary(const std::string &filepath);
-
-    cv::Mat LoadDisparityFromCSV(const std::string &path);
-
-    void CalculateGTLeftEdge(const std::vector<cv::Point2d> &right_third_order_edges_locations, const std::vector<double> &right_third_order_edges_orientation, const cv::Mat &disparity_map_right_reference, const cv::Mat &left_image, const cv::Mat &right_image);
-
-    void Load_GT_Poses(std::string GT_Poses_File_Path);
-
-    void Align_Images_and_GT_Poses();
-
-    cv::Mat Small_Patch_Radius_Map;
     Utility::Ptr utility_tool = nullptr;
 };
 
