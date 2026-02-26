@@ -201,6 +201,7 @@ struct Stereo_Edge_Pairs
     std::unordered_map<int, size_t> toed_left_id_to_Stereo_Edge_Pairs_left_id_map;
     std::unordered_map<Edge, int> final_candidate_set; //> find the corresponeding left edge when given right edge, would be populated after Best filter
 
+    bool has_GT = false;
     //> Matching edge clusters for each left edge
     std::vector<Stereo_Matching_Edge_Clusters> matching_edge_clusters;
 

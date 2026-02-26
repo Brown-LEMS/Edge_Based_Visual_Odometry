@@ -130,66 +130,78 @@ std::vector<int> Stereo_Matches::get_right_edge_indices_close_to_GT_location(
 void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat left_disparity_map, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
     Utility util;
-    // std::cout << "Disparity map type: " << util.cvMat_Type(left_disparity_map.type()) << std::endl;
     int edge_size = is_left ? stereo_frame.left_edges.size() : stereo_frame.right_edges.size();
+    stereo_frame_edge_pairs.has_GT = dataset.has_gt();
     for (int left_edge_index = 0; left_edge_index < edge_size; left_edge_index++)
     {
-        Edge e = stereo_frame.left_edges[left_edge_index]; //> we are abuseing the term left_edges here, it's universal for both left and right edges
-        is_left ? e = e : e = stereo_frame.right_edges[left_edge_index];
-        //> omit if the edge orientation is close to 0, pi, or -pi
-        if (std::abs(rad_to_deg<double>(e.orientation)) < 4 || std::abs(rad_to_deg<double>(e.orientation) - 180.0) < 4 || std::abs(rad_to_deg<double>(e.orientation) + 180.0) < 4)
+        if (dataset.has_gt())
         {
-            continue;
-        }
+            //> if we have gt, we will get the GT pairs, if not, we will just set GT location as (-1,-1)
+            Edge e = stereo_frame.left_edges[left_edge_index]; //> we are abuseing the term left_edges here, it's universal for both left and right edges
+            is_left ? e = e : e = stereo_frame.right_edges[left_edge_index];
+            //> omit if the edge orientation is close to 0, pi, or -pi
+            if (std::abs(rad_to_deg<double>(e.orientation)) < 4 || std::abs(rad_to_deg<double>(e.orientation) - 180.0) < 4 || std::abs(rad_to_deg<double>(e.orientation) + 180.0) < 4)
+            {
+                continue;
+            }
 
-        //> Use bilinear interpolation for sub-pixel accurate disparity
-        double disparity = Bilinear_Interpolation<float>(left_disparity_map, e.location);
+            //> Use bilinear interpolation for sub-pixel accurate disparity
+            double disparity = Bilinear_Interpolation<float>(left_disparity_map, e.location);
 
-        if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
-        {
-            continue;
-        }
-        disparity = is_left ? disparity : -disparity; //> in case we need to adjust disparity for right edges in the future
-        cv::Point2d GT_location(e.location.x - disparity, e.location.y);
+            if (std::isnan(disparity) || std::isinf(disparity) || disparity < 0)
+            {
+                continue;
+            }
+            disparity = is_left ? disparity : -disparity; //> in case we need to adjust disparity for right edges in the future
+            cv::Point2d GT_location(e.location.x - disparity, e.location.y);
 
-        //> insert data to the stereo_frame_edge_pairs structure
-        stereo_frame_edge_pairs.focused_edge_indices.push_back(left_edge_index);
-        stereo_frame_edge_pairs.GT_locations_from_left_edges.push_back(GT_location);
+            //> insert data to the stereo_frame_edge_pairs structure
+            stereo_frame_edge_pairs.focused_edge_indices.push_back(left_edge_index);
+            stereo_frame_edge_pairs.GT_locations_from_left_edges.push_back(GT_location);
 
-        //> Convert cv::Point2d to Eigen::Vector3d
-        Eigen::Vector3d e_location_eigen(e.location.x, e.location.y, 1.0);
-        Eigen::Vector3d GT_location_eigen(GT_location.x, GT_location.y, 1.0);
+            //> Convert cv::Point2d to Eigen::Vector3d
+            Eigen::Vector3d e_location_eigen(e.location.x, e.location.y, 1.0);
+            Eigen::Vector3d GT_location_eigen(GT_location.x, GT_location.y, 1.0);
 
-        double focal_length, baseline;
-        Eigen::Matrix3d calib_matrix;
-        if (is_left)
-        {
-            focal_length = dataset.get_left_focal_length();
-            baseline = dataset.get_left_baseline();
-            calib_matrix = dataset.get_left_calib_matrix();
+            double focal_length, baseline;
+            Eigen::Matrix3d calib_matrix;
+            if (is_left)
+            {
+                focal_length = dataset.get_left_focal_length();
+                baseline = dataset.get_left_baseline();
+                calib_matrix = dataset.get_left_calib_matrix();
+            }
+            else
+            {
+                focal_length = dataset.get_right_focal_length();
+                baseline = dataset.get_right_baseline();
+                calib_matrix = dataset.get_right_calib_matrix();
+            }
+
+            double rho = focal_length * baseline / disparity;
+            double rho_1 = (rho < 0.0) ? (-rho) : (rho);
+
+            Eigen::Vector3d gamma_1 = calib_matrix.inverse() * e_location_eigen;
+            Eigen::Vector3d Gamma_1_left = rho_1 * gamma_1;
+            stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1_left);
+
+            //> apply stereo frame shift
+            Eigen::Vector3d Gamma_1_right = dataset.get_relative_rot_left_to_right() * Gamma_1_left + dataset.get_relative_transl_left_to_right();
+            stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Gamma_1_right);
         }
         else
         {
-            focal_length = dataset.get_right_focal_length();
-            baseline = dataset.get_right_baseline();
-            calib_matrix = dataset.get_right_calib_matrix();
+            stereo_frame_edge_pairs.focused_edge_indices.push_back(left_edge_index);
+            stereo_frame_edge_pairs.GT_locations_from_left_edges.push_back(cv::Point2d(-1.0, -1.0));
+            stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Eigen::Vector3d(-1.0, -1.0, -1.0));
+            stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Eigen::Vector3d(-1.0, -1.0, -1.0));
         }
-
-        double rho = focal_length * baseline / disparity;
-        double rho_1 = (rho < 0.0) ? (-rho) : (rho);
-
-        Eigen::Vector3d gamma_1 = calib_matrix.inverse() * e_location_eigen;
-        Eigen::Vector3d Gamma_1_left = rho_1 * gamma_1;
-        stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1_left);
-
-        //> apply stereo frame shift
-        Eigen::Vector3d Gamma_1_right = dataset.get_relative_rot_left_to_right() * Gamma_1_left + dataset.get_relative_transl_left_to_right();
-        stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Gamma_1_right);
     }
 }
 
 void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
+    // if we have gt, we will get the GT pairs, if not, we will just set GT location as (-1,-1)
     Eigen::Matrix3d fund_mat = is_left ? dataset.get_fund_mat_21() : dataset.get_fund_mat_12();
     std::vector<Eigen::Vector3d> epip_line_coeffs = CalculateEpipolarLine(fund_mat, stereo_frame_edge_pairs.get_focused_edges());
     std::vector<int> indices_to_remove;
@@ -208,19 +220,27 @@ void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFram
 #pragma omp for schedule(dynamic)
         for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
         {
-            Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
-            const auto e_coeffs = epip_line_coeffs[i];
-            const std::vector<Edge> &candidate_edges = is_left ? stereo_frame.right_edges : stereo_frame.left_edges;
-            std::vector<int> right_candidate_edge_indices = extract_Epipolar_Edge_Indices(e_coeffs, candidate_edges, 0.5);
-            right_candidate_edge_indices = get_right_edge_indices_close_to_GT_location(stereo_frame, stereo_frame_edge_pairs.GT_locations_from_left_edges[i], left_edge.orientation, right_candidate_edge_indices, 1.0, 5.0, is_left);
-
-            if (right_candidate_edge_indices.empty())
+            if (dataset.has_gt())
             {
-                thread_local_indices_to_remove[thread_id].push_back(i);
-            }
+                Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
+                const auto e_coeffs = epip_line_coeffs[i];
+                const std::vector<Edge> &candidate_edges = is_left ? stereo_frame.right_edges : stereo_frame.left_edges;
+                std::vector<int> right_candidate_edge_indices = extract_Epipolar_Edge_Indices(e_coeffs, candidate_edges, 0.5);
+                right_candidate_edge_indices = get_right_edge_indices_close_to_GT_location(stereo_frame, stereo_frame_edge_pairs.GT_locations_from_left_edges[i], left_edge.orientation, right_candidate_edge_indices, 1.0, 5.0, is_left);
 
-            //> Direct assignment to pre-allocated vector to prevent race condition
-            stereo_frame_edge_pairs.veridical_right_edges_indices[i] = right_candidate_edge_indices;
+                if (right_candidate_edge_indices.empty())
+                {
+                    thread_local_indices_to_remove[thread_id].push_back(i);
+                }
+
+                //> Direct assignment to pre-allocated vector to prevent race condition
+                stereo_frame_edge_pairs.veridical_right_edges_indices[i] = right_candidate_edge_indices;
+            }
+            else
+            {
+                //> If no GT, we say veridical right edges are -1. This is just a placeholder and would not be used in the later process, since we will not do evaluation without GT.
+                stereo_frame_edge_pairs.veridical_right_edges_indices[i] = std::vector<int>{-1};
+            }
         }
     }
 
@@ -253,6 +273,14 @@ void Stereo_Matches::Evaluate_Stereo_Edge_Correspondences(
     double &recall_per_image, double &precision_per_image, double &precision_pair_per_image, double &num_of_target_edges_per_source_edge_avg, /* Outputs */
     Evaluation_Statistics &evaluation_statistics, bool b_store_FN, bool b_store_photo_refine_statistics)                                      /* Optional Inputs */
 {
+    if (stereo_frame_edge_pairs.has_GT == false)
+    {
+        recall_per_image = 0.0;
+        precision_per_image = 0.0;
+        precision_pair_per_image = 0.0;
+        num_of_target_edges_per_source_edge_avg = 0.0;
+        return;
+    }
     //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame
     int total_num_of_true_positives_for_recall = 0;
     int total_num_of_true_positives_for_precision = 0;

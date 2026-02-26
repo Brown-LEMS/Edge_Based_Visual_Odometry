@@ -142,6 +142,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         // EuRoc
         else if (file_info.dataset_type == "EuRoC")
         {
+            file_info.has_gt = false;
             if (frame_to_body["rotation"] && frame_to_body["translation"])
             {
                 camera_info.rot_frame2body_left = Eigen::Map<Eigen::Matrix3d>(frame_to_body["rotation"].as<std::vector<double>>().data()).transpose();
