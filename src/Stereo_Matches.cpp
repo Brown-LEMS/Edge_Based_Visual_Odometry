@@ -215,7 +215,6 @@ void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat le
             stereo_frame_edge_pairs.GT_locations_from_left_edges.push_back(cv::Point2d(-1.0, -1.0));
             stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Eigen::Vector3d(-1.0, -1.0, -1.0));
             stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Eigen::Vector3d(-1.0, -1.0, -1.0));
-        }
     }
 }
 
@@ -252,8 +251,14 @@ void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset::Ptr dataset, const Stereo
                     thread_local_indices_to_remove[thread_id].push_back(i);
                 }
 
-            //> Direct assignment to pre-allocated vector to prevent race condition
-            stereo_frame_edge_pairs.veridical_right_edges_indices[i] = right_candidate_edge_indices;
+                //> Direct assignment to pre-allocated vector to prevent race condition
+                stereo_frame_edge_pairs.veridical_right_edges_indices[i] = right_candidate_edge_indices;
+            }
+            else
+            {
+                //> If no GT, we say veridical right edges are -1. This is just a placeholder and would not be used in the later process, since we will not do evaluation without GT.
+                stereo_frame_edge_pairs.veridical_right_edges_indices[i] = std::vector<int>{-1};
+            }
         }
     }
 
@@ -286,6 +291,14 @@ void Stereo_Matches::Evaluate_Stereo_Edge_Correspondences(
     double &recall_per_image, double &precision_per_image, double &precision_pair_per_image, double &num_of_target_edges_per_source_edge_avg, /* Outputs */
     Evaluation_Statistics &evaluation_statistics, bool b_store_FN, bool b_store_photo_refine_statistics)                                      /* Optional Inputs */
 {
+    if (stereo_frame_edge_pairs.has_GT == false)
+    {
+        recall_per_image = 0.0;
+        precision_per_image = 0.0;
+        precision_pair_per_image = 0.0;
+        num_of_target_edges_per_source_edge_avg = 0.0;
+        return;
+    }
     //> For each left edge from the keyframe, see if the filtered edges are found in the pool of matched veridical edges on the current frame
     int total_num_of_true_positives_for_recall = 0;
     int total_num_of_true_positives_for_precision = 0;
@@ -1092,35 +1105,8 @@ void Stereo_Matches::consolidate_redundant_edge_hypothesis(
             edge_cluster_engine.setRefineScores(scores_for_clustering);
             edge_cluster_engine.performClustering();
             stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters = edge_cluster_engine.returned_clusters;
-            // Debug: if we're dropping GT match, log details
-            // if (has_gt_before)
-            // {
-            //     for (int j = 0; j < stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size(); j++)
-            //     {
-            //         if (cv::norm(stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j].center_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH)
-            //         {
-            //             gt_in_cluster = true;
-            //             break;
-            //         }
-            //     }
-            //     if (!gt_in_cluster)
-            //     {
-            //         debug_file << "Edge " << i << " (" << left_edge.location.x << "," << left_edge.location.y << ")" << std::endl;
-            //         debug_file << "  GT location: (" << stereo_frame_edge_pairs.GT_locations_from_left_edges[i].x << "," << stereo_frame_edge_pairs.GT_locations_from_left_edges[i].y << ")" << std::endl;
-            //         debug_file << "  Has GT before clustering at" << e.location.x << "," << e.location.y << ")" << std::endl;
-            //         for (const auto &c : stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters)
-            //         {
-            //             Edge ce = c.center_edge;
-
-            //             debug_file << "  Clustered edge at: (" << ce.location.x << "," << ce.location.y << ")" << std::endl;
-            //         }
-
-            //         debug_file << std::endl;
-            //     }
-            // }
         }
     }
-    // debug_file.close();
 }
 
 void Stereo_Matches::min_Edge_Photometric_Residual_by_Gauss_Newton(
