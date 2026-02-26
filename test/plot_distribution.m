@@ -40,15 +40,6 @@ function plot_distribution(filter_name, frame_idx, output_dir)
         error('No data found in file: %s', filename);
     end
     
-<<<<<<< HEAD
-    % Transform NCC scores to dissimilarity (1 - ncc_score)
-    is_ncc_filter = contains(filter_name, 'ncc_score');
-    if is_ncc_filter || strcmp(filter_name, 'ncc_score')
-        data = 1 - data;
-        filter_display_name = 'NCC dissimilarity (1 - NCC)';
-    elseif strcmp(filter_name, 'location_error')
-        filter_display_name = 'disparity difference';
-=======
     filter_values = data{1};
     is_veridical = data{2};
     
@@ -63,7 +54,6 @@ function plot_distribution(filter_name, frame_idx, output_dir)
         filter_display_name = 'SIFT';
     elseif strcmp(filter_name, 'epipolar')
         filter_display_name = 'Epipolar Proximity';
->>>>>>> jue
     else
         filter_display_name = strrep(filter_name, '_', ' ');
     end
@@ -76,15 +66,9 @@ function plot_distribution(filter_name, frame_idx, output_dir)
     fprintf('  GT samples: %d\n', length(data_gt));
     fprintf('  Non-GT samples: %d\n', length(data_non_gt));
     
-<<<<<<< HEAD
-    % Check which filter to determine if zoomed inset plot is needed
-    is_epipolar = strcmp(filter_name, 'epipolar_distance');
-    is_location = strcmp(filter_name, 'location_error');
-=======
     % Check which filter for zoomed inset
     is_epipolar = strcmp(filter_name, 'epipolar');
     is_location = strcmp(filter_name, 'location');
->>>>>>> jue
     
     %% --- PLOT 1: PDF ---
     fig_pdf = figure('Position', [100, 100, 1200, 900]);
@@ -144,13 +128,6 @@ function plot_distribution(filter_name, frame_idx, output_dir)
     
     if is_ncc_filter
         plot_inset = true;
-<<<<<<< HEAD
-        zoom_min = 0; zoom_max = 0.5;
-        zoom_title = 'Zoomed: 1-NCC [0, 0.5]';
-    elseif is_epipolar
-        plot_inset = true;
-        zoom_min = 0; zoom_max = 2;
-=======
         zoom_min = 0; 
         zoom_max = 0.5;
         zoom_title = 'Zoomed: 1-NCC [0, 0.5]';
@@ -158,7 +135,6 @@ function plot_distribution(filter_name, frame_idx, output_dir)
         plot_inset = true;
         zoom_min = 0; 
         zoom_max = 2;
->>>>>>> jue
         zoom_title = 'Zoomed: EP 0-2 pixels';
     elseif is_location
         plot_inset = true;

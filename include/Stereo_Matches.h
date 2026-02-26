@@ -111,8 +111,4 @@ private:
     Utility::Ptr utility_tool = nullptr;
 };
 
-<<<<<<< HEAD
 #endif // STEREO_MATCHES_H
-=======
-#endif // STEREO_MATCHES_H
->>>>>>> jue
