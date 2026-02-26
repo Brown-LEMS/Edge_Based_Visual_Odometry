@@ -6,7 +6,7 @@
 #include "../include/definitions.h"
 #include "../include/Dataset.h"
 #include "../include/Pipeline.h"
-#include "../include/EBVO.h"
+#include "../include/Temporal_Matches.h"
 
 #if USE_GLOGS
 #include <glog/logging.h>
@@ -90,7 +90,29 @@ int main(int argc, char **argv)
 		std::cerr << "File does not exist!" << std::endl;
 	}
 
-	EBVO ebvo(config_map);
-	ebvo.PerformEdgeBasedVO();
+	//> Initialize the dataset and the pipeline
+	Dataset::Ptr dataset_ = std::make_shared<Dataset>(config_map);
+	Pipeline::Ptr edge_vo_system = Pipeline::Ptr(new Pipeline(dataset_));
+
+	//> Loop over all stereo image pairs
+	size_t frame_idx = 0;
+    while (dataset_->stereo_iterator->hasNext())
+    {
+		if (!dataset_->stereo_iterator->getNext(edge_vo_system->current_frame))
+        {
+            std::cout << "No more image pairs to process" << std::endl;
+            break;
+        }
+
+		edge_vo_system->set_Current_Stereo_Frame_Index(frame_idx);
+		edge_vo_system->Add_Stereo_Frame();
+		frame_idx++;
+
+		if (frame_idx == 2)
+			break;
+	}
+
+	// Temporal_Matches temporal_matches(config_map);
+	// temporal_matches.PerformEdgeBasedVO();
 	return 0;
 }

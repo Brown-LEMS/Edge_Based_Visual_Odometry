@@ -25,6 +25,11 @@
 
 Utility::Utility() {}
 
+//> Define and initialize static members (basis vectors in 3D space)
+Eigen::Vector3d Utility::e1 = Eigen::Vector3d::UnitX();
+Eigen::Vector3d Utility::e2 = Eigen::Vector3d::UnitY();
+Eigen::Vector3d Utility::e3 = Eigen::Vector3d::UnitZ();
+
 //> Normal distance from an edge to the corresponding epipolar line
 double Utility::getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y)
 {
@@ -73,6 +78,25 @@ std::pair<cv::Point2d, cv::Point2d> Utility::get_Orthogonal_Shifted_Points(const
   cv::Point2d shifted_point_minus(shifted_x2, shifted_y2);
 
   return {shifted_point_plus, shifted_point_minus};
+}
+
+Eigen::Vector3d Utility::backproject_2D_point_to_3D_point_using_rays( const Eigen::Matrix3d rel_R, const Eigen::Vector3d rel_T, const Eigen::Vector3d ray1, const Eigen::Vector3d ray2 )
+{
+    //> Analytically find the depth
+    double numerator = e1.dot(rel_T) - (e3.dot(rel_T)) * e1.dot(ray2);
+    double denominator = e3.dot(rel_R * ray1) * (e1.dot(ray2)) - e1.dot(rel_R * ray1);
+    double rho1 = numerator / denominator;
+    return rho1 * ray1;
+}
+
+Eigen::Vector3d Utility::reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, double theta1, double theta2 )
+{
+  Eigen::Vector3d t1(cos(theta1), sin(theta1), 0);
+  Eigen::Vector3d t2(cos(theta2), sin(theta2), 0);
+
+  Eigen::Vector3d T_3D = -(gamma2.dot(t2.cross(rel_R * t1))) * gamma1 + (gamma2.dot(t2.cross(rel_R * gamma1))) * t1;
+  T_3D.normalize();
+  return T_3D;
 }
 
 std::pair<cv::Point2d, cv::Point2d> Utility::get_Orthogonal_Shifted_Points(const Edge edgel, double shift_magnitude)
@@ -159,19 +183,6 @@ std::pair<cv::Mat, cv::Mat> Utility::get_edge_patches(const Edge edge, const cv:
     patch_val_minus.convertTo(patch_val_minus, CV_32F);
 
   return {patch_val_plus, patch_val_minus};
-}
-
-//> Display images and features via OpenCV
-void Utility::Display_Feature_Correspondences(cv::Mat Img1, cv::Mat Img2,
-                                              std::vector<cv::KeyPoint> KeyPoint1, std::vector<cv::KeyPoint> KeyPoint2,
-                                              std::vector<cv::DMatch> Good_Matches)
-{
-  //> Credit: matcher_simple.cpp from the official OpenCV
-  cv::namedWindow("matches", 1);
-  cv::Mat img_matches;
-  cv::drawMatches(Img1, KeyPoint1, Img2, KeyPoint2, Good_Matches, img_matches);
-  cv::imshow("matches", img_matches);
-  cv::waitKey(0);
 }
 
 Eigen::Vector3d Utility::two_view_linear_triangulation(

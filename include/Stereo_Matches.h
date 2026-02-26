@@ -34,11 +34,13 @@ public:
     Stereo_Matches() { utility_tool = std::make_shared<Utility>(); };
     ~Stereo_Matches() {};
 
+    typedef std::shared_ptr<Stereo_Matches> Ptr;
+
     //> main function to get stereo edge pairs
-    Frame_Evaluation_Metrics get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx);
+    Frame_Evaluation_Metrics get_Stereo_Edge_Pairs(Dataset::Ptr dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx);
 
     //> filtering methods
-    void apply_Epipolar_Line_Distance_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, Dataset &dataset, const std::vector<Edge> right_edges, const std::string &output_dir = "", bool is_left = true, size_t frame_idx = 0, int num_random_edges_for_distribution = 0);
+    void apply_Epipolar_Line_Distance_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, Dataset::Ptr dataset, const std::vector<Edge> right_edges, const std::string &output_dir = "", bool is_left = true, size_t frame_idx = 0, int num_random_edges_for_distribution = 0);
     void apply_Disparity_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir = "", size_t frame_idx = 0, bool is_left = true);
     void apply_SIFT_filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double sift_dist_threshold, const std::string &output_dir = "", size_t frame_idx = 0, bool is_left = true);
     void apply_NCC_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir, size_t frame_idx, bool is_left = true);
@@ -61,8 +63,8 @@ public:
     void add_edges_to_spatial_grid(Stereo_Edge_Pairs &stereo_frame_edge_pairs, SpatialGrid &spatial_grid, bool is_left);
 
     //>
-    void Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat left_disparity_map, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
-    void get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
+    void Find_Stereo_GT_Locations(Dataset::Ptr dataset, const cv::Mat left_disparity_map, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
+    void get_Stereo_Edge_GT_Pairs(Dataset::Ptr dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
     void record_Filter_Distribution(const std::string &filter_name, const std::vector<double> &filter_values, const std::vector<int> &is_veridical, const std::string &output_dir, size_t frame_idx = 0);
     void record_Ambiguity_Distribution(const std::string &stage_name, const Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir, size_t frame_idx);
 
@@ -70,7 +72,7 @@ private:
     //> visualization methods
     void record_correspondences_for_visualization(const Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir, size_t frame_idx, int num_samples = 10);
     std::vector<Eigen::Vector3d> CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges);
-    void write_Stereo_Edge_Pairs_to_file(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, int frame_idx);
+    void write_Stereo_Edge_Pairs_to_file(Dataset::Ptr dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, int frame_idx);
 
     //> evaluation methods
     std::vector<int> get_right_edge_indices_close_to_GT_location(const StereoFrame &stereo_frame, const cv::Point2d GT_location, double GT_orientation, const std::vector<int> right_candidate_edge_indices, const double dist_tol, const double orient_tol, bool is_left = true);

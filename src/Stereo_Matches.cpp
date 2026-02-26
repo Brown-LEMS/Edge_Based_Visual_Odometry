@@ -128,14 +128,14 @@ std::vector<int> Stereo_Matches::get_right_edge_indices_close_to_GT_location(
     return right_edge_indices_close_to_GT_location;
 }
 
-void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat left_disparity_map, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
+void Stereo_Matches::Find_Stereo_GT_Locations(Dataset::Ptr dataset, const cv::Mat left_disparity_map, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
     Utility util;
     int edge_size = is_left ? stereo_frame.left_edges.size() : stereo_frame.right_edges.size();
-    stereo_frame_edge_pairs.has_GT = dataset.has_gt();
+    stereo_frame_edge_pairs.has_GT = dataset->has_gt();
     for (int left_edge_index = 0; left_edge_index < edge_size; left_edge_index++)
     {
-        if (dataset.has_gt())
+        if (dataset->has_gt())
         {
             //> if we have gt, we will get the GT pairs, if not, we will just set GT location as (-1,-1)
             Edge e = stereo_frame.left_edges[left_edge_index]; //> we are abuseing the term left_edges here, it's universal for both left and right edges
@@ -164,46 +164,37 @@ void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat le
             Eigen::Vector3d e_location_eigen(e.location.x, e.location.y, 1.0);
             Eigen::Vector3d GT_location_eigen(GT_location.x, GT_location.y, 1.0);
 
-            double focal_length, baseline;
-            Eigen::Matrix3d calib_matrix;
-            if (is_left)
-            {
-                focal_length = dataset.get_left_focal_length();
-                baseline = dataset.get_left_baseline();
-                calib_matrix = dataset.get_left_calib_matrix();
-            }
-            else
-            {
-                focal_length = dataset.get_right_focal_length();
-                baseline = dataset.get_right_baseline();
-                calib_matrix = dataset.get_right_calib_matrix();
-            }
-
-            double rho = focal_length * baseline / disparity;
-            double rho_1 = (rho < 0.0) ? (-rho) : (rho);
-
-            Eigen::Vector3d gamma_1 = calib_matrix.inverse() * e_location_eigen;
-            Eigen::Vector3d Gamma_1_left = rho_1 * gamma_1;
-            stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1_left);
-
-            //> apply stereo frame shift
-            Eigen::Vector3d Gamma_1_right = dataset.get_relative_rot_left_to_right() * Gamma_1_left + dataset.get_relative_transl_left_to_right();
-            stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Gamma_1_right);
+        double focal_length, baseline;
+        Eigen::Matrix3d calib_matrix;
+        if (is_left)
+        {
+            focal_length = dataset->get_left_focal_length();
+            baseline = dataset->get_left_baseline();
+            calib_matrix = dataset->get_left_calib_matrix();
         }
         else
         {
-            stereo_frame_edge_pairs.focused_edge_indices.push_back(left_edge_index);
-            stereo_frame_edge_pairs.GT_locations_from_left_edges.push_back(cv::Point2d(-1.0, -1.0));
-            stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Eigen::Vector3d(-1.0, -1.0, -1.0));
-            stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Eigen::Vector3d(-1.0, -1.0, -1.0));
+            focal_length = dataset->get_right_focal_length();
+            baseline = dataset->get_right_baseline();
+            calib_matrix = dataset->get_right_calib_matrix();
         }
+
+        double rho = focal_length * baseline / disparity;
+        double rho_1 = (rho < 0.0) ? (-rho) : (rho);
+
+        Eigen::Vector3d gamma_1 = calib_matrix.inverse() * e_location_eigen;
+        Eigen::Vector3d Gamma_1_left = rho_1 * gamma_1;
+        stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1_left);
+
+        //> apply stereo frame shift
+        Eigen::Vector3d Gamma_1_right = dataset->get_relative_rot_left_to_right() * Gamma_1_left + dataset->get_relative_transl_left_to_right();
+        stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Gamma_1_right);
     }
 }
 
-void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
+void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset::Ptr dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
-    // if we have gt, we will get the GT pairs, if not, we will just set GT location as (-1,-1)
-    Eigen::Matrix3d fund_mat = is_left ? dataset.get_fund_mat_21() : dataset.get_fund_mat_12();
+    Eigen::Matrix3d fund_mat = is_left ? dataset->get_fund_mat_21() : dataset->get_fund_mat_12();
     std::vector<Eigen::Vector3d> epip_line_coeffs = CalculateEpipolarLine(fund_mat, stereo_frame_edge_pairs.get_focused_edges());
     std::vector<int> indices_to_remove;
 
@@ -221,7 +212,7 @@ void Stereo_Matches::get_Stereo_Edge_GT_Pairs(Dataset &dataset, const StereoFram
 #pragma omp for schedule(dynamic)
         for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
         {
-            if (dataset.has_gt())
+            if (dataset->has_gt())
             {
                 Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
                 const auto e_coeffs = epip_line_coeffs[i];
@@ -381,11 +372,13 @@ void Stereo_Matches::Evaluate_Stereo_Edge_Correspondences(
 }
 
 void Stereo_Matches::apply_Epipolar_Line_Distance_Filtering(
-    Stereo_Edge_Pairs &stereo_frame_edge_pairs, Dataset &dataset, const std::vector<Edge> right_edges,
+    Stereo_Edge_Pairs &stereo_frame_edge_pairs, Dataset::Ptr dataset, const std::vector<Edge> right_edges,
     const std::string &output_dir, bool is_left, size_t frame_idx, int num_random_edges_for_distribution)
 {
-    std::vector<Eigen::Vector3d> epip_line_coeffs = CalculateEpipolarLine(dataset.get_fund_mat_21(), stereo_frame_edge_pairs.get_focused_edges());
-    epip_line_coeffs = is_left ? epip_line_coeffs : CalculateEpipolarLine(dataset.get_fund_mat_12(), stereo_frame_edge_pairs.get_focused_edges());
+    // be aware that left_edges may not be actually left edges, depends on is_left
+
+    std::vector<Eigen::Vector3d> epip_line_coeffs = CalculateEpipolarLine(dataset->get_fund_mat_21(), stereo_frame_edge_pairs.get_focused_edges());
+    epip_line_coeffs = is_left ? epip_line_coeffs : CalculateEpipolarLine(dataset->get_fund_mat_12(), stereo_frame_edge_pairs.get_focused_edges());
 
     stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges = epip_line_coeffs;
 
@@ -1454,7 +1447,7 @@ void Stereo_Matches::refine_edge_disparity(Stereo_Edge_Pairs &stereo_frame_edge_
     }
 }
 
-Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx)
+Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx)
 {
 
     Evaluation_Statistics evaluation_statistics;
@@ -1503,16 +1496,16 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset &dataset,
 
     //> Apply Best-Nearly-Best test with both NCC and SIFT scores
     apply_Best_Nearly_Best_Test(stereo_frame_edge_pairs, BNB_NCC, "output_files", frame_idx, true);
-    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB Test NCC",
+    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB-NCC",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["BNB Test"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages["BNB-NCC"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
 
     apply_Best_Nearly_Best_Test(stereo_frame_edge_pairs, BNB_SIFT, "output_files", frame_idx, false);
-    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB Test SIFT",
+    Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB-SIFT",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["BNB Test_Strict"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages["BNB-SIFT"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
 
     //> Shift edges to the epipolar line and cluster them to consolidate redundant edge hypothesis
     bool b_shift_to_epipolar_line = true;
@@ -1595,7 +1588,7 @@ void Stereo_Matches::remove_empty_clusters(Stereo_Edge_Pairs &stereo_frame_edge_
             stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges.erase(stereo_frame_edge_pairs.epip_line_coeffs_of_left_edges.begin() + no_GT_index);
             stereo_frame_edge_pairs.left_edge_patches.erase(stereo_frame_edge_pairs.left_edge_patches.begin() + no_GT_index);
             // reconstruct third order mapping after erasing
-            stereo_frame_edge_pairs.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
+            // stereo_frame_edge_pairs.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
         }
     }
 }
@@ -1618,6 +1611,13 @@ void Stereo_Matches::finalize_stereo_edge_mates(Stereo_Edge_Pairs &stereo_frame_
         stereo_frame_edge_pairs.focused_edge_indices.size() != stereo_frame_edge_pairs.left_edge_descriptors.size() ||
         stereo_frame_edge_pairs.focused_edge_indices.size() != stereo_frame_edge_pairs.GT_locations_from_left_edges.size())
     {
+        std::cout << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
+        std::cout << stereo_frame_edge_pairs.matching_edge_clusters.size() << std::endl;
+        std::cout << stereo_frame_edge_pairs.Gamma_in_left_cam_coord.size() << std::endl;
+        std::cout << stereo_frame_edge_pairs.Gamma_in_right_cam_coord.size() << std::endl;
+        std::cout << stereo_frame_edge_pairs.left_edge_patches.size() << std::endl;
+        std::cout << stereo_frame_edge_pairs.left_edge_descriptors.size() << std::endl;
+        std::cout << stereo_frame_edge_pairs.GT_locations_from_left_edges.size() << std::endl;
         LOG_ERROR("Vector sizes are not consistent in finalize_stereo_edge_mates");
         return;
     }

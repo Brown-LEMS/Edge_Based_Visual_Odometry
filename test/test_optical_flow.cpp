@@ -1,12 +1,7 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
-#include "../include/EBVO.h"
+#include "../include/Temporal_Matches.h"
 #include "../include/OpticalFlow.h"
-
-/**
- * Test program for optical flow functionality in EBVO
- * This demonstrates how to use the new optical flow features
- */
 
 void test_optical_flow_basic()
 {

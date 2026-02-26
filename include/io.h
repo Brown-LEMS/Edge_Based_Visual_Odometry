@@ -162,9 +162,9 @@ inline void write_False_Negative_Edge_Clusters_to_file(Dataset &dataset, Stereo_
 //> write
 
 //> Write stereo edge pairs to file
-inline void write_Stereo_Edge_Pairs_to_file(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, int frame_idx)
+inline void write_Stereo_Edge_Pairs_to_file(Dataset::Ptr dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, int frame_idx)
 {
-    std::string output_dir = dataset.get_output_path();
+    std::string output_dir = dataset->get_output_path();
     std::string stereo_frame_edge_pairs_filename = output_dir + "/stereo_frame_edge_pairs_frame_" + std::to_string(frame_idx) + ".txt";
     std::ofstream stereo_frame_edge_pairs_file(stereo_frame_edge_pairs_filename);
     stereo_frame_edge_pairs_file << "focused_edge_indices, GT_locations_from_focused_edges" << std::endl;
