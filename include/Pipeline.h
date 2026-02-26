@@ -19,15 +19,19 @@
 #include "Temporal_Matches.h"
 
 //> status of the visual odometry pipeline
-enum class PipelineStatus { STATUS_IMG_PREPARATION, \
-                            STATUS_GET_STEREO_EDGE_CORRESPONDENCES, \
-                            STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES, \
-                            STATUS_TRACK_CAMERA_MOTION };
+enum class PipelineStatus
+{
+    STATUS_IMG_PREPARATION,
+    STATUS_GET_STEREO_EDGE_CORRESPONDENCES,
+    STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES,
+    STATUS_TRACK_CAMERA_MOTION
+};
 
-class Pipeline {
+class Pipeline
+{
 
 public:
-    //EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
+    // EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
     typedef std::shared_ptr<Pipeline> Ptr;
 
     //> Constructor
@@ -47,11 +51,16 @@ public:
     PipelineStatus get_Status() const { return status_; }
 
     //> Print pipeline status
-    std::string print_Status() const {
-        if      (status_ == PipelineStatus::STATUS_IMG_PREPARATION)                      return std::string("STATUS_IMG_PREPARATION");
-        else if (status_ == PipelineStatus::STATUS_GET_STEREO_EDGE_CORRESPONDENCES)      return std::string("STATUS_GET_STEREO_EDGE_CORRESPONDENCES");
-        else if (status_ == PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES)    return std::string("STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES");
-        else if (status_ == PipelineStatus::STATUS_TRACK_CAMERA_MOTION)                  return std::string("STATUS_TRACK_CAMERA_MOTION");
+    std::string print_Status() const
+    {
+        if (status_ == PipelineStatus::STATUS_IMG_PREPARATION)
+            return std::string("STATUS_IMG_PREPARATION");
+        else if (status_ == PipelineStatus::STATUS_GET_STEREO_EDGE_CORRESPONDENCES)
+            return std::string("STATUS_GET_STEREO_EDGE_CORRESPONDENCES");
+        else if (status_ == PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES)
+            return std::string("STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES");
+        else if (status_ == PipelineStatus::STATUS_TRACK_CAMERA_MOTION)
+            return std::string("STATUS_TRACK_CAMERA_MOTION");
         LOG_ERROR("[Developer Error] Need to apend status string in print_Status() function!");
         return std::string("STATUS_UNKNOWN");
     }
@@ -68,7 +77,8 @@ private:
     SpatialGrid left_spatial_grids;
     SpatialGrid right_spatial_grids;
 
-    void initialize_TOED_and_Spatial_Grids() {
+    void initialize_TOED_and_Spatial_Grids()
+    {
         //> Set the image dimensions
         dataset_->set_height(current_frame.left_image_undistorted.rows);
         dataset_->set_width(current_frame.left_image_undistorted.cols);
@@ -83,9 +93,10 @@ private:
 
     void ProcessEdges(const cv::Mat &image, std::vector<Edge> &edges);
 
-    void set_Keyframe() {
+    void set_Keyframe()
+    {
         stereo_key_frame_idx = stereo_current_frame_idx;
-        
+
         keyframe = current_frame;
         keyframe_stereo_edge_mates = current_frame_stereo_edge_mates;
         keyframe_stereo_left_constructor = current_frame_stereo_left_constructor;
@@ -99,12 +110,42 @@ private:
         current_frame_stereo_left_constructor.clean_up_vector_data_structures();
     }
 
-    void set_Stereo_Left_Constructor() {
+    void set_Stereo_Left_Constructor()
+    {
         current_frame_stereo_edge_mates.clear();
         current_frame_stereo_left_constructor.clean_up_vector_data_structures();
         current_frame_stereo_left_constructor.stereo_frame = &current_frame;
         current_frame_stereo_left_constructor.left_disparity_map = current_frame.left_disparity_map;
         current_frame_stereo_left_constructor.right_disparity_map = current_frame.right_disparity_map;
+    }
+
+    void Memory_clear()
+    {
+        //> Clear and shrink keyframe edge patches
+        keyframe_stereo_left_constructor.left_edge_patches.clear();
+        keyframe_stereo_left_constructor.left_edge_patches.shrink_to_fit();
+
+        //> Clear and shrink keyframe edge descriptors
+        keyframe_stereo_left_constructor.left_edge_descriptors.clear();
+        keyframe_stereo_left_constructor.left_edge_descriptors.shrink_to_fit();
+
+        //> Clear and shrink keyframe matching clusters
+        for (auto &cluster_list : keyframe_stereo_left_constructor.matching_edge_clusters)
+        {
+            cluster_list.edge_clusters.clear();
+            cluster_list.edge_clusters.shrink_to_fit();
+            cluster_list.refine_final_scores.clear();
+            cluster_list.refine_confidences.clear();
+            cluster_list.refine_validities.clear();
+        }
+        keyframe_stereo_left_constructor.matching_edge_clusters.clear();
+        keyframe_stereo_left_constructor.matching_edge_clusters.shrink_to_fit();
+
+        //> Clear and shrink keyframe veridical data
+        keyframe_stereo_left_constructor.veridical_right_edges_indices.clear();
+        keyframe_stereo_left_constructor.veridical_right_edges_indices.shrink_to_fit();
+        keyframe_stereo_left_constructor.GT_locations_from_left_edges.clear();
+        keyframe_stereo_left_constructor.GT_locations_from_left_edges.shrink_to_fit();
     }
 
     /**
@@ -137,11 +178,10 @@ private:
     ThirdOrderEdgeDetectionCPU::Ptr TOED = nullptr;
     Stereo_Matches::Ptr stereo_matches_engine = nullptr;
     Temporal_Matches::Ptr temporal_matches_engine = nullptr;
-    Frame::Ptr Current_Frame  = nullptr;
+    Frame::Ptr Current_Frame = nullptr;
     Frame::Ptr Previous_Frame = nullptr;
     Utility::Ptr utility_tool = nullptr;
     MotionTracker::Ptr Camera_Motion_Estimate = nullptr;
 };
-
 
 #endif

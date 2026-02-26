@@ -8,7 +8,8 @@
 #include "Pipeline.h"
 #include "definitions.h"
 
-Pipeline::Pipeline(Dataset::Ptr dataset) : dataset_(dataset) {
+Pipeline::Pipeline(Dataset::Ptr dataset) : dataset_(dataset)
+{
 
     //> Loading the dataset
     dataset_->load_dataset(dataset_->get_dataset_type(), left_ref_disparity_maps, right_ref_disparity_maps, left_occlusion_masks, right_occlusion_masks);
@@ -27,32 +28,36 @@ void Pipeline::ProcessEdges(const cv::Mat &image, std::vector<Edge> &edges)
     edges = TOED->toed_edges;
 }
 
-bool Pipeline::Add_Stereo_Frame() {
+bool Pipeline::Add_Stereo_Frame()
+{
 
-    do {
-        switch (status_) {
-            case PipelineStatus::STATUS_IMG_PREPARATION:
-                //> Preparing images
-                LOG_STATUS("IMG_PREPARATION");
-                prepare_Stereo_Images();
-                break;
-            case PipelineStatus::STATUS_GET_STEREO_EDGE_CORRESPONDENCES:
-                //> Get stereo edge correspondences
-                LOG_STATUS("GET_STEREO_EDGE_CORRESPONDENCES");
-                get_Stereo_Edge_Correspondences();
-                break;
-            case PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES:
-                //> Get temporal edge correspondences (keyframe <-> current frame)
-                LOG_STATUS("GET_TEMPORAL_EDGE_CORRESPONDENCES");
-                get_Temporal_Edge_Correspondences();
-                break;
+    do
+    {
+        switch (status_)
+        {
+        case PipelineStatus::STATUS_IMG_PREPARATION:
+            //> Preparing images
+            LOG_STATUS("IMG_PREPARATION");
+            prepare_Stereo_Images();
+            break;
+        case PipelineStatus::STATUS_GET_STEREO_EDGE_CORRESPONDENCES:
+            //> Get stereo edge correspondences
+            LOG_STATUS("GET_STEREO_EDGE_CORRESPONDENCES");
+            get_Stereo_Edge_Correspondences();
+            break;
+        case PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES:
+            //> Get temporal edge correspondences (keyframe <-> current frame)
+            LOG_STATUS("GET_TEMPORAL_EDGE_CORRESPONDENCES");
+            get_Temporal_Edge_Correspondences();
+            break;
         }
-    } while ( !send_control_to_main );
+    } while (!send_control_to_main);
 
     return true;
 }
 
-void Pipeline::prepare_Stereo_Images() {
+void Pipeline::prepare_Stereo_Images()
+{
 
     current_frame.left_disparity_map = (stereo_current_frame_idx < left_ref_disparity_maps.size()) ? left_ref_disparity_maps[stereo_current_frame_idx] : cv::Mat();
     current_frame.right_disparity_map = (stereo_current_frame_idx < right_ref_disparity_maps.size()) ? right_ref_disparity_maps[stereo_current_frame_idx] : cv::Mat();
@@ -61,7 +66,8 @@ void Pipeline::prepare_Stereo_Images() {
     // const cv::Mat &left_occlusion_mask = (stereo_current_frame_idx < left_occlusion_masks.size()) ? left_occlusion_masks[stereo_current_frame_idx] : cv::Mat();
     // const cv::Mat &right_occlusion_mask = (stereo_current_frame_idx < right_occlusion_masks.size()) ? right_occlusion_masks[stereo_current_frame_idx] : cv::Mat();
 
-    std::cout << std::endl << "Stereo Image Pair #" << stereo_current_frame_idx << std::endl;
+    std::cout << std::endl
+              << "Stereo Image Pair #" << stereo_current_frame_idx << std::endl;
 
     cv::Mat left_cur_undistorted, right_cur_undistorted;
     cv::undistort(current_frame.left_image, left_cur_undistorted, dataset_->get_left_calib_matrix_cvMat(), dataset_->get_left_dist_coeff_mat());
@@ -92,7 +98,8 @@ void Pipeline::prepare_Stereo_Images() {
     send_control_to_main = false;
 }
 
-void Pipeline::get_Stereo_Edge_Correspondences() {
+void Pipeline::get_Stereo_Edge_Correspondences()
+{
 
     //> Set the stereo left constructor
     set_Stereo_Left_Constructor();
@@ -103,7 +110,7 @@ void Pipeline::get_Stereo_Edge_Correspondences() {
     //> Construct a GT stereo edge pool
     stereo_matches_engine->get_Stereo_Edge_GT_Pairs(dataset_, current_frame, current_frame_stereo_left_constructor, true);
     std::cout << "Size of stereo edge correspondences pool = " << current_frame_stereo_left_constructor.focused_edge_indices.size() << std::endl;
-    
+
     //> construct stereo edge correspondences for the current_frame
     Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_current_frame_idx);
 
@@ -111,19 +118,22 @@ void Pipeline::get_Stereo_Edge_Correspondences() {
     stereo_matches_engine->finalize_stereo_edge_mates(current_frame_stereo_left_constructor, current_frame_stereo_edge_mates);
 
     //> If the current frame is the first frame, make current frame the keyframe
-    if (stereo_current_frame_idx == 0) {
+    if (stereo_current_frame_idx == 0)
+    {
         set_Keyframe();
         status_ = PipelineStatus::STATUS_IMG_PREPARATION;
         send_control_to_main = true;
     }
-    else {
+    else
+    {
         //> Shift to the next status
         status_ = PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES;
         send_control_to_main = false;
     }
 }
 
-void Pipeline::get_Temporal_Edge_Correspondences() {
+void Pipeline::get_Temporal_Edge_Correspondences()
+{
 
     //> construct spatial grids for the current stereo edge mates
     temporal_matches_engine->add_edges_to_spatial_grid(current_frame_stereo_edge_mates, left_spatial_grids, right_spatial_grids);
@@ -132,7 +142,7 @@ void Pipeline::get_Temporal_Edge_Correspondences() {
     //> One KF stereo edge pair could pair up with multiple veridical CF stereo edge pairs.
     //> The structure `temporal_quads_by_kf` contains the veridical CF stereo edge pairs, and the matching CF stereo edge pairs
     std::vector<KF_Temporal_Edge_Quads> temporal_quads_by_kf;
-    temporal_matches_engine->build_Veridical_Quads( temporal_quads_by_kf, keyframe_stereo_edge_mates, current_frame_stereo_edge_mates, keyframe_stereo_left_constructor, current_frame_stereo_left_constructor, left_spatial_grids, right_spatial_grids);
+    temporal_matches_engine->build_Veridical_Quads(temporal_quads_by_kf, keyframe_stereo_edge_mates, current_frame_stereo_edge_mates, keyframe_stereo_left_constructor, current_frame_stereo_left_constructor, left_spatial_grids, right_spatial_grids);
 
     //> Quad-centric pipeline: build veridical quads, apply filters, optionally convert to temporal pairs for backward compatibility
     temporal_matches_engine->get_Temporal_Edge_Pairs_from_Quads(
@@ -151,6 +161,9 @@ void Pipeline::get_Temporal_Edge_Correspondences() {
         temporal_quads_by_kf,
         stereo_key_frame_idx,
         stereo_current_frame_idx);
+
+    //> Memory cleanup: free memory from keyframe structures that are no longer needed
+    Memory_clear();
 
     send_control_to_main = true;
 }
