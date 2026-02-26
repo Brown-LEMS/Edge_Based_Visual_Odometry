@@ -27,6 +27,16 @@ struct KF_Temporal_Edge_Quads
     std::vector<bool> b_is_TP;
 };
 
+struct Quad_Prepared_for_Constraints_Check
+{
+    size_t KF_stereo_mate_index;
+    size_t candidate_quad_index;
+    Eigen::Vector3d Gamma;
+    Eigen::Vector3d Gamma_bar;
+    Eigen::Vector3d Tangent;
+    Eigen::Vector3d Tangent_bar;
+};
+
 class Temporal_Matches
 {
 public:
@@ -82,6 +92,13 @@ public:
     double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset);
 
     void finalize_temporal_quads(std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf);
+
+    void get_Gammas_and_Tangents_From_Quads(const KF_Temporal_Edge_Quads &kvq, const size_t candidate_idx, \
+        Eigen::Matrix3d inv_K, Eigen::Vector3d &Gamma, Eigen::Vector3d &Gamma_bar, Eigen::Vector3d &Tangent, Eigen::Vector3d &Tangent_bar);
+    
+    void test_Constraints_from_Two_Oriented_Points( \
+        const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, \
+        const size_t keyframe_idx, const size_t current_frame_idx);
 
     //> Write all quads to a CSV file (for debugging/analysis).
     void write_quads_to_file(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf,

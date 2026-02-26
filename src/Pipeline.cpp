@@ -147,6 +147,11 @@ void Pipeline::get_Temporal_Edge_Correspondences() {
     //> write quads to a file
     temporal_matches_engine->write_quads_to_file(temporal_quads_by_kf, stereo_key_frame_idx, stereo_current_frame_idx);
 
+    temporal_matches_engine->test_Constraints_from_Two_Oriented_Points(
+        temporal_quads_by_kf,
+        stereo_key_frame_idx,
+        stereo_current_frame_idx);
+
     send_control_to_main = true;
 }
 

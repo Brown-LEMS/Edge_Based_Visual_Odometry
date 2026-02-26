@@ -837,6 +837,109 @@ void Temporal_Matches::min_Edge_Photometric_Residual_by_Gauss_Newton(
     refined_disparity = d;
 }
 
+void Temporal_Matches::get_Gammas_and_Tangents_From_Quads(\
+    const KF_Temporal_Edge_Quads &kvq, const size_t candidate_idx, \
+    Eigen::Matrix3d inv_K, Eigen::Vector3d &Gamma, Eigen::Vector3d &Gamma_bar, Eigen::Vector3d &Tangent, Eigen::Vector3d &Tangent_bar)
+{
+    Utility::Ptr utility = Utility::Ptr(new Utility());
+    size_t j = candidate_idx;
+
+    Eigen::Vector3d p_left(kvq.KF_stereo_mate->left_edge.location.x, kvq.KF_stereo_mate->left_edge.location.y, 1.0);
+    Eigen::Vector3d p_right(kvq.KF_stereo_mate->right_edge.location.x, kvq.KF_stereo_mate->right_edge.location.y, 1.0);
+    Eigen::Vector3d gamma1_left = inv_K * p_left;
+    Eigen::Vector3d gamma1_right = inv_K * p_right;
+    Gamma = utility->backproject_2D_point_to_3D_point_using_rays( \
+        dataset->get_relative_rot_left_to_right(), dataset->get_relative_transl_left_to_right(), \
+        gamma1_left, gamma1_right );
+    Eigen::Vector3d p_bar_left(kvq.candidate_quads[candidate_idx].CF_left->center_edge.location.x, kvq.candidate_quads[candidate_idx].CF_left->center_edge.location.y, 1.0);
+    Eigen::Vector3d p_bar_right(kvq.candidate_quads[candidate_idx].CF_right->center_edge.location.x, kvq.candidate_quads[candidate_idx].CF_right->center_edge.location.y, 1.0);
+    Eigen::Vector3d gamma1_bar_left = inv_K * p_bar_left;
+    Eigen::Vector3d gamma1_bar_right = inv_K * p_bar_right;
+    Gamma_bar = utility->backproject_2D_point_to_3D_point_using_rays( \
+        dataset->get_relative_rot_left_to_right(), dataset->get_relative_transl_left_to_right(), \
+        gamma1_bar_left, gamma1_bar_right );
+
+    //> Tangent from KF and Tangent_bar from CF candidate quad
+    Tangent = utility->reconstruct_3D_Tangent( \
+        dataset->get_relative_rot_left_to_right(), \
+        gamma1_left, gamma1_right, \
+        kvq.KF_stereo_mate->left_edge.orientation, kvq.KF_stereo_mate->right_edge.orientation);
+    Tangent_bar = utility->reconstruct_3D_Tangent( \
+        dataset->get_relative_rot_left_to_right(), \
+        gamma1_bar_left, gamma1_bar_right, \
+        kvq.candidate_quads[j].CF_left->center_edge.orientation, kvq.candidate_quads[j].CF_right->center_edge.orientation );
+                
+}
+
+void Temporal_Matches::test_Constraints_from_Two_Oriented_Points( \
+    const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, \
+    const size_t keyframe_idx, const size_t current_frame_idx)
+{
+    // const Eigen::Matrix3d rel_R, const Eigen::Vector3d rel_T, const Eigen::Vector3d ray1, const Eigen::Vector3d ray2 )
+    Utility::Ptr utility = Utility::Ptr(new Utility());
+    Eigen::Matrix3d inv_K = dataset->get_left_calib_matrix().inverse();
+    //> First split the quads into veridical and non-veridical
+    std::vector<Quad_Prepared_for_Constraints_Check> veridical_quads;
+    std::vector<Quad_Prepared_for_Constraints_Check> non_veridical_quads;
+    for (size_t k = 0; k < quads_by_kf.size(); ++k)
+    {
+        const auto &kvq = quads_by_kf[k];
+        if (!kvq.KF_stereo_mate->b_is_TP)
+            continue;
+
+        for (size_t j = 0; j < kvq.candidate_quads.size(); ++j)
+        {
+            Quad_Prepared_for_Constraints_Check q;
+            get_Gammas_and_Tangents_From_Quads(kvq, j, inv_K, q.Gamma, q.Gamma_bar, q.Tangent, q.Tangent_bar);
+            if (k == 5160 && j == 0) {
+                std::cout << "Here: " << std::endl;
+                std::cout << kvq.b_is_TP[j] << std::endl;
+            }
+            if (kvq.b_is_TP[j]) {
+                veridical_quads.push_back({k, j, q.Gamma, q.Gamma_bar, q.Tangent, q.Tangent_bar});
+            }
+            else {
+                non_veridical_quads.push_back({k, j, q.Gamma, q.Gamma_bar, q.Tangent, q.Tangent_bar});
+            }   
+        }
+    }
+
+    //> write the c1 values to a file
+    std::string output_dir = dataset->get_output_path();
+    std::string file_name = output_dir + "/c1_values_kf" + std::to_string(keyframe_idx) + "_cf" + std::to_string(current_frame_idx) + ".txt";
+    std::ofstream file_input(file_name);
+    if (!file_input.is_open())
+        return;
+
+    //> length constraints
+    const size_t N = 1000;
+    std::vector<double> veridical_c1_values(N);
+    std::vector<double> non_veridical_c1_values(N);
+    for (size_t i = 0; i < N; i++) {
+        //> randomly pick two veridical and non-veridical quads
+        const auto &q1_v = veridical_quads[rand() % veridical_quads.size()];
+        const auto &q2_v = veridical_quads[rand() % veridical_quads.size()];
+        const auto &q1_nv = non_veridical_quads[rand() % non_veridical_quads.size()];
+        const auto &q2_nv = non_veridical_quads[rand() % non_veridical_quads.size()];
+
+        //> test length constraints
+        double length_Gamma_v = (q1_v.Gamma - q2_v.Gamma).norm();
+        double length_Gamma_bar_v = (q1_v.Gamma_bar - q2_v.Gamma_bar).norm();
+        veridical_c1_values[i] = length_Gamma_v - length_Gamma_bar_v;
+
+        double length_Gamma_nv = (q1_nv.Gamma - q2_nv.Gamma).norm();
+        double length_Gamma_bar_nv = (q1_nv.Gamma_bar - q2_nv.Gamma_bar).norm();
+        non_veridical_c1_values[i] = length_Gamma_nv - length_Gamma_bar_nv;
+
+        file_input << q1_v.KF_stereo_mate_index << " " << q1_v.candidate_quad_index << " " \
+                   << q2_v.KF_stereo_mate_index << " " << q2_v.candidate_quad_index << " " << veridical_c1_values[i] << " " \
+                   << q1_nv.KF_stereo_mate_index << " " << q1_nv.candidate_quad_index << " " \
+                   << q2_nv.KF_stereo_mate_index << " " << q2_nv.candidate_quad_index << " " << non_veridical_c1_values[i] << std::endl;
+    }
+
+    file_input.close();
+}
+
 void Temporal_Matches::write_quads_to_file(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf,
     size_t keyframe_idx, size_t current_frame_idx,
     const std::string &filename_suffix)
@@ -854,14 +957,13 @@ void Temporal_Matches::write_quads_to_file(const std::vector<KF_Temporal_Edge_Qu
     std::ofstream file_input(file_name);
     if (!file_input.is_open())
         return;
-    // file_input << "kf_idx -1 left_x left_y left_orient right_x right_y right_orient"
-    // << "cf_idx left_x left_y left_orient right_x right_y right_orient is_TP\n";
 
     for (size_t k = 0; k < quads_by_kf.size(); ++k)
     {
         const auto &kvq = quads_by_kf[k];
         if (!kvq.KF_stereo_mate->b_is_TP)
             continue;
+
         //> write KF stereo of the quad
         file_input << k << " " << -1 << " "
         << kvq.KF_stereo_mate->left_edge.location.x << " " << kvq.KF_stereo_mate->left_edge.location.y << " " << kvq.KF_stereo_mate->left_edge.orientation << " "
