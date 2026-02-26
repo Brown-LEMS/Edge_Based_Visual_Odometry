@@ -128,14 +128,14 @@ std::vector<int> Stereo_Matches::get_right_edge_indices_close_to_GT_location(
     return right_edge_indices_close_to_GT_location;
 }
 
-void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat left_disparity_map, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
+void Stereo_Matches::Find_Stereo_GT_Locations(Dataset::Ptr dataset, const cv::Mat left_disparity_map, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left)
 {
     Utility util;
     int edge_size = is_left ? stereo_frame.left_edges.size() : stereo_frame.right_edges.size();
-    stereo_frame_edge_pairs.has_GT = dataset.has_gt();
+    stereo_frame_edge_pairs.has_GT = dataset->has_gt();
     for (int left_edge_index = 0; left_edge_index < edge_size; left_edge_index++)
     {
-        if (dataset.has_gt())
+        if (dataset->has_gt())
         {
             //> if we have gt, we will get the GT pairs, if not, we will just set GT location as (-1,-1)
             Edge e = stereo_frame.left_edges[left_edge_index]; //> we are abuseing the term left_edges here, it's universal for both left and right edges
@@ -145,9 +145,6 @@ void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat le
             {
                 continue;
             }
-
-            //> Use bilinear interpolation for sub-pixel accurate disparity
-            double disparity = Bilinear_Interpolation<float>(left_disparity_map, e.location);
 
             //> Use bilinear interpolation for sub-pixel accurate disparity
             double disparity = Bilinear_Interpolation<float>(left_disparity_map, e.location);
@@ -171,15 +168,15 @@ void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat le
             Eigen::Matrix3d calib_matrix;
             if (is_left)
             {
-                focal_length = dataset.get_left_focal_length();
-                baseline = dataset.get_left_baseline();
-                calib_matrix = dataset.get_left_calib_matrix();
+                focal_length = dataset->get_left_focal_length();
+                baseline = dataset->get_left_baseline();
+                calib_matrix = dataset->get_left_calib_matrix();
             }
             else
             {
-                focal_length = dataset.get_right_focal_length();
-                baseline = dataset.get_right_baseline();
-                calib_matrix = dataset.get_right_calib_matrix();
+                focal_length = dataset->get_right_focal_length();
+                baseline = dataset->get_right_baseline();
+                calib_matrix = dataset->get_right_calib_matrix();
             }
 
             double rho = focal_length * baseline / disparity;
@@ -190,31 +187,16 @@ void Stereo_Matches::Find_Stereo_GT_Locations(Dataset &dataset, const cv::Mat le
             stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1_left);
 
             //> apply stereo frame shift
-            Eigen::Vector3d Gamma_1_right = dataset.get_relative_rot_left_to_right() * Gamma_1_left + dataset.get_relative_transl_left_to_right();
+            Eigen::Vector3d Gamma_1_right = dataset->get_relative_rot_left_to_right() * Gamma_1_left + dataset->get_relative_transl_left_to_right();
             stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Gamma_1_right);
         }
         else
         {
-            focal_length = dataset.get_right_focal_length();
-            baseline = dataset.get_right_baseline();
-            calib_matrix = dataset.get_right_calib_matrix();
-        }
-
-        double rho = focal_length * baseline / disparity;
-        double rho_1 = (rho < 0.0) ? (-rho) : (rho);
-
-        Eigen::Vector3d gamma_1 = calib_matrix.inverse() * e_location_eigen;
-        Eigen::Vector3d Gamma_1_left = rho_1 * gamma_1;
-        stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Gamma_1_left);
-
-        //> apply stereo frame shift
-        Eigen::Vector3d Gamma_1_right = dataset.get_relative_rot_left_to_right() * Gamma_1_left + dataset.get_relative_transl_left_to_right();
-        stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Gamma_1_right);
-
             stereo_frame_edge_pairs.focused_edge_indices.push_back(left_edge_index);
             stereo_frame_edge_pairs.GT_locations_from_left_edges.push_back(cv::Point2d(-1.0, -1.0));
             stereo_frame_edge_pairs.Gamma_in_left_cam_coord.push_back(Eigen::Vector3d(-1.0, -1.0, -1.0));
             stereo_frame_edge_pairs.Gamma_in_right_cam_coord.push_back(Eigen::Vector3d(-1.0, -1.0, -1.0));
+        }
     }
 }
 
