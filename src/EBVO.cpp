@@ -261,7 +261,7 @@ void EBVO::PerformEdgeBasedVO()
         // Clear veridical data
         last_keyframe_stereo_left.veridical_right_edges_indices.clear();
         last_keyframe_stereo_left.veridical_right_edges_indices.shrink_to_fit();
-        last_keyframe_stereo_left.GT_locations_from_left_edges.clear(); // FIXED: Use correct member name
+        last_keyframe_stereo_left.GT_locations_from_left_edges.clear();
         last_keyframe_stereo_left.GT_locations_from_left_edges.shrink_to_fit();
 
         // Clear stereo frame images/edges if no longer needed
