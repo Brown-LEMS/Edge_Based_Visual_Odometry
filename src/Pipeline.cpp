@@ -163,31 +163,7 @@ void Pipeline::get_Temporal_Edge_Correspondences()
         stereo_current_frame_idx);
 
     //> Memory cleanup: free memory from keyframe structures that are no longer needed
-    //> Clear and shrink keyframe edge patches
-    keyframe_stereo_left_constructor.left_edge_patches.clear();
-    keyframe_stereo_left_constructor.left_edge_patches.shrink_to_fit();
-
-    //> Clear and shrink keyframe edge descriptors
-    keyframe_stereo_left_constructor.left_edge_descriptors.clear();
-    keyframe_stereo_left_constructor.left_edge_descriptors.shrink_to_fit();
-
-    //> Clear and shrink keyframe matching clusters
-    for (auto &cluster_list : keyframe_stereo_left_constructor.matching_edge_clusters)
-    {
-        cluster_list.edge_clusters.clear();
-        cluster_list.edge_clusters.shrink_to_fit();
-        cluster_list.refine_final_scores.clear();
-        cluster_list.refine_confidences.clear();
-        cluster_list.refine_validities.clear();
-    }
-    keyframe_stereo_left_constructor.matching_edge_clusters.clear();
-    keyframe_stereo_left_constructor.matching_edge_clusters.shrink_to_fit();
-
-    //> Clear and shrink keyframe veridical data
-    keyframe_stereo_left_constructor.veridical_right_edges_indices.clear();
-    keyframe_stereo_left_constructor.veridical_right_edges_indices.shrink_to_fit();
-    keyframe_stereo_left_constructor.GT_locations_from_left_edges.clear();
-    keyframe_stereo_left_constructor.GT_locations_from_left_edges.shrink_to_fit();
+    Memory_clear();
 
     send_control_to_main = true;
 }
