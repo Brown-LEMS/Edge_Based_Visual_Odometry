@@ -12,7 +12,7 @@
 #endif
 
 //> One KF stereo correspondence -> veridical quads + candidate quads (from spatial grid).
-struct KF_Veridical_Quads
+struct KF_Temporal_Edge_Quads
 {
     const final_stereo_edge_pair *KF_stereo_mate;
     std::vector<Veridical_Quad_Entry> veridical_quads;
@@ -22,6 +22,9 @@ struct KF_Veridical_Quads
     Eigen::Vector3d projected_point_right;
     double projected_orientation_left;
     double projected_orientation_right;
+
+    //> Whether the candidate quad is a true positive
+    std::vector<bool> b_is_TP;
 };
 
 class Temporal_Matches
@@ -34,7 +37,7 @@ public:
     //> Quad-centric pipeline: build veridical quads and apply all filters in one flow.
     //> Output: filtered_quads. Optionally populates left/right temporal_edge_mates for backward compatibility.
     void get_Temporal_Edge_Pairs_from_Quads(
-        std::vector<KF_Veridical_Quads> &filtered_quads,
+        std::vector<KF_Temporal_Edge_Quads> &filtered_quads,
         const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
         const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
         const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids,
@@ -46,7 +49,7 @@ public:
 
     //> Build veridical quads in one step (combines Find_Veridical + find_Veridical_Quads).
     void build_Veridical_Quads(
-        std::vector<KF_Veridical_Quads> &out,
+        std::vector<KF_Temporal_Edge_Quads> &out,
         const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
         const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
         Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
@@ -55,14 +58,14 @@ public:
     //> filtering methods (temporal_edge_pair - legacy)
     void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, const SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
 
-    //> Quad-centric filter methods (operate on std::vector<KF_Veridical_Quads>)
-    void apply_spatial_grid_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids, double grid_radius = 1.0);
-    void apply_orientation_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double orientation_threshold);
-    void apply_NCC_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double ncc_val_threshold, const cv::Mat &keyframe_left_image, const cv::Mat &keyframe_right_image, const cv::Mat &cf_left_image, const cv::Mat &cf_right_image);
-    void apply_SIFT_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double sift_dist_threshold);
-    void apply_best_nearly_best_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, double threshold, const std::string scoring_type);
-    void apply_photometric_refinement_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, const StereoFrame &keyframe, const StereoFrame &current_frame);
-    void apply_temporal_edge_clustering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, bool b_cluster_by_orientation = true);
+    //> Quad-centric filter methods (operate on std::vector<KF_Temporal_Edge_Quads>)
+    void apply_spatial_grid_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids, double grid_radius = 1.0);
+    void apply_orientation_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double orientation_threshold);
+    void apply_NCC_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double ncc_val_threshold, const cv::Mat &keyframe_left_image, const cv::Mat &keyframe_right_image, const cv::Mat &cf_left_image, const cv::Mat &cf_right_image);
+    void apply_SIFT_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double sift_dist_threshold);
+    void apply_best_nearly_best_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, double threshold, const std::string scoring_type);
+    void apply_photometric_refinement_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, const StereoFrame &keyframe, const StereoFrame &current_frame);
+    void apply_temporal_edge_clustering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, bool b_cluster_by_orientation = true);
     void apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                      const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                      double orientation_threshold, bool b_is_left);
@@ -78,11 +81,18 @@ public:
    
     double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset);
 
+    void finalize_temporal_quads(std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf);
+
+    //> Write all quads to a CSV file (for debugging/analysis).
+    void write_quads_to_file(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf,
+        size_t keyframe_idx, size_t current_frame_idx,
+        const std::string &filename_suffix = "");
+
 private:
     //> Evaluate precision/recall/ambiguity on candidate quads (from left/right temporal mates).
     //> TP = candidate quads whose left and right cluster centers are near GT.
     void Evaluate_Temporal_Edge_Pairs_on_Quads(
-        const std::vector<KF_Veridical_Quads> &temporal_quads_by_kf,
+        std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
         const size_t keyframe_idx, const size_t current_frame_idx, const std::string &stage_name);
 
     //> Cluster storage backing Candidate_Quad_Entry pointers; [kf_idx][candidate_idx] -> (left, right) from same cf_stereo_edge_mate_index

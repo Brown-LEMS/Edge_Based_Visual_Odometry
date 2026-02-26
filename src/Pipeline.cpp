@@ -131,7 +131,7 @@ void Pipeline::get_Temporal_Edge_Correspondences() {
     //> `temporal_quads_by_kf` is a struct that stores quads from KF stereo edge pairs
     //> One KF stereo edge pair could pair up with multiple veridical CF stereo edge pairs.
     //> The structure `temporal_quads_by_kf` contains the veridical CF stereo edge pairs, and the matching CF stereo edge pairs
-    std::vector<KF_Veridical_Quads> temporal_quads_by_kf;
+    std::vector<KF_Temporal_Edge_Quads> temporal_quads_by_kf;
     temporal_matches_engine->build_Veridical_Quads( temporal_quads_by_kf, keyframe_stereo_edge_mates, current_frame_stereo_edge_mates, keyframe_stereo_left_constructor, current_frame_stereo_left_constructor, left_spatial_grids, right_spatial_grids);
 
     //> Quad-centric pipeline: build veridical quads, apply filters, optionally convert to temporal pairs for backward compatibility
@@ -143,6 +143,9 @@ void Pipeline::get_Temporal_Edge_Correspondences() {
         keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
         keyframe, current_frame,
         stereo_key_frame_idx, stereo_current_frame_idx);
+
+    //> write quads to a file
+    temporal_matches_engine->write_quads_to_file(temporal_quads_by_kf, stereo_key_frame_idx, stereo_current_frame_idx);
 
     send_control_to_main = true;
 }

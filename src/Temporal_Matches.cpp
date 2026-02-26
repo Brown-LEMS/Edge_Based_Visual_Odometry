@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <numeric>
 #include <cmath>
+#include <limits>
 #include <chrono>
 #include <algorithm>
 #include <iomanip>
@@ -54,7 +55,7 @@ void Temporal_Matches::add_edges_to_spatial_grid(const std::vector<final_stereo_
 }
 
 void Temporal_Matches::build_Veridical_Quads(
-    std::vector<KF_Veridical_Quads> &out,
+    std::vector<KF_Temporal_Edge_Quads> &out,
     const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
     const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
     Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
@@ -68,7 +69,7 @@ void Temporal_Matches::build_Veridical_Quads(
     const int img_margin = 10;
 
     int num_threads_corr = omp_get_max_threads();
-    std::vector<std::vector<KF_Veridical_Quads>> thread_quads(num_threads_corr);
+    std::vector<std::vector<KF_Temporal_Edge_Quads>> thread_quads(num_threads_corr);
 
 #pragma omp parallel
     {
@@ -144,7 +145,7 @@ void Temporal_Matches::build_Veridical_Quads(
 
             if (!quads.empty())
             {
-                KF_Veridical_Quads kvq;
+                KF_Temporal_Edge_Quads kvq;
                 kvq.KF_stereo_mate = kf_mate;
                 kvq.projected_point_left = projected_point_left;
                 kvq.projected_point_right = projected_point_right;
@@ -165,7 +166,7 @@ void Temporal_Matches::build_Veridical_Quads(
 }
 
 void Temporal_Matches::get_Temporal_Edge_Pairs_from_Quads(
-    std::vector<KF_Veridical_Quads> &temporal_quads_by_kf,
+    std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
     const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
     const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
     const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids,
@@ -208,7 +209,7 @@ void Temporal_Matches::get_Temporal_Edge_Pairs_from_Quads(
 }
 
 void Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
-    const std::vector<KF_Veridical_Quads> &temporal_quads_by_kf,
+    std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
     const size_t keyframe_idx, const size_t current_frame_idx, const std::string &stage_name)
 {
     double recall_per_temporal_image = 0.0;
@@ -216,7 +217,7 @@ void Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
     double ambiguity_per_temporal_image = 0.0;
     int num_of_KF_stereo_TP_edge_mates = 0;
 
-    for (const auto &kvq : temporal_quads_by_kf)
+    for (auto &kvq : temporal_quads_by_kf)
     {
         //> Skip if the stereo edge pair on KF is itself not a true positive
         if (!kvq.KF_stereo_mate->b_is_TP)
@@ -225,6 +226,8 @@ void Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
         //> GT location of the left and right CF edges
         cv::Point2d gt_CF_left_location(kvq.projected_point_left.x(), kvq.projected_point_left.y());
         cv::Point2d gt_CF_right_location(kvq.projected_point_right.x(), kvq.projected_point_right.y());
+        kvq.b_is_TP.resize(kvq.candidate_quads.size(), false);
+        int candidate_quad_index = 0;
         int num_TP_centers = 0;
         for (const auto &cq : kvq.candidate_quads)
         {
@@ -234,8 +237,13 @@ void Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
             double dist_right = cv::norm(right_center - gt_CF_right_location);
             if (dist_left < DIST_TO_GT_THRESH_QUADS && dist_right < DIST_TO_GT_THRESH_QUADS)
             {
+                kvq.b_is_TP[candidate_quad_index] = true;
                 num_TP_centers++;
             }
+            else {
+                kvq.b_is_TP[candidate_quad_index] = false;
+            }
+            candidate_quad_index++;
         }
         size_t num_clusters = kvq.candidate_quads.size();
         double recall_per_edge = (num_TP_centers >= 1) ? 1.0 : 0.0;
@@ -311,7 +319,7 @@ double Temporal_Matches::orientation_mapping(const Edge &e_left, const Edge &e_r
 }
 
 void Temporal_Matches::apply_spatial_grid_filtering_quads( \
-    std::vector<KF_Veridical_Quads> &quads_by_kf, \
+    std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, \
     const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, \
     const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids, double grid_radius)
 {
@@ -321,7 +329,7 @@ void Temporal_Matches::apply_spatial_grid_filtering_quads( \
 #pragma omp parallel for schedule(dynamic, 64)
     for (int i = 0; i < static_cast<int>(quads_by_kf.size()); ++i)
     {
-        KF_Veridical_Quads &kvq = quads_by_kf[i];
+        KF_Temporal_Edge_Quads &kvq = quads_by_kf[i];
         if (kvq.veridical_quads.empty())
             continue;
 
@@ -360,12 +368,12 @@ void Temporal_Matches::apply_spatial_grid_filtering_quads( \
     }
 }
 
-void Temporal_Matches::apply_orientation_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double orientation_threshold)
+void Temporal_Matches::apply_orientation_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double orientation_threshold)
 {
 #pragma omp parallel for schedule(dynamic, 64)
     for (int i = 0; i < static_cast<int>(quads_by_kf.size()); ++i)
     {
-        KF_Veridical_Quads &kvq = quads_by_kf[i];
+        KF_Temporal_Edge_Quads &kvq = quads_by_kf[i];
         std::vector<std::pair<Temporal_CF_Edge_Cluster, Temporal_CF_Edge_Cluster>> new_pairs;
         for (const auto &cq : kvq.candidate_quads)
         {
@@ -391,7 +399,7 @@ void Temporal_Matches::apply_orientation_filtering_quads(std::vector<KF_Veridica
     }
 }
 
-void Temporal_Matches::apply_NCC_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double ncc_val_threshold,
+void Temporal_Matches::apply_NCC_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double ncc_val_threshold,
     const cv::Mat &keyframe_left_image, const cv::Mat &keyframe_right_image, const cv::Mat &cf_left_image, const cv::Mat &cf_right_image)
 {
     Utility util{};
@@ -404,7 +412,7 @@ void Temporal_Matches::apply_NCC_filtering_quads(std::vector<KF_Veridical_Quads>
 #pragma omp parallel for schedule(dynamic, 64)
     for (int i = 0; i < static_cast<int>(quads_by_kf.size()); ++i)
     {
-        KF_Veridical_Quads &kvq = quads_by_kf[i];
+        KF_Temporal_Edge_Quads &kvq = quads_by_kf[i];
         std::pair<cv::Mat, cv::Mat> kf_left_patches = kvq.KF_stereo_mate->left_edge_patches;
         std::pair<cv::Mat, cv::Mat> kf_right_patches = kvq.KF_stereo_mate->right_edge_patches;
 
@@ -446,12 +454,12 @@ void Temporal_Matches::apply_NCC_filtering_quads(std::vector<KF_Veridical_Quads>
     }
 }
 
-void Temporal_Matches::apply_SIFT_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double sift_dist_threshold)
+void Temporal_Matches::apply_SIFT_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, double sift_dist_threshold)
 {
 #pragma omp parallel for schedule(dynamic, 64)
     for (int i = 0; i < static_cast<int>(quads_by_kf.size()); ++i)
     {
-        KF_Veridical_Quads &kvq = quads_by_kf[i];
+        KF_Temporal_Edge_Quads &kvq = quads_by_kf[i];
         std::pair<cv::Mat, cv::Mat> kf_left_desc = kvq.KF_stereo_mate->left_edge_descriptors;
         std::pair<cv::Mat, cv::Mat> kf_right_desc = kvq.KF_stereo_mate->right_edge_descriptors;
 
@@ -492,13 +500,13 @@ void Temporal_Matches::apply_SIFT_filtering_quads(std::vector<KF_Veridical_Quads
     }
 }
 
-void Temporal_Matches::apply_best_nearly_best_filtering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, double threshold, const std::string scoring_type)
+void Temporal_Matches::apply_best_nearly_best_filtering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, double threshold, const std::string scoring_type)
 {
     bool is_NCC = scoring_type == "NCC";
 #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < static_cast<int>(quads_by_kf.size()); ++i)
     {
-        KF_Veridical_Quads &kvq = quads_by_kf[i];
+        KF_Temporal_Edge_Quads &kvq = quads_by_kf[i];
         size_t n = kvq.candidate_quads.size();
         if (n < 2)
             continue;
@@ -547,7 +555,7 @@ void Temporal_Matches::apply_best_nearly_best_filtering_quads(std::vector<KF_Ver
     }
 }
 
-void Temporal_Matches::apply_photometric_refinement_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, const StereoFrame &keyframe, const StereoFrame &current_frame)
+void Temporal_Matches::apply_photometric_refinement_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, const StereoFrame &keyframe, const StereoFrame &current_frame)
 {
     cv::Mat kf_left_32f, kf_right_32f, cf_left_32f, cf_right_32f;
     keyframe.left_image_undistorted.convertTo(kf_left_32f, CV_32F);
@@ -558,7 +566,7 @@ void Temporal_Matches::apply_photometric_refinement_quads(std::vector<KF_Veridic
 #pragma omp parallel for schedule(dynamic, 64)
     for (int i = 0; i < static_cast<int>(quads_by_kf.size()); ++i)
     {
-        KF_Veridical_Quads &kvq = quads_by_kf[i];
+        KF_Temporal_Edge_Quads &kvq = quads_by_kf[i];
         const Edge &kf_left = kvq.KF_stereo_mate->left_edge;
         const Edge &kf_right = kvq.KF_stereo_mate->right_edge;
 
@@ -611,12 +619,12 @@ void Temporal_Matches::apply_photometric_refinement_quads(std::vector<KF_Veridic
     }
 }
 
-void Temporal_Matches::apply_temporal_edge_clustering_quads(std::vector<KF_Veridical_Quads> &quads_by_kf, bool b_cluster_by_orientation)
+void Temporal_Matches::apply_temporal_edge_clustering_quads(std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, bool b_cluster_by_orientation)
 {
 #pragma omp parallel for schedule(dynamic, 64)
     for (int ki = 0; ki < static_cast<int>(quads_by_kf.size()); ++ki)
     {
-        KF_Veridical_Quads &kvq = quads_by_kf[ki];
+        KF_Temporal_Edge_Quads &kvq = quads_by_kf[ki];
         if (kvq.candidate_quads.size() < 2)
             continue;
 
@@ -644,27 +652,29 @@ void Temporal_Matches::apply_temporal_edge_clustering_quads(std::vector<KF_Verid
         {
             std::unordered_set<int> merged_cf;
             int best_idx = -1;
-            double best_score = 1e10;
             std::vector<Edge> right_edges_sub;
             std::vector<int> cf_sub;
 
-            //> use the score of the contributing edge that is closest to the cluster center edge
+            //> for each contrib, find the closest shifted_left edge (no hard constraint on distance)
             for (const Edge &contrib : ec.contributing_edges)
             {
+                int closest_i = -1;
+                double closest_dist = std::numeric_limits<double>::max();
                 for (size_t i = 0; i < shifted_left.size(); ++i)
                 {
-                    if (cv::norm(contrib.location - shifted_left[i].location) < 1e-3)
+                    double d = cv::norm(contrib.location - shifted_left[i].location);
+                    if (d < closest_dist)
                     {
-                        merged_cf.insert(cf_indices[i]);
-                        right_edges_sub.push_back(kvq.candidate_quads[i].CF_right->center_edge);
-                        cf_sub.push_back(cf_indices[i]);
-                        if (refine_scores[i] < best_score)
-                        {
-                            best_score = refine_scores[i];
-                            best_idx = static_cast<int>(i);
-                        }
-                        break;
+                        closest_dist = d;
+                        closest_i = static_cast<int>(i);
                     }
+                }
+                if (closest_i >= 0)
+                {
+                    merged_cf.insert(cf_indices[closest_i]);
+                    right_edges_sub.push_back(kvq.candidate_quads[closest_i].CF_right->center_edge);
+                    cf_sub.push_back(cf_indices[closest_i]);
+                    best_idx = closest_i;
                 }
             }
             if (best_idx < 0 || right_edges_sub.empty())
@@ -825,4 +835,53 @@ void Temporal_Matches::min_Edge_Photometric_Residual_by_Gauss_Newton(
     }
 
     refined_disparity = d;
+}
+
+void Temporal_Matches::write_quads_to_file(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf,
+    size_t keyframe_idx, size_t current_frame_idx,
+    const std::string &filename_suffix)
+{
+    std::cout << "Writing quads to file..." << std::endl;
+    std::string output_dir = dataset->get_output_path();
+    std::cout << "output_dir: " << output_dir << std::endl;
+
+    if (output_dir.empty())
+        return;
+    std::string file_name = output_dir + "/quads_kf" + std::to_string(keyframe_idx) + "_cf" + std::to_string(current_frame_idx);
+    if (!filename_suffix.empty())
+        file_name += "_" + filename_suffix;
+    file_name += ".txt";
+    std::ofstream file_input(file_name);
+    if (!file_input.is_open())
+        return;
+    // file_input << "kf_idx -1 left_x left_y left_orient right_x right_y right_orient"
+    // << "cf_idx left_x left_y left_orient right_x right_y right_orient is_TP\n";
+
+    for (size_t k = 0; k < quads_by_kf.size(); ++k)
+    {
+        const auto &kvq = quads_by_kf[k];
+        if (!kvq.KF_stereo_mate->b_is_TP)
+            continue;
+        //> write KF stereo of the quad
+        file_input << k << " " << -1 << " "
+        << kvq.KF_stereo_mate->left_edge.location.x << " " << kvq.KF_stereo_mate->left_edge.location.y << " " << kvq.KF_stereo_mate->left_edge.orientation << " "
+        << kvq.KF_stereo_mate->right_edge.location.x << " " << kvq.KF_stereo_mate->right_edge.location.y << " " << kvq.KF_stereo_mate->right_edge.orientation << " "
+        << "-1" << "\n";
+
+        //> write GT CF stereo of the quad
+        file_input << k << " " << -2 << " "
+        << kvq.projected_point_left.x() << " " << kvq.projected_point_left.y() << " " << kvq.projected_orientation_left << " "
+        << kvq.projected_point_right.x() << " " << kvq.projected_point_right.y() << " " << kvq.projected_orientation_right << " "
+        << "-2" << "\n";
+
+        //> write CF stereo of the candidate quads of the quad
+        for (size_t j = 0; j < kvq.candidate_quads.size(); ++j)
+        {
+            const auto &cq = kvq.candidate_quads[j];
+            file_input << k << " " << j << " "
+            << cq.CF_left->center_edge.location.x << " " << cq.CF_left->center_edge.location.y << " " << cq.CF_left->center_edge.orientation << " "
+            << cq.CF_right->center_edge.location.x << " " << cq.CF_right->center_edge.location.y << " " << cq.CF_right->center_edge.orientation << " "
+            << (kvq.b_is_TP[j] ? 1 : 0) << "\n";
+        }
+    }
 }
