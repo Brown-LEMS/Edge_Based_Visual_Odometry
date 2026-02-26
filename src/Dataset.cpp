@@ -166,8 +166,7 @@ void Dataset::load_dataset(const std::string &dataset_type,
                            std::vector<cv::Mat> &left_ref_disparity_maps,
                            std::vector<cv::Mat> &right_ref_disparity_maps,
                            std::vector<cv::Mat> &left_occlusion_masks,
-                           std::vector<cv::Mat> &right_occlusion_masks,
-                           int num_pairs)
+                           std::vector<cv::Mat> &right_occlusion_masks)
 {
     if (dataset_type == "EuRoC")
     {
@@ -188,13 +187,13 @@ void Dataset::load_dataset(const std::string &dataset_type,
     {
         std::string stereo_pairs_path = file_info.dataset_path + "/" + file_info.sequence_name + "/stereo_pairs";
         stereo_iterator = Iterators::createETH3DIterator(stereo_pairs_path);
-        LoadETH3DDisparityMaps(stereo_pairs_path, num_pairs, left_ref_disparity_maps, right_ref_disparity_maps);
-        left_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, true);
-        right_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, num_pairs, false);
+        LoadETH3DDisparityMaps(stereo_pairs_path, left_ref_disparity_maps, right_ref_disparity_maps);
+        left_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, true);
+        right_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, false);
     }
 }
 
-std::vector<cv::Mat> Dataset::LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left)
+std::vector<cv::Mat> Dataset::LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, bool left)
 {
     std::vector<cv::Mat> occlusion_masks;
     std::vector<std::string> stereo_folders;
@@ -209,7 +208,7 @@ std::vector<cv::Mat> Dataset::LoadETH3DOcclusionMasks(const std::string &stereo_
 
     std::sort(stereo_folders.begin(), stereo_folders.end());
 
-    for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++)
+    for (int i = 0; i < static_cast<int>(stereo_folders.size()); i++)
     {
         std::string folder_path = stereo_folders[i];
         std::string mask_filename = left ? "mask0nocc.png" : "mask1nocc.png";
@@ -233,7 +232,7 @@ std::vector<cv::Mat> Dataset::LoadETH3DOcclusionMasks(const std::string &stereo_
 
     return occlusion_masks;
 }
-void Dataset::LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int num_maps, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps)
+void Dataset::LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps)
 {
     std::vector<std::string> stereo_folders;
 
@@ -247,7 +246,7 @@ void Dataset::LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int n
 
     std::sort(stereo_folders.begin(), stereo_folders.end());
 
-    for (int i = 0; i < std::min(num_maps, static_cast<int>(stereo_folders.size())); i++)
+    for (int i = 0; i < static_cast<int>(stereo_folders.size()); i++)
     {
         std::string folder_path = stereo_folders[i];
         std::string disparity_pfm_left_path = folder_path + "/disp0GT.pfm";

@@ -41,6 +41,10 @@ struct StereoFrame
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
 
+    //> disparity maps
+    cv::Mat left_disparity_map;
+    cv::Mat right_disparity_map;
+
     // bool has_gt = false;
     Eigen::Matrix3d gt_rotation;
     Eigen::Vector3d gt_translation;

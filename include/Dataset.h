@@ -12,6 +12,7 @@
 #include <Eigen/Geometry>
 #include <yaml-cpp/yaml.h>
 #include <opencv2/opencv.hpp>
+#include <opencv2/core/eigen.hpp>
 
 #include "definitions.h"
 #include "Frame.h"
@@ -66,7 +67,7 @@ struct SpatialGrid
         }
     }
 
-    std::vector<int> getCandidatesWithinRadius(Edge Edge, double radius)
+    std::vector<int> getCandidatesWithinRadius(Edge Edge, double radius) const
     {
         std::vector<int> candidates;
         int grid_x = static_cast<int>(Edge.location.x) / cell_size;
@@ -89,7 +90,7 @@ struct SpatialGrid
         return candidates;
     }
 
-    std::vector<int> getCandidatesWithinRadius(cv::Point2d e_location, double radius)
+    std::vector<int> getCandidatesWithinRadius(cv::Point2d e_location, double radius) const
     {
         std::vector<int> candidates;
         int grid_x = static_cast<int>(e_location.x) / cell_size;
@@ -216,6 +217,7 @@ struct Stereo_Edge_Pairs
         GT_locations_from_left_edges.clear();
         veridical_right_edges_indices.clear();
         Gamma_in_left_cam_coord.clear();
+        Gamma_in_right_cam_coord.clear();
         left_edge_descriptors.clear();
         grid_indices.clear();
         epip_line_coeffs_of_left_edges.clear();
@@ -340,6 +342,22 @@ struct temporal_edge_pair
     std::vector<Temporal_CF_Edge_Cluster> matching_CF_edge_clusters;
 };
 
+//> One veridical quad: KF stereo correspondence + CF stereo correspondence, with cluster-like refinement data.
+//> Used by the quad-centric pipeline
+struct Veridical_Quad_Entry
+{
+    int cf_stereo_edge_mate_index;
+    Edge left_center;   //> refined left CF edge location
+    Edge right_center;  //> refined right CF edge location
+};
+
+struct Candidate_Quad_Entry
+{
+    //> pointers to Temporal_CF_Edge_Cluster
+    const Temporal_CF_Edge_Cluster *CF_left;
+    const Temporal_CF_Edge_Cluster *CF_right;
+};
+
 extern cv::Mat merged_visualization_global;
 class Dataset
 {
@@ -350,7 +368,7 @@ public:
     std::unique_ptr<StereoIterator> stereo_iterator;
 
     void load_dataset(const std::string &dataset_type, std::vector<cv::Mat> &left_ref_disparity_maps, std::vector<cv::Mat> &right_ref_disparity_maps,
-                      std::vector<cv::Mat> &left_occlusion_masks, std::vector<cv::Mat> &right_occlusion_masks, int num_pairs);
+                      std::vector<cv::Mat> &left_occlusion_masks, std::vector<cv::Mat> &right_occlusion_masks);
 
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
@@ -385,7 +403,10 @@ public:
 
     Eigen::Matrix3d get_left_calib_matrix() { return camera_info.left.K; }
     Eigen::Matrix3d get_right_calib_matrix() { return camera_info.right.K; }
-
+    cv::Mat get_left_calib_matrix_cvMat() { cv::Mat K; cv::eigen2cv(get_left_calib_matrix(), K); return K; }
+    cv::Mat get_right_calib_matrix_cvMat() { cv::Mat K; cv::eigen2cv(get_right_calib_matrix(), K); return K; }
+    cv::Mat get_left_dist_coeff_mat() { return (cv::Mat_<double>(1, 4) << camera_info.left.distortion[0], camera_info.left.distortion[1], camera_info.left.distortion[2], camera_info.left.distortion[3]); }
+    cv::Mat get_right_dist_coeff_mat() { return (cv::Mat_<double>(1, 4) << camera_info.right.distortion[0], camera_info.right.distortion[1], camera_info.right.distortion[2], camera_info.right.distortion[3]); }
     double get_left_baseline() { return camera_info.left.T[0]; };
     double get_right_baseline() { return camera_info.right.T[0]; };
 
@@ -460,15 +481,9 @@ private:
     // functions
     void PrintDatasetInfo();
 
-    std::vector<std::pair<cv::Mat, cv::Mat>> LoadEuRoCImages(const std::string &csv_path, const std::string &left_path, const std::string &right_path, int num_images);
-
-    std::vector<std::pair<cv::Mat, cv::Mat>> LoadETH3DImages(const std::string &stereo_pairs_path, int num_images);
-
-    std::vector<cv::Mat> LoadETH3DLeftReferenceMaps(const std::string &stereo_pairs_path, int num_maps);
-
-    std::vector<cv::Mat> LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, int num_maps, bool left = true);
-
-    void LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, int num_maps, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps);
+    //> ETH3D dataset
+    std::vector<cv::Mat> LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, bool left = true);
+    void LoadETH3DDisparityMaps(const std::string &stereo_pairs_path, std::vector<cv::Mat> &left_disparity_maps, std::vector<cv::Mat> &right_disparity_maps);
 
     Utility::Ptr utility_tool = nullptr;
 };
