@@ -1,9 +1,12 @@
+% filepath: test/plot_all_distributions.m
 % PLOT_ALL_DISTRIBUTIONS - Plot all filter distributions for a given frame
 %
-% This script plots PDF and CDF for all three filters:
-% - location_error
-% - ncc_score
-% - sift_distance
+% This script plots PDF and CDF for all filters:
+% - epipolar
+% - location
+% - ncc
+% - sift
+% - orientation
 
 close all;
 clear;
@@ -11,9 +14,10 @@ clc;
 
 % Configuration
 frame_idx = 0;  % Change this to plot different frames
-output_dir = '../outputs';  % Change this to the appropriate output directory
+output_dir = '../output_files';  % Root output directory
 
 % List of filters to plot
+<<<<<<< HEAD
 filters = {'temporal_orientation_difference_left', ...
            'temporal_orientation_difference_right'};
 
@@ -21,22 +25,39 @@ filters = {'temporal_orientation_difference_left', ...
 ambiguity_stages = {'epipolar','disparity','ncc','sift','BNB_NCC','BNB_SIFT'};
 
 % Plot each ambiguity stage
+=======
+filters = {'location'};
+>>>>>>> jue
 
+fprintf('\n========================================\n');
+fprintf('Plotting all distributions for Frame %d\n', frame_idx);
+fprintf('========================================\n');
 
 % Plot each filter distribution
 for i = 1:length(filters)
     filter_name = filters{i};
-    filename = fullfile(output_dir, sprintf('%s_frame_%d.txt', filter_name, frame_idx));
+    
+    % Check if the subdirectory and file exist
+    filter_dir = fullfile(output_dir, 'values', filter_name);
+    filename = fullfile(filter_dir, sprintf('frame_%d.txt', frame_idx));
+    
     if exist(filename, 'file')
-        fprintf('\n========================================\n');
-        fprintf('Plotting filter: %s\n', filter_name);
-        fprintf('========================================\n');
-        plot_distribution(filter_name, frame_idx, output_dir);
+        fprintf('\n--- Plotting filter: %s ---\n', filter_name);
+        try
+            plot_distribution(filter_name, frame_idx, output_dir);
+            fprintf('✓ Successfully plotted %s\n', filter_name);
+        catch ME
+            fprintf('✗ Error plotting %s: %s\n', filter_name, ME.message);
+        end
     else
-        fprintf('Warning: Filter file not found: %s\n', filename);
+        fprintf('⚠ Warning: Filter file not found: %s\n', filename);
     end
 end
 
 fprintf('\n========================================\n');
 fprintf('Done! All distributions plotted.\n');
+<<<<<<< HEAD
+=======
+fprintf('Output location: %s/values/{filter_name}/\n', output_dir);
+>>>>>>> jue
 fprintf('========================================\n');

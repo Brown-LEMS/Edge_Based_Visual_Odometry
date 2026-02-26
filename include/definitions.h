@@ -41,22 +41,37 @@
 //> precision-recall experiments
 #define DIST_TO_GT_THRESH (1.0) //> in pixels
 
+<<<<<<< HEAD
 #define GRID_SIZE (15)     //> Size of the spatial grid cells in pixels
 
 #define MEASURE_TIMINGS (false)
 
 
+=======
+#define GRID_SIZE (15) //> Size of the spatial grid cells in pixels
+
+#define MEASURE_TIMINGS (false)
+
+>>>>>>> jue
 //> Generic definitions
 #define RANSAC_NUM_OF_ITERATIONS (500)
 #define EPSILON (1e-12)
 #define REPROJ_ERROR_THRESH (2) //> in pixels
 
 //> Verbose
+<<<<<<< HEAD
 #define DATASET_LOAD_VERBOSE             (false)
 #define STEREO_EDGE_MATCH_EVAL_VERBOSE   (true)
 
 //> Output for visualization
 #define RECORD_FILTER_DISTRIBUTIONS      (false)
+=======
+#define DATASET_LOAD_VERBOSE (false)
+#define STEREO_EDGE_MATCH_EVAL_VERBOSE (false)
+
+//> Output for visualization
+#define RECORD_FILTER_DISTRIBUTIONS (true)
+>>>>>>> jue
 
 //> DEBUGGING PURPOSE
 #define SHOW_YAML_FILE_DATA (false)

@@ -1,8 +1,9 @@
+% filepath: test/plot_distribution.m
 function plot_distribution(filter_name, frame_idx, output_dir)
-% PLOT_DISTRIBUTION Plot PDF and CDF for filter distribution data
-% Plots separate distributions for veridical (GT) and non-veridical edges
-% Saves PDF and CDF as separate image files.
-
+    % PLOT_DISTRIBUTION Plot PDF and CDF for filter distribution data
+    % Plots separate distributions for veridical (GT) and non-veridical edges
+    % Saves PDF and CDF as separate image files.
+    
     if nargin < 2
         frame_idx = 0;
     end
@@ -10,47 +11,36 @@ function plot_distribution(filter_name, frame_idx, output_dir)
         output_dir = '../output_files';
     end
     
-    % Construct filename
-    filename = fullfile(output_dir, sprintf('%s_frame_%d.txt', filter_name, frame_idx));
+    % Construct filename with NEW subdirectory structure
+    % output_files/values/{filter_name}/frame_{idx}.txt
+    filename = fullfile(output_dir, 'values', filter_name, sprintf('frame_%d.txt', frame_idx));
     
     % Check if file exists
     if ~exist(filename, 'file')
         error('File not found: %s', filename);
     end
     
-    % Read the data (skip header lines starting with #)
+    % Read the file
     fid = fopen(filename, 'r');
-    data = [];
-    is_gt = [];
-    header_done = false;
-    
-    while ~feof(fid)
-        line = fgetl(fid);
-        if ischar(line) && ~isempty(line)
-            if line(1) == '#'
-                continue;
-            elseif ~header_done && contains(line, 'filter_value')
-                header_done = true;
-                continue;
-            elseif header_done
-                parts = strsplit(line, '\t');
-                if length(parts) >= 2
-                    value = str2double(parts{1});
-                    gt_flag = str2double(parts{2});
-                    if ~isnan(value) && ~isnan(gt_flag)
-                        data = [data; value];
-                        is_gt = [is_gt; gt_flag];
-                    end
-                end
-            end
-        end
+    if fid == -1
+        error('Could not open file: %s', filename);
     end
+    
+    % Skip header lines (lines starting with #)
+    line = fgetl(fid);
+    while ischar(line) && startsWith(line, '#')
+        line = fgetl(fid);
+    end
+    
+    % Read data (filter_value, is_veridical)
+    data = textscan(fid, '%f %d', 'HeaderLines', 0);
     fclose(fid);
     
-    if isempty(data)
-        error('No valid data found in file: %s', filename);
+    if isempty(data{1})
+        error('No data found in file: %s', filename);
     end
     
+<<<<<<< HEAD
     % Transform NCC scores to dissimilarity (1 - ncc_score)
     is_ncc_filter = contains(filter_name, 'ncc_score');
     if is_ncc_filter || strcmp(filter_name, 'ncc_score')
@@ -58,85 +48,127 @@ function plot_distribution(filter_name, frame_idx, output_dir)
         filter_display_name = 'NCC dissimilarity (1 - NCC)';
     elseif strcmp(filter_name, 'location_error')
         filter_display_name = 'disparity difference';
+=======
+    filter_values = data{1};
+    is_veridical = data{2};
+    
+    % Transform NCC scores to dissimilarity
+    is_ncc_filter = contains(filter_name, 'ncc');
+    if is_ncc_filter
+        filter_values = 1 - filter_values;
+        filter_display_name = 'NCC Dissimilarity (1 - NCC)';
+    elseif strcmp(filter_name, 'location')
+        filter_display_name = 'Location Proximity';
+    elseif strcmp(filter_name, 'sift')
+        filter_display_name = 'SIFT';
+    elseif strcmp(filter_name, 'epipolar')
+        filter_display_name = 'Epipolar Proximity';
+>>>>>>> jue
     else
         filter_display_name = strrep(filter_name, '_', ' ');
     end
     
-    % Separate GT and non-GT data
-    data_gt = data(is_gt == 1);
-    data_non_gt = data(is_gt == 0);
+    % Separate GT and non-GT
+    data_gt = filter_values(is_veridical == 1);
+    data_non_gt = filter_values(is_veridical == 0);
     
-    fprintf('Loaded %d values from %s\n', length(data), filename);
+    fprintf('Loaded %d samples from %s\n', length(filter_values), filename);
+    fprintf('  GT samples: %d\n', length(data_gt));
+    fprintf('  Non-GT samples: %d\n', length(data_non_gt));
     
+<<<<<<< HEAD
     % Check which filter to determine if zoomed inset plot is needed
     is_epipolar = strcmp(filter_name, 'epipolar_distance');
     is_location = strcmp(filter_name, 'location_error');
+=======
+    % Check which filter for zoomed inset
+    is_epipolar = strcmp(filter_name, 'epipolar');
+    is_location = strcmp(filter_name, 'location');
+>>>>>>> jue
     
-    %% --- PLOT 1: PDF (With Zoomed Inset) ---
-    % Create figure for PDF
-    fig_pdf = figure('Position', [100, 100, 700, 500]);
-    ax_main = axes('Parent', fig_pdf); % Explicitly create main axes
+    %% --- PLOT 1: PDF ---
+    fig_pdf = figure('Position', [100, 100, 1200, 900]);
+    ax_main = axes('Parent', fig_pdf);
     hold(ax_main, 'on');
     
-    % Define common bin edges
+    % Define bin edges
     data_min = min([data_gt; data_non_gt]);
     data_max = max([data_gt; data_non_gt]);
     bin_edges = linspace(data_min, data_max, 51);
     
-    % Plot main histograms explicitly to ax_main
-    histogram(ax_main, data_non_gt, bin_edges, 'Normalization', 'pdf', 'FaceColor', [0.8, 0.2, 0.2], ...
-              'EdgeColor', 'none', 'FaceAlpha', 0.6, 'DisplayName', 'Non-veridical');
-    histogram(ax_main, data_gt, bin_edges, 'Normalization', 'pdf', 'FaceColor', [0.2, 0.6, 0.8], ...
-              'EdgeColor', 'none', 'FaceAlpha', 0.6, 'DisplayName', 'Veridical');
+    % Plot histograms
+    histogram(ax_main, data_non_gt, bin_edges, 'Normalization', 'pdf', ...
+        'FaceColor', [0.8, 0.2, 0.2], 'EdgeColor', 'none', 'FaceAlpha', 0.6, ...
+        'DisplayName', 'Non-veridical');
+    histogram(ax_main, data_gt, bin_edges, 'Normalization', 'pdf', ...
+        'FaceColor', [0.2, 0.6, 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.6, ...
+        'DisplayName', 'Veridical');
     
-    xlabel(ax_main, filter_display_name);
-    ylabel(ax_main, 'Probability Density');
-    title(ax_main, sprintf('PDF - %s (Frame %d)', filter_display_name, frame_idx));
+    % Styling
+    xlabel(ax_main, filter_display_name, 'FontSize', 32, 'FontWeight', 'bold');
+    ylabel(ax_main, 'Probability Density', 'FontSize', 32, 'FontWeight', 'bold');
+    title(ax_main, sprintf('PDF - %s ', filter_display_name), ...
+        'FontSize', 36, 'FontWeight', 'bold');
     
-    % Legend and Text
-    leg = legend(ax_main, 'Location', 'northeast');
+    % Legend
+    leg = legend(ax_main, 'Location', 'northeast', 'FontSize', 28);
     leg.Position(2) = leg.Position(2) - 0.15;
-    grid(ax_main, 'on');
     
+    grid(ax_main, 'on');
+    set(ax_main, 'FontSize', 28, 'LineWidth', 2);
+    ax_main.XAxis.LineWidth = 2.5;
+    ax_main.YAxis.LineWidth = 2.5;
+    
+    % Statistics text
     text_str = sprintf('Veridical: n=%d, μ=%.3f, σ=%.3f\nNon-veridical: n=%d, μ=%.3f, σ=%.3f', ...
-                      length(data_gt), mean(data_gt), std(data_gt), ...
-                      length(data_non_gt), mean(data_non_gt), std(data_non_gt));
+        length(data_gt), mean(data_gt), std(data_gt), ...
+        length(data_non_gt), mean(data_non_gt), std(data_non_gt));
     text(ax_main, 0.98, 0.98, text_str, 'Units', 'normalized', ...
-         'VerticalAlignment', 'top', 'HorizontalAlignment', 'right', ...
-         'FontSize', 9, 'BackgroundColor', 'white', 'EdgeColor', 'black', 'Interpreter', 'none');
+        'VerticalAlignment', 'top', 'HorizontalAlignment', 'right', ...
+        'FontSize', 24, 'BackgroundColor', 'white', 'EdgeColor', 'black', ...
+        'Interpreter', 'none', 'LineWidth', 2);
     
     hold(ax_main, 'off');
     
     % --- INSET LOGIC ---
-    % Calculate position based on the main axes
-    main_pos = get(ax_main, 'Position'); % [left, bottom, width, height]
-    
+    main_pos = get(ax_main, 'Position');
     inset_width = main_pos(3) * 0.38;
-    inset_height = main_pos(4) * 0.38;
+    inset_height = main_pos(4) * 0.35;
     inset_left = main_pos(1) + main_pos(3) * 0.32;
-    inset_bottom = main_pos(2) + main_pos(4) * 0.42;
+    inset_bottom = main_pos(2) + main_pos(4) * 0.15;
     
-    % Initialize variables for zoom logic
     plot_inset = false;
-    zoom_min = 0; zoom_max = 0;
+    zoom_min = 0; 
+    zoom_max = 0;
     zoom_title = '';
     
     if is_ncc_filter
         plot_inset = true;
+<<<<<<< HEAD
         zoom_min = 0; zoom_max = 0.5;
         zoom_title = 'Zoomed: 1-NCC [0, 0.5]';
     elseif is_epipolar
         plot_inset = true;
         zoom_min = 0; zoom_max = 2;
+=======
+        zoom_min = 0; 
+        zoom_max = 0.5;
+        zoom_title = 'Zoomed: 1-NCC [0, 0.5]';
+    elseif is_epipolar
+        plot_inset = true;
+        zoom_min = 0; 
+        zoom_max = 2;
+>>>>>>> jue
         zoom_title = 'Zoomed: EP 0-2 pixels';
     elseif is_location
         plot_inset = true;
-        zoom_min = 0; zoom_max = 20;
+        zoom_min = 0; 
+        zoom_max = 20;
         zoom_title = 'Zoomed: LP 0-20 pixels';
     end
     
     if plot_inset
-        % Create inset axes explicitly on the PDF figure
+        % Create inset axes
         ax_inset = axes('Parent', fig_pdf, 'Position', [inset_left, inset_bottom, inset_width, inset_height]);
         hold(ax_inset, 'on');
         
@@ -145,148 +177,106 @@ function plot_distribution(filter_name, frame_idx, output_dir)
         data_non_gt_zoom = data_non_gt(data_non_gt >= zoom_min & data_non_gt <= zoom_max);
         bin_edges_zoom = linspace(zoom_min, zoom_max, 31);
         
-        % Plot Histograms explicitly to ax_inset
-        histogram(ax_inset, data_non_gt_zoom, bin_edges_zoom, 'Normalization', 'pdf', 'FaceColor', [0.8, 0.2, 0.2], ...
-                  'EdgeColor', 'none', 'FaceAlpha', 0.6);
-        histogram(ax_inset, data_gt_zoom, bin_edges_zoom, 'Normalization', 'pdf', 'FaceColor', [0.2, 0.6, 0.8], ...
-                  'EdgeColor', 'none', 'FaceAlpha', 0.6);
+        % Plot histograms
+        histogram(ax_inset, data_non_gt_zoom, bin_edges_zoom, 'Normalization', 'pdf', ...
+            'FaceColor', [0.8, 0.2, 0.2], 'EdgeColor', 'none', 'FaceAlpha', 0.6);
+        histogram(ax_inset, data_gt_zoom, bin_edges_zoom, 'Normalization', 'pdf', ...
+            'FaceColor', [0.2, 0.6, 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.6);
         
         % Styling
-        xlabel(ax_inset, filter_display_name, 'FontSize', 8);
-        ylabel(ax_inset, 'PDF', 'FontSize', 8);
-        title(ax_inset, zoom_title, 'FontSize', 9);
+        xlabel(ax_inset, filter_display_name, 'FontSize', 22, 'FontWeight', 'bold');
+        ylabel(ax_inset, 'PDF', 'FontSize', 22, 'FontWeight', 'bold');
+        title(ax_inset, zoom_title, 'FontSize', 24, 'FontWeight', 'bold');
         grid(ax_inset, 'on');
         xlim(ax_inset, [zoom_min, zoom_max]);
-        set(ax_inset, 'FontSize', 8);
-        box(ax_inset, 'on');
+        set(ax_inset, 'FontSize', 20, 'LineWidth', 2);
+        ax_inset.XAxis.LineWidth = 2;
+        ax_inset.YAxis.LineWidth = 2;
+        ax_inset.Color = [1 1 1];
+        ax_inset.Box = 'on';
+        ax_inset.LineWidth = 3;
+        
         hold(ax_inset, 'off');
         
-        % Arrow Annotation (Explicitly attach to fig_pdf)
-        arrow_x = [inset_left + inset_width*0.1, main_pos(1) + main_pos(3)*0.05];
-        arrow_y = [inset_bottom, main_pos(2) + main_pos(4)*0.25];
-        annotation(fig_pdf, 'arrow', arrow_x, arrow_y, 'LineWidth', 1.5, 'Color', 'k');
+        % Arrow pointing to zoomed region
+        ax_main.Units = 'normalized';
+        xl = xlim(ax_main);
+        target_data_x = (zoom_min + zoom_max) / 2;
+        x_ratio = (target_data_x - xl(1)) / (xl(2) - xl(1));
+        arrow_end_x = main_pos(1) + (x_ratio * main_pos(3));
+        arrow_end_y = main_pos(2);
+        arrow_start_x = inset_left;
+        arrow_start_y = inset_bottom;
+        
+        annotation(fig_pdf, 'arrow', [arrow_start_x, arrow_end_x], [arrow_start_y, arrow_end_y], ...
+            'LineWidth', 3.5, 'Color', [0.2, 0.2, 0.2], ...
+            'HeadStyle', 'cback1', 'HeadLength', 15, 'HeadWidth', 15);
     end
     
-    % Save PDF Figure
-    save_filename_pdf = fullfile(output_dir, sprintf('%s_frame_%d_pdf.png', filter_name, frame_idx));
+    % Save PDF figure
+    save_filename_pdf = fullfile(output_dir, 'values', filter_name, sprintf('frame_%d_pdf.png', frame_idx));
     saveas(fig_pdf, save_filename_pdf);
     fprintf('Saved PDF figure to: %s\n', save_filename_pdf);
     close(fig_pdf);
     
-    
-    %% --- PLOT 2: CDF ---
-    fig_cdf = figure('Position', [150, 150, 700, 500]);
+  %% --- PLOT 2: CDF (Final Publication Quality) ---
+    fig_cdf = figure('Position', [150, 150, 1200, 900]);
     ax_cdf = axes('Parent', fig_cdf);
     hold(ax_cdf, 'on');
     
     [f_non_gt, x_non_gt] = ecdf(data_non_gt);
     [f_gt, x_gt] = ecdf(data_gt);
-    plot(ax_cdf, x_non_gt, f_non_gt*100, 'LineWidth', 2.5, 'Color', [0.8, 0.2, 0.2], 'DisplayName', 'Non-veridical');
-    plot(ax_cdf, x_gt, f_gt*100, 'LineWidth', 2.5, 'Color', [0.2, 0.6, 0.8], 'DisplayName', 'Veridical');
     
-    xlabel(ax_cdf, filter_display_name, 'FontSize', 12);
-    ylabel(ax_cdf, 'Cumulative Percentage (%)', 'FontSize', 12);
-    title(ax_cdf, sprintf('CDF - %s (Frame %d)', filter_display_name, frame_idx), 'FontSize', 14);
-    legend(ax_cdf, 'Location', 'northwest', 'FontSize', 11);
-    grid(ax_cdf, 'on');
+    plot(ax_cdf, x_non_gt, f_non_gt*100, 'LineWidth', 7, 'Color', [0.8, 0.2, 0.2], 'DisplayName', 'Non-veridical');
+    plot(ax_cdf, x_gt, f_gt*100, 'LineWidth', 7, 'Color', [0.2, 0.6, 0.8], 'DisplayName', 'Veridical');
     
-    % Add percentile markers for both distributions
     percentiles = [50, 90, 95, 99];
-    percentile_values_gt = prctile(data_gt, percentiles);
-    percentile_values_non_gt = prctile(data_non_gt, percentiles);
+    p_gt = prctile(data_gt, percentiles);
+    p_non_gt = prctile(data_non_gt, percentiles);
     
-    x_lim = xlim(ax_cdf);
-    x_range = x_lim(2) - x_lim(1);
+    xlabel(ax_cdf, filter_display_name, 'FontSize', 36, 'FontWeight', 'bold');
+    ylabel(ax_cdf, 'Cumulative Percentage (%)', 'FontSize', 36, 'FontWeight', 'bold');
+    title(ax_cdf, sprintf('CDF - %s', filter_display_name), 'FontSize', 38, 'FontWeight', 'bold');
     
-    % Plot percentile lines for veridical (blue)
+    grid(ax_cdf, 'on');
+    set(ax_cdf, 'FontSize', 32, 'LineWidth', 3);
+    xl_cdf = xlim(ax_cdf); xr_cdf = xl_cdf(2) - xl_cdf(1);
+
+    % Percentile Annotations (All Right-Aligned and Large)
     for i = 1:length(percentiles)
-        plot(ax_cdf, [percentile_values_gt(i), percentile_values_gt(i)], [0, percentiles(i)], ...
-             ':', 'Color', [0.2, 0.6, 0.8], 'LineWidth', 1.2, 'HandleVisibility', 'off');
-        plot(ax_cdf, percentile_values_gt(i), percentiles(i), 'o', ...
-             'MarkerSize', 7, 'MarkerFaceColor', [0.2, 0.6, 0.8], 'MarkerEdgeColor', 'k', ...
-             'LineWidth', 1, 'HandleVisibility', 'off');
-        text(ax_cdf, percentile_values_gt(i) + x_range*0.01, percentiles(i) + 2, ...
-             sprintf('p%d:%.2f', percentiles(i), percentile_values_gt(i)), ...
-             'HorizontalAlignment', 'left', 'VerticalAlignment', 'bottom', ...
-             'FontSize', 8, 'Color', [0.2, 0.6, 0.8], 'FontWeight', 'bold', ...
-             'BackgroundColor', [1 1 1 0.7]);
-    end
-    
-    % Plot percentile lines for non-veridical (red)
-    for i = 1:length(percentiles)
-        plot(ax_cdf, [percentile_values_non_gt(i), percentile_values_non_gt(i)], [0, percentiles(i)], ...
-             ':', 'Color', [0.8, 0.2, 0.2], 'LineWidth', 1.2, 'HandleVisibility', 'off');
-        plot(ax_cdf, percentile_values_non_gt(i), percentiles(i), 's', ...
-             'MarkerSize', 7, 'MarkerFaceColor', [0.8, 0.2, 0.2], 'MarkerEdgeColor', 'k', ...
-             'LineWidth', 1, 'HandleVisibility', 'off');
-        text(ax_cdf, percentile_values_non_gt(i) + x_range*0.01, percentiles(i) - 2, ...
-             sprintf('p%d:%.2f', percentiles(i), percentile_values_non_gt(i)), ...
-             'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
-             'FontSize', 8, 'Color', [0.8, 0.2, 0.2], 'FontWeight', 'bold', ...
-             'BackgroundColor', [1 1 1 0.7]);
-    end
-    
-    % Add threshold lines for common distance thresholds (useful for distance distributions)
-    if contains(filter_name, 'Distance') || contains(filter_name, 'distance') || contains(filter_name, 'GT')
-        thresholds = [0.5, 1.0, 2.0, 3.0, 5.0];
-        x_lim = xlim(ax_cdf);
+        plot(ax_cdf, [p_gt(i), p_gt(i)], [0, percentiles(i)], ':', 'Color', [0.2, 0.6, 0.8], 'LineWidth', 3, 'HandleVisibility', 'off');
+        text(ax_cdf, p_gt(i) + xr_cdf*0.02, percentiles(i) + 1.5, sprintf('p%d: %.1f', percentiles(i), p_gt(i)), ...
+             'HorizontalAlignment', 'left', 'VerticalAlignment', 'bottom', 'FontSize', 28, 'Color', [0.2, 0.6, 0.8], 'FontWeight', 'bold', 'BackgroundColor', [1 1 1 0.4]);
         
-        % Ensure unique x values for interpolation
-        [x_gt_unique, ia_gt] = unique(x_gt);
-        f_gt_unique = f_gt(ia_gt);
-        [x_non_gt_unique, ia_non_gt] = unique(x_non_gt);
-        f_non_gt_unique = f_non_gt(ia_non_gt);
-        
-        for threshold = thresholds
-            if threshold <= x_lim(2)
-                % Find percentages at this threshold for both distributions
-                if length(x_gt_unique) > 1
-                    pct_gt = interp1(x_gt_unique, f_gt_unique*100, threshold, 'linear', 'extrap');
-                else
-                    pct_gt = f_gt_unique(1)*100;
-                end
-                
-                if length(x_non_gt_unique) > 1
-                    pct_non_gt = interp1(x_non_gt_unique, f_non_gt_unique*100, threshold, 'linear', 'extrap');
-                else
-                    pct_non_gt = f_non_gt_unique(1)*100;
-                end
-                
-                % Draw vertical line
-                plot(ax_cdf, [threshold, threshold], [0, 100], 'k--', 'LineWidth', 0.8, 'HandleVisibility', 'off');
-                
-                % Annotate with percentages
-                text(ax_cdf, threshold, 5, sprintf('%.0fpx', threshold), ...
-                     'HorizontalAlignment', 'center', 'VerticalAlignment', 'top', ...
-                     'FontSize', 9, 'Color', 'k', 'FontWeight', 'bold', ...
-                     'BackgroundColor', [1 1 1 0.7]);
-                
-                % Mark points on curves
-                plot(ax_cdf, threshold, pct_gt, 'o', 'MarkerSize', 6, ...
-                     'MarkerFaceColor', [0.2, 0.6, 0.8], 'MarkerEdgeColor', 'k', 'LineWidth', 1, ...
-                     'HandleVisibility', 'off');
-                plot(ax_cdf, threshold, pct_non_gt, 'o', 'MarkerSize', 6, ...
-                     'MarkerFaceColor', [0.8, 0.2, 0.2], 'MarkerEdgeColor', 'k', 'LineWidth', 1, ...
-                     'HandleVisibility', 'off');
-            end
+        plot(ax_cdf, [p_non_gt(i), p_non_gt(i)], [0, percentiles(i)], ':', 'Color', [0.8, 0.2, 0.2], 'LineWidth', 3, 'HandleVisibility', 'off');
+        text(ax_cdf, p_non_gt(i) + xr_cdf*0.02, percentiles(i) - 1.5, sprintf('p%d: %.1f', percentiles(i), p_non_gt(i)), ...
+             'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 28, 'Color', [0.8, 0.2, 0.2], 'FontWeight', 'bold', 'BackgroundColor', [1 1 1 0.4]);
+    end
+
+    % Threshold Markers
+    thresholds = [0.5, 1.0, 2.0];
+    for t = thresholds
+        if t <= xl_cdf(2)
+            plot(ax_cdf, [t, t], [0, 100], 'k--', 'LineWidth', 2.5, 'HandleVisibility', 'off');
+            text(ax_cdf, t, 101.5, sprintf('%.1f', t), 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 28, 'FontWeight', 'bold');
         end
     end
     
-    % Add summary statistics box (moved to right side)
-    stats_str = sprintf('Veridical:\n  n=%d\n  p50=%.2f\n  p90=%.2f\n  p95=%.2f\n  p99=%.2f\n\nNon-veridical:\n  n=%d\n  p50=%.2f\n  p90=%.2f\n  p95=%.2f\n  p99=%.2f', ...
-                        length(data_gt), percentile_values_gt(1), percentile_values_gt(2), percentile_values_gt(3), percentile_values_gt(4), ...
-                        length(data_non_gt), percentile_values_non_gt(1), percentile_values_non_gt(2), percentile_values_non_gt(3), percentile_values_non_gt(4));
-    text(ax_cdf, 0.98, 0.55, stats_str, 'Units', 'normalized', ...
-         'VerticalAlignment', 'top', 'HorizontalAlignment', 'right', ...
-         'FontSize', 9, 'BackgroundColor', [1 1 1 0.9], 'EdgeColor', 'black', ...
-         'Interpreter', 'none', 'FontName', 'FixedWidth');
+    % Compact Stats Box (Southeast)
+    stats_str = sprintf('Veridical: p50=%.1f, p99=%.1f (n=%d)\nNon-veridical: p50=%.1f, p99=%.1f (n=%d)', ...
+                        p_gt(1), p_gt(4), length(data_gt), p_non_gt(1), p_non_gt(4), length(data_non_gt));
+    text(ax_cdf, 0.98, 0.08, stats_str, 'Units', 'normalized', 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'right', ...
+         'FontSize', 26, 'BackgroundColor', [1 1 1 0.8], 'EdgeColor', 'black', 'LineWidth', 2, 'Margin', 8);
+
+    % CUSTOM LOWERED LEGEND
+    leg_cdf = legend(ax_cdf, 'FontSize', 32);
+    set(leg_cdf, 'Units', 'normalized', 'Position', [0.65, 0.60, 0.25, 0.1]); 
     
-    ylim(ax_cdf, [0, 100]);
-    
+    ylim(ax_cdf, [0, 108]); 
     hold(ax_cdf, 'off');
     
-    % Save CDF Figure
-    save_filename_cdf = fullfile(output_dir, sprintf('%s_frame_%d_cdf.png', filter_name, frame_idx));
+    % Save CDF figure
+    save_filename_cdf = fullfile(output_dir, 'values', filter_name, sprintf('frame_%d_cdf.png', frame_idx));
     saveas(fig_cdf, save_filename_cdf);
     fprintf('Saved CDF figure to: %s\n', save_filename_cdf);
     close(fig_cdf);
