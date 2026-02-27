@@ -108,6 +108,26 @@ private:
     size_t current_index = 0;
 };
 
+class ETH3DSLAMIterator : public StereoIterator
+{
+public:
+    ETH3DSLAMIterator(const std::string &dataset_path);
+
+    bool hasNext() override;
+    bool getNext(StereoFrame &frame) override;
+    void reset() override;
+
+private:
+    bool loadImageList();
+    bool loadGroundTruth();
+    bool findClosestGTPose(double timestamp, Eigen::Matrix3d &R, Eigen::Vector3d &T);
+
+    std::string dataset_path;
+    std::vector<std::pair<double, std::string>> image_list; // (timestamp, filename)
+    std::vector<GTPose> gt_poses;
+    size_t current_index = 0;
+};
+
 // ---------------------------------------------------------------------------------------------------------------------
 
 class GTPoseIterator
@@ -175,6 +195,9 @@ namespace Iterators
 
     std::unique_ptr<StereoIterator> createETH3DIterator(
         const std::string &stereo_pairs_path);
+
+    std::unique_ptr<StereoIterator> createETH3DSLAMIterator(
+        const std::string &dataset_path);
 
     std::unique_ptr<GTPoseIterator> createEuRoCGTPoseIterator(
         const std::string &gt_file,

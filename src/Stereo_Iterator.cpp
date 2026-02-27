@@ -194,6 +194,175 @@ bool ETH3DIterator::readETH3DGroundTruth(const std::string &images_file, StereoF
     return found_im0;
 }
 
+/////////////////////////
+// ETH3DSLAMIterator
+/////////////////////////
+
+ETH3DSLAMIterator::ETH3DSLAMIterator(const std::string &dataset_path)
+    : dataset_path(dataset_path)
+{
+    if (!loadImageList())
+    {
+        std::cerr << "ERROR: Failed to load image list from: " << dataset_path << "/rgb.txt" << std::endl;
+    }
+
+    if (!loadGroundTruth())
+    {
+        std::cerr << "WARNING: Failed to load ground truth from: " << dataset_path << "/groundtruth.txt" << std::endl;
+        std::cerr << "Continuing without ground truth data." << std::endl;
+    }
+}
+
+bool ETH3DSLAMIterator::loadImageList()
+{
+    std::string rgb_file = dataset_path + "/rgb.txt";
+    std::ifstream file(rgb_file);
+
+    if (!file.is_open())
+    {
+        std::cerr << "ERROR: Could not open: " << rgb_file << std::endl;
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(file, line))
+    {
+        // Skip comments and empty lines
+        if (line.empty() || line[0] == '#')
+            continue;
+
+        std::istringstream iss(line);
+        double timestamp;
+        std::string filename;
+
+        if (iss >> timestamp >> filename)
+        {
+            image_list.push_back({timestamp, filename});
+        }
+    }
+
+    std::cout << "Loaded " << image_list.size() << " stereo image pairs from rgb.txt" << std::endl;
+    return !image_list.empty();
+}
+
+bool ETH3DSLAMIterator::loadGroundTruth()
+{
+    std::string gt_file = dataset_path + "/groundtruth.txt";
+    std::ifstream file(gt_file);
+
+    if (!file.is_open())
+    {
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(file, line))
+    {
+        // Skip comments and empty lines
+        if (line.empty() || line[0] == '#')
+            continue;
+
+        std::istringstream iss(line);
+        double timestamp, tx, ty, tz, qx, qy, qz, qw;
+
+        // Format: timestamp tx ty tz qx qy qz qw
+        if (iss >> timestamp >> tx >> ty >> tz >> qx >> qy >> qz >> qw)
+        {
+            Eigen::Quaterniond q(qw, qx, qy, qz);
+            Eigen::Matrix3d R = q.toRotationMatrix();
+            Eigen::Vector3d T(tx, ty, tz);
+
+            gt_poses.emplace_back(timestamp, R, T);
+        }
+    }
+
+    // Sort by timestamp for efficient lookup
+    std::sort(gt_poses.begin(), gt_poses.end());
+
+    std::cout << "Loaded " << gt_poses.size() << " ground truth poses" << std::endl;
+    return !gt_poses.empty();
+}
+
+bool ETH3DSLAMIterator::findClosestGTPose(double timestamp, Eigen::Matrix3d &R, Eigen::Vector3d &T)
+{
+    if (gt_poses.empty())
+        return false;
+
+    // Find closest timestamp using binary search
+    auto it = std::lower_bound(gt_poses.begin(), gt_poses.end(),
+                               GTPose(timestamp, Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero()));
+
+    if (it == gt_poses.end())
+    {
+        // Use last pose
+        --it;
+    }
+    else if (it != gt_poses.begin())
+    {
+        // Check if previous pose is closer
+        auto prev = it - 1;
+        if (std::abs(prev->timestamp - timestamp) < std::abs(it->timestamp - timestamp))
+        {
+            it = prev;
+        }
+    }
+
+    R = it->rotation;
+    T = it->translation;
+
+    return true;
+}
+
+void ETH3DSLAMIterator::reset()
+{
+    current_index = 0;
+}
+
+bool ETH3DSLAMIterator::hasNext()
+{
+    return current_index < image_list.size();
+}
+
+bool ETH3DSLAMIterator::getNext(StereoFrame &frame)
+{
+    if (!hasNext())
+        return false;
+
+    double timestamp = image_list[current_index].first;
+    std::string filename = image_list[current_index].second;
+    current_index++;
+
+    // Construct paths for left and right images
+    std::string left_path = dataset_path + "/" + filename;
+    std::string right_path = dataset_path + "/rgb2/" + filename.substr(4); // Remove "rgb/" prefix and add "rgb2/"
+
+    // Load images
+    cv::Mat left = cv::imread(left_path, cv::IMREAD_GRAYSCALE);
+    cv::Mat right = cv::imread(right_path, cv::IMREAD_GRAYSCALE);
+
+    if (left.empty() || right.empty())
+    {
+        std::cerr << "ERROR: Failed to load images:" << std::endl;
+        std::cerr << "  Left:  " << left_path << " (" << (left.empty() ? "failed" : "ok") << ")" << std::endl;
+        std::cerr << "  Right: " << right_path << " (" << (right.empty() ? "failed" : "ok") << ")" << std::endl;
+        return false;
+    }
+
+    frame.left_image = left;
+    frame.right_image = right;
+    frame.timestamp = timestamp;
+
+    // Load ground truth if available
+    if (!findClosestGTPose(timestamp, frame.gt_rotation, frame.gt_translation))
+    {
+        // If no ground truth, set to identity
+        frame.gt_rotation = Eigen::Matrix3d::Identity();
+        frame.gt_translation = Eigen::Vector3d::Zero();
+    }
+
+    return true;
+}
+
 // =============================================================
 // EuRoCGTPoseIterator Implementation
 // =============================================================
@@ -401,6 +570,12 @@ namespace Iterators
         const std::string &stereo_pairs_path)
     {
         return std::make_unique<ETH3DIterator>(stereo_pairs_path);
+    }
+
+    std::unique_ptr<StereoIterator> createETH3DSLAMIterator(
+        const std::string &dataset_path)
+    {
+        return std::make_unique<ETH3DSLAMIterator>(dataset_path);
     }
 
     std::unique_ptr<GTPoseIterator> createEuRoCGTPoseIterator(
