@@ -9,7 +9,6 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
-#include "Frame.h"
 #include "utility.h"
 
 // =============================================================================================================================
@@ -32,25 +31,6 @@ public:
     //> Constructor (nothing special)
     MotionTracker();
 
-    //> 
-
-    /**
-     * Estimate relative poses in a RANSAC scheme
-     * @return None
-     */
-    void get_Relative_Pose_from_RANSAC( Frame::Ptr Curr_Frame, Frame::Ptr Prev_Frame, int Num_Of_Good_Feature_Matches );
-
-    /**
-     * Estimate relative rotation and translation from 3 points
-     * @return None
-     */
-    void get_Relative_Pose_by_Three_Points_Alignment( Frame::Ptr Curr_Frame, Frame::Ptr Prev_Frame, int Sample_Indices[3] );
-
-    /**
-     * Verify Pose Hypothesis by reprojecting 3D points from previous frame to current frame
-     * @return Number of inliers supporting the pose hypothesis
-     */
-    int get_Hypothesis_Support_Reproject_from_3D_Points( Frame::Ptr Curr_Frame, Frame::Ptr Prev_Frame );
 
     Eigen::Matrix3d Final_Rel_Rot;
     Eigen::Vector3d Final_Rel_Transl;    

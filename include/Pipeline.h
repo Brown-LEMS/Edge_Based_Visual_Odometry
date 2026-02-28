@@ -12,7 +12,6 @@
 #include "Dataset.h"
 #include "toed/cpu_toed.hpp"
 #include "definitions.h"
-#include "Frame.h"
 #include "utility.h"
 #include "MotionTracker.h"
 #include "Stereo_Matches.h"
@@ -49,6 +48,8 @@ public:
 
     //> get the pipeline status
     PipelineStatus get_Status() const { return status_; }
+    size_t get_Keyframe_Index() const { return stereo_key_frame_idx; }
+    size_t get_Current_Frame_Index() const { return stereo_current_frame_idx; }
 
     //> Print pipeline status
     std::string print_Status() const
@@ -178,8 +179,6 @@ private:
     ThirdOrderEdgeDetectionCPU::Ptr TOED = nullptr;
     Stereo_Matches::Ptr stereo_matches_engine = nullptr;
     Temporal_Matches::Ptr temporal_matches_engine = nullptr;
-    Frame::Ptr Current_Frame = nullptr;
-    Frame::Ptr Previous_Frame = nullptr;
     Utility::Ptr utility_tool = nullptr;
     MotionTracker::Ptr Camera_Motion_Estimate = nullptr;
 };

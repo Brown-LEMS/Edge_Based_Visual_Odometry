@@ -15,7 +15,6 @@
 #include <opencv2/core/eigen.hpp>
 
 #include "definitions.h"
-#include "Frame.h"
 #include "utility.h"
 #include "./toed/cpu_toed.hpp"
 #include "Stereo_Iterator.h"
@@ -373,15 +372,6 @@ public:
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
 
-    // should we make it edge pairs?
-    std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> forward_gt_data;
-    std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> reverse_gt_data;
-
-    std::vector<std::pair<double, double>> ncc_one_vs_err;
-    std::vector<std::pair<double, double>> ncc_two_vs_err;
-
-    std::vector<cv::Point2d> ground_truth_right_edges_after_lowe;
-
     // getters
     bool has_gt() { return file_info.has_gt; };
 
@@ -415,6 +405,8 @@ public:
     Eigen::Vector3d get_relative_transl_left_to_right() { return camera_info.left.T; }
     Eigen::Matrix3d get_relative_rot_right_to_left() { return camera_info.right.R; }
     Eigen::Vector3d get_relative_transl_right_to_left() { return camera_info.right.T; }
+
+    GTPose get_stereo_rig( const int source_index, const int target_index );
 
     std::vector<double> left_intr() { return camera_info.left.intrinsics; };
     std::vector<double> right_intr() { return camera_info.right.intrinsics; };

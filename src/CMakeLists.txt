@@ -1,5 +1,4 @@
 set (control_sources
-        Frame.cpp
         Dataset.cpp
         Pipeline.cpp
         utility.cpp
