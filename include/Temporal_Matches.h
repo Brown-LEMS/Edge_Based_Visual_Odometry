@@ -2,6 +2,7 @@
 #define TEMPORAL_MATCHES_H
 
 #include "Dataset.h"
+#include "Stereo_Iterator.h"
 #include "utility.h"
 #include "Stereo_Matches.h"
 
