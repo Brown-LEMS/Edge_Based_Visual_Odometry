@@ -406,8 +406,6 @@ public:
     Eigen::Matrix3d get_relative_rot_right_to_left() { return camera_info.right.R; }
     Eigen::Vector3d get_relative_transl_right_to_left() { return camera_info.right.T; }
 
-    GTPose get_stereo_rig( const int source_index, const int target_index );
-
     std::vector<double> left_intr() { return camera_info.left.intrinsics; };
     std::vector<double> right_intr() { return camera_info.right.intrinsics; };
     std::vector<double> left_dist_coeffs() { return camera_info.left.distortion; };

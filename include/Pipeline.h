@@ -10,6 +10,7 @@
 #include <Eigen/Geometry>
 
 #include "Dataset.h"
+#include "Stereo_Iterator.h"
 #include "toed/cpu_toed.hpp"
 #include "definitions.h"
 #include "utility.h"

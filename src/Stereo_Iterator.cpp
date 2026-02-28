@@ -177,8 +177,8 @@ bool ETH3DIterator::readETH3DGroundTruth(const std::string &images_file, StereoF
                 double tz = std::stod(tokens[7]);
 
                 Eigen::Quaterniond q(qw, qx, qy, qz);
-                frame.gt_rotation = q.toRotationMatrix();
-                frame.gt_translation = Eigen::Vector3d(tx, ty, tz);
+                Camera_Pose gt_camera_pose(q, Eigen::Vector3d(tx, ty, tz));
+                frame.gt_camera_pose = gt_camera_pose;
 
                 found_im0 = true;
                 break;
@@ -371,8 +371,8 @@ bool AlignedStereoIterator::getNext(StereoFrame &frame)
     Eigen::Vector3d T;
     if (gt_aligner->getAlignedGT(frame.timestamp, R, T))
     {
-        frame.gt_rotation = R;
-        frame.gt_translation = T;
+        Camera_Pose gt_camera_pose(R, T);
+        frame.gt_camera_pose = gt_camera_pose;
     }
 
     return true;

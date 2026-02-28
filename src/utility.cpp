@@ -106,6 +106,13 @@ Eigen::Vector3d Utility::project_3D_Tangent_to_2D_Tangent( const Eigen::Vector3d
   return projected_tangent;
 }
 
+Camera_Pose Utility::get_Relative_Pose( const Camera_Pose &source_pose, const Camera_Pose &target_pose )
+{
+  Eigen::Matrix3d rel_R = target_pose.R * (source_pose.R).transpose();
+  Eigen::Vector3d rel_T = -rel_R * source_pose.t + target_pose.t;
+  return Camera_Pose(rel_R, rel_T);
+}
+
 std::pair<cv::Point2d, cv::Point2d> Utility::get_Orthogonal_Shifted_Points(const Edge edgel, double shift_magnitude)
 {
   double shifted_x1 = edgel.location.x + shift_magnitude * (std::sin(edgel.orientation));

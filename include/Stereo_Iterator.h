@@ -13,15 +13,52 @@
 #include <algorithm>
 #include "toed/cpu_toed.hpp"
 
-// =====================================================================================================================
-// class Stereo_Iterator: image iterator to load images from dataset once at a time
-//
-// ChangeLogs
-//    Jue  25-06-14    Initially created.
-//
-//> (c) LEMS, Brown University
-//> Jue Han (jhan192@brown.edu)
-// ======================================================================================================================
+struct alignas(32) Camera_Pose {
+    //> Credits: https://github.com/PoseLib/PoseLib/blob/master/PoseLib/camera_pose.h
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+    //> Rotation is represented as a 3x3 rotation matrix or a quaternion (qw, qx, qy, qz)
+    Eigen::Matrix3d R;
+    Eigen::Vector3d t;
+    Eigen::Quaterniond q;
+
+    // Constructors (Defaults to identity camera)
+    Camera_Pose() : R(Eigen::Matrix3d::Identity()), t(0.0, 0.0, 0.0), q(Eigen::Quaterniond(R).normalized()) { }
+    Camera_Pose(const Eigen::Quaterniond &qq, const Eigen::Vector3d &tt) : q(qq), t(tt) { R = q.normalized().toRotationMatrix(); }
+    Camera_Pose(const Eigen::Matrix3d &R, const Eigen::Vector3d &tt) : R(R), t(tt) { q = Eigen::Quaterniond(R).normalized(); }
+
+    // Helper functions
+    inline Eigen::Matrix3d quat_to_R() const { return q.normalized().toRotationMatrix(); }
+    inline Eigen::Matrix<double, 3, 4> make_Rt_in_3x4() const { 
+        Eigen::Matrix<double, 3, 4> tmp = Eigen::Matrix<double, 3, 4>::Zero();
+        tmp.block<3, 3>(0, 0) = R;
+        tmp.col(3) = t;
+        return tmp;
+    }
+    inline Eigen::Matrix<double, 4, 4> make_Rt_in_4x4() const {
+        Eigen::Matrix<double, 4, 4> tmp = Eigen::Matrix<double, 4, 4>::Identity();
+        tmp.block<3, 3>(0, 0) = R;
+        tmp.block<3, 1>(0, 3) = t;
+        return tmp;
+    }
+    inline Eigen::Matrix<double, 4, 4> inverse_in_4x4() const {
+        Eigen::Matrix<double, 4, 4> tmp = Eigen::Matrix<double, 4, 4>::Identity();
+        tmp.block<3, 3>(0, 0) = R.transpose();
+        tmp.block<3, 1>(0, 3) = -R.transpose() * t;
+        return tmp;
+    }
+    inline Eigen::Vector3d rotate(const Eigen::Vector3d &p) const { return R * p; }
+    inline Eigen::Vector3d detransform(const Eigen::Vector3d &p) const { return R.transpose() * (p - t); }
+    inline Eigen::Vector3d transform(const Eigen::Vector3d &p) const { return rotate(p) + t; }
+
+    inline Eigen::Vector3d center() const { return -detransform(t); }
+
+    inline void print_Camera_Pose(const std::string &pose_name) const {
+        std::cout << pose_name << ": " << std::endl;
+        std::cout << "- Rotation:\n" << R << std::endl;
+        std::cout << "- Translation:\n" << t.transpose() << std::endl << std::endl;
+    }
+};
 
 struct StereoFrame
 {
@@ -46,10 +83,10 @@ struct StereoFrame
     cv::Mat right_disparity_map;
 
     // bool has_gt = false;
-    Eigen::Matrix3d gt_rotation;
-    Eigen::Vector3d gt_translation;
+    Camera_Pose gt_camera_pose;
 };
 
+//> TODO: combine GTPose and Camera_Pose structure
 struct GTPose
 {
     double timestamp;

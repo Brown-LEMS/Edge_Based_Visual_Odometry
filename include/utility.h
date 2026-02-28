@@ -15,6 +15,7 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 
+#include "Stereo_Iterator.h"
 #include "definitions.h"
 #include "toed/cpu_toed.hpp"
 
@@ -47,6 +48,8 @@ public:
     Eigen::Vector3d backproject_2D_point_to_3D_point_using_rays( const Eigen::Matrix3d rel_R, const Eigen::Vector3d rel_T, const Eigen::Vector3d ray1, const Eigen::Vector3d ray2 );
     Eigen::Vector3d reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, Eigen::Vector3d tangent1, Eigen::Vector3d tangent2 );
     Eigen::Vector3d project_3D_Tangent_to_2D_Tangent( const Eigen::Vector3d Tangent_3D, Eigen::Vector3d gamma );
+
+    Camera_Pose get_Relative_Pose( const Camera_Pose &source_pose, const Camera_Pose &target_pose );
     
     std::pair<cv::Mat, cv::Mat> get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug = false);
     std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel);
