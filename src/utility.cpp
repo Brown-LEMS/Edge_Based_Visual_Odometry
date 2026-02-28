@@ -99,6 +99,13 @@ Eigen::Vector3d Utility::reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Ei
   return T_3D;
 }
 
+Eigen::Vector3d Utility::project_3D_Tangent_to_2D_Tangent( const Eigen::Vector3d Tangent_3D, Eigen::Vector3d gamma )
+{
+  Eigen::Vector3d projected_tangent = Tangent_3D - Tangent_3D.z() * gamma;
+  projected_tangent.normalize();
+  return projected_tangent;
+}
+
 std::pair<cv::Point2d, cv::Point2d> Utility::get_Orthogonal_Shifted_Points(const Edge edgel, double shift_magnitude)
 {
   double shifted_x1 = edgel.location.x + shift_magnitude * (std::sin(edgel.orientation));
