@@ -97,12 +97,10 @@ fprintf('Parsed %d true positives, %d inaccurate, %d false matches\n', ...
         tp_count, inaccurate_count, false_count);
 
 % Visualization parameters
-edge_length = 5;  % Length of edge line to draw
+edge_length = 15;  % Length of edge line to draw
 
 % Create visualizations for each category
-if tp_count > 0
-    plot_stereo_edges(img_0_left, img_0_right, tp_edges, 'True Positives', edge_length);
-end
+
 
 if inaccurate_count > 0
     plot_stereo_edges(img_0_left, img_0_right, inaccurate_edges, 'Inaccurate Matches', edge_length);
@@ -152,7 +150,7 @@ function plot_stereo_edges(img_left, img_right, edges, title_text, edge_length)
         y2 = y + dy/2;
         
         % Plot edge line
-        plot([x1, x2], [y1, y2], 'Color', colors(i, :), 'LineWidth', 0.5);
+        plot([x1, x2], [y1, y2], 'Color', colors(i, :), 'LineWidth', 3);
     end
     hold off;
     
@@ -177,7 +175,7 @@ function plot_stereo_edges(img_left, img_right, edges, title_text, edge_length)
         y2 = y + dy/2;
         
         % Plot edge line with same color as left
-        plot([x1, x2], [y1, y2], 'Color', colors(i, :), 'LineWidth', 0.5);
+        plot([x1, x2], [y1, y2], 'Color', colors(i, :), 'LineWidth', 3);
     end
     hold off;
     
