@@ -89,12 +89,12 @@ Eigen::Vector3d Utility::backproject_2D_point_to_3D_point_using_rays( const Eige
     return rho1 * ray1;
 }
 
-Eigen::Vector3d Utility::reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, double theta1, double theta2 )
+Eigen::Vector3d Utility::reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, Eigen::Vector3d tangent1, Eigen::Vector3d tangent2 )
 {
-  Eigen::Vector3d t1(cos(theta1), sin(theta1), 0);
-  Eigen::Vector3d t2(cos(theta2), sin(theta2), 0);
-
-  Eigen::Vector3d T_3D = -(gamma2.dot(t2.cross(rel_R * t1))) * gamma1 + (gamma2.dot(t2.cross(rel_R * gamma1))) * t1;
+  // Eigen::Vector3d T_3D = -(gamma2.dot(t2.cross(rel_R * t1))) * gamma1 + (gamma2.dot(t2.cross(rel_R * gamma1))) * t1;
+  Eigen::Vector3d n1 = tangent1.cross(gamma1);
+  Eigen::Vector3d n2 = rel_R.transpose() * (tangent2.cross(gamma2));
+  Eigen::Vector3d T_3D = n1.cross(n2);
   T_3D.normalize();
   return T_3D;
 }

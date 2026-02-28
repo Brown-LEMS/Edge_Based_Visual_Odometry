@@ -46,8 +46,8 @@ public:
     double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection);
 
     Eigen::Vector3d backproject_2D_point_to_3D_point_using_rays( const Eigen::Matrix3d rel_R, const Eigen::Vector3d rel_T, const Eigen::Vector3d ray1, const Eigen::Vector3d ray2 );
-    Eigen::Vector3d reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, double theta1, double theta2 );
-
+    Eigen::Vector3d reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, Eigen::Vector3d tangent1, Eigen::Vector3d tangent2 );
+    
     std::pair<cv::Mat, cv::Mat> get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug = false);
     std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel);
     std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel, double shift_magnitude);
