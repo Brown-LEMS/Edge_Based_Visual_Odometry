@@ -1,9 +1,9 @@
 # ETH3D Low-Resolution, Multi-View Delivery Area Dataset
 
 # Dataset Details
-dataset_dir: "/oscar/data/bkimia/Datasets"
-output_dir: "./outputs"
-sequence_name: "ETH3D/stereo/delivery_area"
+dataset_dir: "/oscar/data/bkimia/jhan192/dataset"
+output_dir: "/oscar/data/bkimia/jhan192/jue_dev_ebvo/Edge_Based_Visual_Odometry/outputs"
+sequence_name: "training/cables_2"
 dataset_type: "ETH3D"
 
 # Stereo Intrinsic Parameters
@@ -14,7 +14,7 @@ left_camera:
 
 right_camera:
   resolution: [942, 489]
-  intrinsics: [541.764, 541.764, 553.869, 232.396]
+  intrinsics: [726.04388427734, 726.04388427734, 385.73248291016, 262.19641113281]
   distortion_coefficients: [0, 0, 0, 0]
 
 # Stereo Extrinsic Parameters
@@ -46,4 +46,3 @@ stereo:
   - [0.000000000000000,   0.000110548689097,  0.000000000000000]
 
   focal_length: 541.764
-  baseline: 0.0599101
