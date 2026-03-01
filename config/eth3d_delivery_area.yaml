@@ -9,7 +9,7 @@ dataset_type: "ETH3D"
 # Stereo Intrinsic Parameters
 left_camera:
   resolution: [942, 489]
-  intrinsics: [726.28741455078, 726.28741455078, 354.6496887207, 186.46566772461]
+  intrinsics: [541.764, 541.764, 553.869, 232.396]
   distortion_coefficients: [0, 0, 0, 0]
 
 right_camera:
