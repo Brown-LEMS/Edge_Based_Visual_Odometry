@@ -353,11 +353,16 @@ bool ETH3DSLAMIterator::getNext(StereoFrame &frame)
     frame.timestamp = timestamp;
 
     // Load ground truth if available
-    if (!findClosestGTPose(timestamp, frame.gt_rotation, frame.gt_translation))
+    Eigen::Matrix3d R;
+    Eigen::Vector3d T;
+    if (!findClosestGTPose(timestamp, R, T))
     {
         // If no ground truth, set to identity
-        frame.gt_rotation = Eigen::Matrix3d::Identity();
-        frame.gt_translation = Eigen::Vector3d::Zero();
+        frame.gt_camera_pose = Camera_Pose();
+    }
+    else
+    {
+        frame.gt_camera_pose = Camera_Pose(R, T);
     }
 
     return true;
