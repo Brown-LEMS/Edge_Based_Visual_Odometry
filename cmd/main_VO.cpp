@@ -112,7 +112,7 @@ int main(int argc, char **argv)
 			break;
 	}
 
-	// Temporal_Matches temporal_matches(config_map);
-	// temporal_matches.PerformEdgeBasedVO();
+	edge_vo_system->Print_Stereo_Matches_Metrics_Statistics();
+
 	return 0;
 }

@@ -44,6 +44,8 @@ public:
     void get_Stereo_Edge_Correspondences();
     void get_Temporal_Edge_Correspondences();
 
+    void Print_Stereo_Matches_Metrics_Statistics();
+
     //> setters
     void set_Current_Stereo_Frame_Index(size_t frame_idx) { stereo_current_frame_idx = frame_idx; }
 
@@ -174,6 +176,8 @@ private:
     //> Keyframe <-> current frame edge pairs
     std::vector<temporal_edge_pair> left_temporal_edge_mates;
     std::vector<temporal_edge_pair> right_temporal_edge_mates;
+
+    std::vector<Frame_Evaluation_Metrics> all_stereo_matches_metrics;
 
     //> Pointers to the classes
     Dataset::Ptr dataset_ = nullptr;

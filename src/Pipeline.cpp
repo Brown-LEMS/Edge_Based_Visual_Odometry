@@ -113,6 +113,7 @@ void Pipeline::get_Stereo_Edge_Correspondences()
 
     //> construct stereo edge correspondences for the current_frame
     Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_current_frame_idx);
+    all_stereo_matches_metrics.push_back(metrics);
 
     //> Finalize the stereo edge pairs for the current_frame
     stereo_matches_engine->finalize_stereo_edge_mates(current_frame_stereo_left_constructor, current_frame_stereo_edge_mates);
@@ -162,16 +163,23 @@ void Pipeline::get_Temporal_Edge_Correspondences()
     //     stereo_key_frame_idx,
     //     stereo_current_frame_idx);
 
-    //> print the relative pose from KF to CF
-    Camera_Pose KF_GT_pose = keyframe.gt_camera_pose;
-    Camera_Pose CF_GT_pose = current_frame.gt_camera_pose;
-    Camera_Pose rel_pose = utility_tool->get_Relative_Pose(KF_GT_pose, CF_GT_pose);
-    rel_pose.print_Camera_Pose("Relative pose from KF to CF");
+    // //> print the relative pose from KF to CF
+    // Camera_Pose KF_GT_pose = keyframe.gt_camera_pose;
+    // Camera_Pose CF_GT_pose = current_frame.gt_camera_pose;
+    // Camera_Pose rel_pose = utility_tool->get_Relative_Pose(KF_GT_pose, CF_GT_pose);
+    // rel_pose.print_Camera_Pose("Relative pose from KF to CF");
 
     //> Memory cleanup: free memory from keyframe structures that are no longer needed
     Memory_clear();
 
     send_control_to_main = true;
 }
+
+void Pipeline::Print_Stereo_Matches_Metrics_Statistics()
+{
+    stereo_matches_engine->Stereo_Matches_Metrics_Statistics(all_stereo_matches_metrics);
+}
+
+
 
 #endif

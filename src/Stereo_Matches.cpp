@@ -1,4 +1,5 @@
 #include "Stereo_Matches.h"
+#include <algorithm>
 #include <unordered_map>
 #include <sstream>
 
@@ -1279,20 +1280,20 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Epipolar Line Distance Filtering",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["Epipolar Line Distance Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"Epipolar Proximity", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     //> Apply disparity filtering
     apply_Disparity_Filtering(stereo_frame_edge_pairs, "output_files", frame_idx);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Maximal Disparity Filtering",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["Maximal Disparity Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"Location Proximity", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     apply_orientation_filter(stereo_frame_edge_pairs, 10.0, "output_files", frame_idx);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Orientation Filtering",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["Orientation Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"Orientation", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
     //> Augment edge data with SIFT descriptors
     augment_Edge_Data(stereo_frame_edge_pairs, true);
 
@@ -1301,27 +1302,27 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "SIFT Filtering",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["SIFT Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"SIFT", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     //> Apply NCC filtering
     apply_NCC_Filtering(stereo_frame_edge_pairs, "output_files", frame_idx);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "NCC Filtering",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["NCC Filtering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"NCC", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     //> Apply Best-Nearly-Best test with both NCC and SIFT scores
     apply_Best_Nearly_Best_Test(stereo_frame_edge_pairs, BNB_NCC, "output_files", frame_idx, true);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB-NCC",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["BNB-NCC"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"BNB-NCC", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     apply_Best_Nearly_Best_Test(stereo_frame_edge_pairs, BNB_SIFT, "output_files", frame_idx, false);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB-SIFT",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["BNB-SIFT"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"BNB-SIFT", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     //> Shift edges to the epipolar line and cluster them to consolidate redundant edge hypothesis
     bool b_shift_to_epipolar_line = true;
@@ -1336,7 +1337,7 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
 #if RECORD_FILTER_DISTRIBUTIONS
     record_Ambiguity_Distribution("photometric_refinement", stereo_frame_edge_pairs, "output_files", frame_idx);
 #endif
-    frame_metrics.stages["Photometric Refinement"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"Photometric Refinement", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     consolidate_redundant_edge_hypothesis(stereo_frame_edge_pairs, false, true);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Edge Clustering",
@@ -1345,7 +1346,7 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
 #if RECORD_FILTER_DISTRIBUTIONS
     record_Ambiguity_Distribution("edge_clustering", stereo_frame_edge_pairs, "output_files", frame_idx);
 #endif
-    frame_metrics.stages["Edge Clustering"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"Edge Clustering", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     //> Post NCC filtering after clustering
     apply_NCC_Filtering(stereo_frame_edge_pairs, "output_files", frame_idx);
@@ -1353,14 +1354,14 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
 
-    frame_metrics.stages["NCC Filtering(Post-Clustering)"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"NCC", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     //> Apply Best filter after all filtering to disambiguate final candidates
     apply_Lowe_Ratio_Test(stereo_frame_edge_pairs, LOWES_RATIO, "output_files", frame_idx);
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Best",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["Best"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"Best", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     std::cout << "Edge size before cleaning: " << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
     remove_empty_clusters(stereo_frame_edge_pairs);
@@ -1368,7 +1369,7 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "cleaning",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
                                          evaluation_statistics);
-    frame_metrics.stages["Final"] = {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg};
+    frame_metrics.stages.push_back({"Final", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
 
     return frame_metrics;
 }
@@ -1481,4 +1482,39 @@ void Stereo_Matches::finalize_stereo_edge_mates(Stereo_Edge_Pairs &stereo_frame_
     }
 
     std::cout << "Size of finalized stereo edge pairs = " << final_stereo_edge_pairs.size() << std::endl;
+}
+
+void Stereo_Matches::Stereo_Matches_Metrics_Statistics(const std::vector<Frame_Evaluation_Metrics> &all_stereo_matches_metrics)
+{
+    if (!all_stereo_matches_metrics.empty())
+    {
+        // Iterate in pipeline order (from first frame)
+        std::cout << "         Stage         |         Recall         |         Precision         |         Ambiguity         " << std::endl;
+        for (const auto &[stage_name, _] : all_stereo_matches_metrics[0].stages)
+        {
+            double avg_recall = 0.0, avg_precision = 0.0, avg_ambiguity = 0.0;
+            int count = 0;
+
+            for (const auto &frame_metrics : all_stereo_matches_metrics)
+            {
+                auto it = std::find_if(frame_metrics.stages.begin(), frame_metrics.stages.end(),
+                    [&stage_name](const auto &p) { return p.first == stage_name; });
+                if (it != frame_metrics.stages.end())
+                {
+                    avg_recall += it->second.recall;
+                    avg_precision += it->second.precision;
+                    avg_ambiguity += it->second.ambiguity;
+                    count++;
+                }
+            }
+
+            if (count > 0)
+            {
+                avg_recall /= count;
+                avg_precision /= count;
+                avg_ambiguity /= count;
+                std::cout << std::setw(25) << stage_name << " | " << std::setw(25) << avg_recall << " | " << std::setw(25) << avg_precision << " | " << std::setw(25) << avg_ambiguity << std::endl;
+            }
+        }
+    }
 }

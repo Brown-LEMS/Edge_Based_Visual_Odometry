@@ -8,6 +8,7 @@ class Dataset;
 #include <opencv2/xfeatures2d.hpp>
 #include <random>
 #include <unordered_set>
+#include <vector>
 
 #include "definitions.h"
 #include "utility.h"
@@ -25,7 +26,7 @@ struct Stage_Metrics
 
 struct Frame_Evaluation_Metrics
 {
-    std::map<std::string, Stage_Metrics> stages;
+    std::vector<std::pair<std::string, Stage_Metrics>> stages;  // preserves pipeline order
 };
 
 class Stereo_Matches
@@ -67,6 +68,8 @@ public:
     void get_Stereo_Edge_GT_Pairs(Dataset::Ptr dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
     void record_Filter_Distribution(const std::string &filter_name, const std::vector<double> &filter_values, const std::vector<int> &is_veridical, const std::string &output_dir, size_t frame_idx = 0);
     void record_Ambiguity_Distribution(const std::string &stage_name, const Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir, size_t frame_idx);
+
+    void Stereo_Matches_Metrics_Statistics(const std::vector<Frame_Evaluation_Metrics> &all_stereo_matches_metrics);
 
 private:
     //> visualization methods
