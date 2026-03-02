@@ -301,10 +301,7 @@ double Temporal_Matches::orientation_mapping(const Edge &e_left, const Edge &e_r
     Eigen::Vector3d gamma_2(e_right.location.x, e_right.location.y, 1.0);
     gamma_2 = dataset.get_right_calib_matrix().inverse() * gamma_2;
 
-    Eigen::Vector3d T_1 = util.reconstruct_3D_Tangent(R_stereo, gamma_1, gamma_2, t1, t2);
-
-    // Step 3: Transform T_1 to current frame
-    // Eigen::Matrix3d R_temporal = current_frame.gt_rotation * last_keyframe.gt_rotation.transpose(); // Left KF -> Left CF
+    Eigen::Vector3d T_1 = util.reconstruct_3D_Tangent_through_intersection_of_planes(R_stereo, gamma_1, gamma_2, t1, t2);
 
     Eigen::Vector3d T_2;
     if (is_left_cam)
@@ -872,7 +869,7 @@ void Temporal_Matches::get_Gammas_and_Tangents_From_Quads(\
     Eigen::Vector3d t2(cos(kvq.KF_stereo_mate->right_edge.orientation), sin(kvq.KF_stereo_mate->right_edge.orientation), 0);
     Eigen::Vector3d tangent1 = inv_K * t1;
     Eigen::Vector3d tangent2 = inv_K * t2;
-    Tangent = utility->reconstruct_3D_Tangent( \
+    Tangent = utility->reconstruct_3D_Tangent_through_intersection_of_planes( \
         dataset->get_relative_rot_left_to_right(), \
         gamma1_left, gamma1_right, \
         tangent1, tangent2);
@@ -880,7 +877,7 @@ void Temporal_Matches::get_Gammas_and_Tangents_From_Quads(\
     Eigen::Vector3d t2_bar(cos(kvq.candidate_quads[j].CF_right->center_edge.orientation), sin(kvq.candidate_quads[j].CF_right->center_edge.orientation), 0);
     Eigen::Vector3d tangent1_bar = inv_K * t1_bar;
     Eigen::Vector3d tangent2_bar = inv_K * t2_bar;
-    Tangent_bar = utility->reconstruct_3D_Tangent( \
+    Tangent_bar = utility->reconstruct_3D_Tangent_through_intersection_of_planes( \
         dataset->get_relative_rot_left_to_right(), \
         gamma1_bar_left, gamma1_bar_right, \
         tangent1_bar, tangent2_bar );
@@ -982,8 +979,8 @@ void Temporal_Matches::test_Constraints_from_Two_Oriented_Points( \
         double non_veridical_c3_values = std::fabs(std::fabs(cos_angle_nv2) - std::fabs(cos_angle_bar_nv2));
 
         //> Constraint 4:
-        double cos_tangent_angle_v = (q1_v.Tangent).dot(q2_v.Tangent_bar);
-        double cos_tangent_angle_bar_v = (q1_v.Tangent_bar).dot(q2_v.Tangent);
+        double cos_tangent_angle_v = (q1_v.Tangent).dot(q2_v.Tangent);
+        double cos_tangent_angle_bar_v = (q1_v.Tangent_bar).dot(q2_v.Tangent_bar);
         double veridical_c4_values = std::fabs(std::fabs(cos_tangent_angle_v) - std::fabs(cos_tangent_angle_bar_v));
 
         if (veridical_c4_values > 0.98 || veridical_c4_values < 0.02) {
