@@ -46,8 +46,8 @@ public:
     Temporal_Matches(Dataset::Ptr dataset);
 
     //> Quad-centric pipeline: build veridical quads and apply all filters in one flow.
-    //> Output: filtered_quads. Optionally populates left/right temporal_edge_mates for backward compatibility.
-    void get_Temporal_Edge_Pairs_from_Quads(
+    //> Returns Frame_Evaluation_Metrics with recall/precision/ambiguity per stage for statistics.
+    Frame_Evaluation_Metrics get_Temporal_Edge_Pairs_from_Quads(
         std::vector<KF_Temporal_Edge_Quads> &filtered_quads,
         const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
         const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
@@ -101,6 +101,8 @@ public:
         const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, \
         const size_t keyframe_idx, const size_t current_frame_idx);
 
+    void Temporal_Matches_Metrics_Statistics(const std::vector<Frame_Evaluation_Metrics> &all_temporal_matches_metrics);
+
     //> Write all quads to a CSV file (for debugging/analysis).
     void write_quads_to_file(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf,
         size_t keyframe_idx, size_t current_frame_idx,
@@ -109,7 +111,8 @@ public:
 private:
     //> Evaluate precision/recall/ambiguity on candidate quads (from left/right temporal mates).
     //> TP = candidate quads whose left and right cluster centers are near GT.
-    void Evaluate_Temporal_Edge_Pairs_on_Quads(
+    //> Returns Stage_Metrics for the given stage (recall, precision, precision_pair=precision, ambiguity).
+    Stage_Metrics Evaluate_Temporal_Edge_Pairs_on_Quads(
         std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
         const size_t keyframe_idx, const size_t current_frame_idx, const std::string &stage_name);
 

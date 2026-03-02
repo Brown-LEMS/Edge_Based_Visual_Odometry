@@ -165,7 +165,7 @@ void Temporal_Matches::build_Veridical_Quads(
     }
 }
 
-void Temporal_Matches::get_Temporal_Edge_Pairs_from_Quads(
+Frame_Evaluation_Metrics Temporal_Matches::get_Temporal_Edge_Pairs_from_Quads(
     std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
     const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
     const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
@@ -174,41 +174,42 @@ void Temporal_Matches::get_Temporal_Edge_Pairs_from_Quads(
     const StereoFrame &keyframe, const StereoFrame &current_frame,
     size_t keyframe_idx, size_t current_frame_idx)
 {
+    Frame_Evaluation_Metrics frame_metrics;
+
     size_t num_quads = 0;
     for (const auto &kvq : temporal_quads_by_kf)
         num_quads += kvq.veridical_quads.size();
     std::cout << "Veridical quads: " << temporal_quads_by_kf.size() << " KF groups, " << num_quads << " total quads" << std::endl;
 
     apply_spatial_grid_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, left_spatial_grids, right_spatial_grids, 30.0);
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Location Proximity Filtering");
+    frame_metrics.stages.push_back({"Location Proximity", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Location Proximity Filtering")});
 
-    apply_orientation_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 35.0);
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Orientation Filtering");
+    apply_orientation_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 10.0);
+    frame_metrics.stages.push_back({"Orientation", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Orientation Filtering")});
 
-    apply_NCC_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 0.6,
+    apply_NCC_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 0.8,
         keyframe.left_image, keyframe.right_image, current_frame.left_image, current_frame.right_image);
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "NCC Filtering");
+    frame_metrics.stages.push_back({"NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "NCC Filtering")});
 
-    apply_SIFT_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 500.0);
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "SIFT Filtering");
+    apply_SIFT_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 200.0);
+    frame_metrics.stages.push_back({"SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "SIFT Filtering")});
 
     apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.8, "NCC");
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB NCC Filtering");
+    frame_metrics.stages.push_back({"BNB-NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB NCC Filtering")});
 
-    apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.5, "SIFT");
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB SIFT Filtering");
+    apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.8, "SIFT");
+    frame_metrics.stages.push_back({"BNB-SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB SIFT Filtering")});
 
     apply_photometric_refinement_quads(temporal_quads_by_kf, CF_stereo_edge_mates, keyframe, current_frame);
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Photometric Refinement");
+    frame_metrics.stages.push_back({"Photometric Refinement", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Photometric Refinement")});
 
     apply_temporal_edge_clustering_quads(temporal_quads_by_kf, true);
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Edge Clustering");
+    frame_metrics.stages.push_back({"Edge Clustering", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Edge Clustering")});
 
-    apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.6, "SIFT");
-    Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB SIFT Filtering");
+    return frame_metrics;
 }
 
-void Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
+Stage_Metrics Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
     std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
     const size_t keyframe_idx, const size_t current_frame_idx, const std::string &stage_name)
 {
@@ -216,6 +217,7 @@ void Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
     double precision_per_temporal_image = 0.0;
     double ambiguity_per_temporal_image = 0.0;
     int num_of_KF_stereo_TP_edge_mates = 0;
+    int num_of_matched_mates_for_precision = 0;
 
     for (auto &kvq : temporal_quads_by_kf)
     {
@@ -255,23 +257,30 @@ void Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
         ambiguity_per_temporal_image += ambiguity_per_edge;
 
         num_of_KF_stereo_TP_edge_mates++;
+
+        if (num_clusters > 0) {
+            num_of_matched_mates_for_precision++;
+        }
     }
 
-    if (num_of_KF_stereo_TP_edge_mates == 0)
+    if (num_of_KF_stereo_TP_edge_mates == 0 || num_of_matched_mates_for_precision == 0)
     {
         print_eval_results_with_no_quads(keyframe_idx, current_frame_idx, stage_name);
-        return;
+        return {0.0, 0.0, 0.0, 0.0};
     }
 
     double recall = recall_per_temporal_image / static_cast<double>(num_of_KF_stereo_TP_edge_mates);
-    double precision = precision_per_temporal_image / static_cast<double>(num_of_KF_stereo_TP_edge_mates);
-    double ambiguity_avg = ambiguity_per_temporal_image / static_cast<double>(num_of_KF_stereo_TP_edge_mates);
+    double precision = precision_per_temporal_image / static_cast<double>(num_of_matched_mates_for_precision);
+    double ambiguity_avg = (ambiguity_per_temporal_image / static_cast<double>(num_of_matched_mates_for_precision)) - 1.0;
 
+#if TEMPORAL_EDGE_MATCH_EVAL_VERBOSE
     std::cout << "Quads Evaluation: Key Frame (" << keyframe_idx << ") <-> Current Frame (" << current_frame_idx << ") | Stage: " << stage_name << std::endl;
     std::cout << "- Recall rate:       " << std::fixed << std::setprecision(8) << recall << std::endl;
     std::cout << "- Precision rate:    " << std::fixed << std::setprecision(8) << precision << std::endl;
     std::cout << "- Average Ambiguity: " << std::fixed << std::setprecision(8) << ambiguity_avg << std::endl;
     std::cout << "========================================================\n" << std::endl;
+#endif
+    return {recall, precision, precision, ambiguity_avg};  // precision_pair = precision for temporal
 }
 
 double Temporal_Matches::orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset)
@@ -1135,5 +1144,41 @@ void Temporal_Matches::write_quads_to_file(const std::vector<KF_Temporal_Edge_Qu
             << cq.CF_right->center_edge.location.x << " " << cq.CF_right->center_edge.location.y << " " << cq.CF_right->center_edge.orientation << " "
             << (kvq.b_is_TP[j] ? 1 : 0) << "\n";
         }
+    }
+}
+
+void Temporal_Matches::Temporal_Matches_Metrics_Statistics(const std::vector<Frame_Evaluation_Metrics> &all_temporal_matches_metrics)
+{
+    if (!all_temporal_matches_metrics.empty())
+    {
+        std::cout << "\n===== Temporal Matches Metrics (averaged over KF<->CF pairs) =====" << std::endl;
+        std::cout << "          Stage           |          Recall           |          Precision        |          Ambiguity" << std::endl;
+        for (const auto &[stage_name, _] : all_temporal_matches_metrics[0].stages)
+        {
+            double avg_recall = 0.0, avg_precision = 0.0, avg_ambiguity = 0.0;
+            int count = 0;
+
+            for (const auto &frame_metrics : all_temporal_matches_metrics)
+            {
+                auto it = std::find_if(frame_metrics.stages.begin(), frame_metrics.stages.end(),
+                    [&stage_name](const auto &p) { return p.first == stage_name; });
+                if (it != frame_metrics.stages.end())
+                {
+                    avg_recall += it->second.recall;
+                    avg_precision += it->second.precision;
+                    avg_ambiguity += it->second.ambiguity;
+                    count++;
+                }
+            }
+
+            if (count > 0)
+            {
+                avg_recall /= count;
+                avg_precision /= count;
+                avg_ambiguity /= count;
+                std::cout << std::setw(25) << stage_name << " | " << std::setw(25) << avg_recall << " | " << std::setw(25) << avg_precision << " | " << std::setw(25) << avg_ambiguity << std::endl;
+            }
+        }
+        std::cout << std::endl;
     }
 }

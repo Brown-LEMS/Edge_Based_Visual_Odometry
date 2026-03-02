@@ -146,7 +146,7 @@ void Pipeline::get_Temporal_Edge_Correspondences()
     temporal_matches_engine->build_Veridical_Quads(temporal_quads_by_kf, keyframe_stereo_edge_mates, current_frame_stereo_edge_mates, keyframe_stereo_left_constructor, current_frame_stereo_left_constructor, left_spatial_grids, right_spatial_grids);
 
     //> Quad-centric pipeline: build veridical quads, apply filters, optionally convert to temporal pairs for backward compatibility
-    temporal_matches_engine->get_Temporal_Edge_Pairs_from_Quads(
+    Frame_Evaluation_Metrics metrics = temporal_matches_engine->get_Temporal_Edge_Pairs_from_Quads(
         temporal_quads_by_kf,
         keyframe_stereo_edge_mates,
         current_frame_stereo_edge_mates,
@@ -154,6 +154,7 @@ void Pipeline::get_Temporal_Edge_Correspondences()
         keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
         keyframe, current_frame,
         stereo_key_frame_idx, stereo_current_frame_idx);
+    all_temporal_matches_metrics.push_back(metrics);
 
     //> write quads to a file
     // temporal_matches_engine->write_quads_to_file(temporal_quads_by_kf, stereo_key_frame_idx, stereo_current_frame_idx);
@@ -178,6 +179,11 @@ void Pipeline::get_Temporal_Edge_Correspondences()
 void Pipeline::Print_Stereo_Matches_Metrics_Statistics()
 {
     stereo_matches_engine->Stereo_Matches_Metrics_Statistics(all_stereo_matches_metrics);
+}
+
+void Pipeline::Print_Temporal_Matches_Metrics_Statistics()
+{
+    temporal_matches_engine->Temporal_Matches_Metrics_Statistics(all_temporal_matches_metrics);
 }
 
 
