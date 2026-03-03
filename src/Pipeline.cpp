@@ -18,7 +18,7 @@ Pipeline::Pipeline(Dataset::Ptr dataset) : dataset_(dataset)
     stereo_matches_engine = std::make_shared<Stereo_Matches>();
     temporal_matches_engine = std::make_shared<Temporal_Matches>(dataset_);
     utility_tool = std::make_shared<Utility>();
-    Camera_Motion_Estimate = std::make_shared<MotionTracker>();
+    motion_tracker_engine = std::make_shared<MotionTracker>(dataset_);
 }
 
 void Pipeline::ProcessEdges(const cv::Mat &image, std::vector<Edge> &edges)
@@ -49,6 +49,11 @@ bool Pipeline::Add_Stereo_Frame()
             //> Get temporal edge correspondences (keyframe <-> current frame)
             LOG_STATUS("GET_TEMPORAL_EDGE_CORRESPONDENCES");
             get_Temporal_Edge_Correspondences();
+            break;
+        case PipelineStatus::STATUS_GET_POSE_FROM_QUAD_PAIRS:
+            //> Get pose from quad pairs
+            LOG_STATUS("GET_POSE_FROM_QUAD_PAIRS");
+            get_Pose_From_Quad_Pairs();
             break;
         }
     } while (!send_control_to_main);
@@ -135,6 +140,8 @@ void Pipeline::get_Stereo_Edge_Correspondences()
 
 void Pipeline::get_Temporal_Edge_Correspondences()
 {
+    temporal_quads_by_kf.clear();
+    temporal_quads_by_kf.shrink_to_fit();
 
     //> construct spatial grids for the current stereo edge mates
     temporal_matches_engine->add_edges_to_spatial_grid(current_frame_stereo_edge_mates, left_spatial_grids, right_spatial_grids);
@@ -142,7 +149,6 @@ void Pipeline::get_Temporal_Edge_Correspondences()
     //> `temporal_quads_by_kf` is a struct that stores quads from KF stereo edge pairs
     //> One KF stereo edge pair could pair up with multiple veridical CF stereo edge pairs.
     //> The structure `temporal_quads_by_kf` contains the veridical CF stereo edge pairs, and the matching CF stereo edge pairs
-    std::vector<KF_Temporal_Edge_Quads> temporal_quads_by_kf;
     temporal_matches_engine->build_Veridical_Quads(temporal_quads_by_kf, keyframe_stereo_edge_mates, current_frame_stereo_edge_mates, keyframe_stereo_left_constructor, current_frame_stereo_left_constructor, left_spatial_grids, right_spatial_grids);
 
     //> Quad-centric pipeline: build veridical quads, apply filters, optionally convert to temporal pairs for backward compatibility
@@ -171,7 +177,26 @@ void Pipeline::get_Temporal_Edge_Correspondences()
     // rel_pose.print_Camera_Pose("Relative pose from KF to CF");
 
     //> Memory cleanup: free memory from keyframe structures that are no longer needed
-    Memory_clear();
+    // Memory_clear();
+
+    Print_Temporal_Matches_Metrics_Statistics();
+
+    status_ = PipelineStatus::STATUS_GET_POSE_FROM_QUAD_PAIRS;
+    send_control_to_main = false;
+}
+
+void Pipeline::get_Pose_From_Quad_Pairs()
+{
+    Ransac_Options opt;
+    Ransac_State state;
+    std::vector<std::vector<Quad_Pair_Evaluation_Metrics>> all_quad_pair_evaluation_metrics;
+
+    for (size_t i = 0; i < 20; ++i) {
+        std::vector<Quad_Pair_Evaluation_Metrics> quad_pair_evaluation_metrics;
+        quad_pair_evaluation_metrics = motion_tracker_engine->Solution_Constraints_Application(temporal_quads_by_kf, opt, state);
+        all_quad_pair_evaluation_metrics.push_back(quad_pair_evaluation_metrics);
+    }
+    motion_tracker_engine->Print_Quad_Pairs_Metrics_Statistics(all_quad_pair_evaluation_metrics);
 
     send_control_to_main = true;
 }

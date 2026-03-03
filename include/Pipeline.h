@@ -24,7 +24,8 @@ enum class PipelineStatus
     STATUS_IMG_PREPARATION,
     STATUS_GET_STEREO_EDGE_CORRESPONDENCES,
     STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES,
-    STATUS_TRACK_CAMERA_MOTION
+    STATUS_TRACK_CAMERA_MOTION,
+    STATUS_GET_POSE_FROM_QUAD_PAIRS
 };
 
 class Pipeline
@@ -43,6 +44,7 @@ public:
     void prepare_Stereo_Images();
     void get_Stereo_Edge_Correspondences();
     void get_Temporal_Edge_Correspondences();
+    void get_Pose_From_Quad_Pairs();
 
     void Print_Stereo_Matches_Metrics_Statistics();
     void Print_Temporal_Matches_Metrics_Statistics();
@@ -66,6 +68,8 @@ public:
             return std::string("STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES");
         else if (status_ == PipelineStatus::STATUS_TRACK_CAMERA_MOTION)
             return std::string("STATUS_TRACK_CAMERA_MOTION");
+        else if (status_ == PipelineStatus::STATUS_GET_POSE_FROM_QUAD_PAIRS)
+            return std::string("STATUS_GET_POSE_FROM_QUAD_PAIRS");
         LOG_ERROR("[Developer Error] Need to apend status string in print_Status() function!");
         return std::string("STATUS_UNKNOWN");
     }
@@ -178,6 +182,9 @@ private:
     std::vector<temporal_edge_pair> left_temporal_edge_mates;
     std::vector<temporal_edge_pair> right_temporal_edge_mates;
 
+    //> Final temporal quads by Keyframe
+    std::vector<KF_Temporal_Edge_Quads> temporal_quads_by_kf;
+
     std::vector<Frame_Evaluation_Metrics> all_stereo_matches_metrics;
     std::vector<Frame_Evaluation_Metrics> all_temporal_matches_metrics;
 
@@ -187,7 +194,7 @@ private:
     Stereo_Matches::Ptr stereo_matches_engine = nullptr;
     Temporal_Matches::Ptr temporal_matches_engine = nullptr;
     Utility::Ptr utility_tool = nullptr;
-    MotionTracker::Ptr Camera_Motion_Estimate = nullptr;
+    MotionTracker::Ptr motion_tracker_engine = nullptr;
 };
 
 #endif
