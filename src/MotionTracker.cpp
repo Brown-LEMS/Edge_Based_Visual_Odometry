@@ -73,14 +73,17 @@ std::vector<Quad_for_Pose_Solution> MotionTracker::get_Quad_for_Pose_Solution(co
     for (size_t k = 0; k < quads_by_kf.size(); ++k)
     {
         const auto &kvq = quads_by_kf[k];
-        if (!kvq.KF_stereo_mate->b_is_TP)
+        //> If we have GT, only keep quads whose KF stereo edge mate is a TP.
+        //> Without GT disparity, b_is_TP is not meaningful, so we keep all.
+        if (dataset->has_gt() && !kvq.KF_stereo_mate->b_is_TP)
             continue;
 
         for (size_t j = 0; j < kvq.candidate_quads.size(); ++j)
         {
             Quad_for_Pose_Solution q;
             get_Gammas_and_Tangents_From_Quads(kvq, j, inv_K, q.Gamma, q.Gamma_bar, q.Tangent, q.Tangent_bar);
-            quads_for_pose_solution.push_back({k, j, q.Gamma, q.Gamma_bar, q.Tangent, q.Tangent_bar, kvq.b_is_TP[j]});
+            bool is_veridical = dataset->has_gt() && j < kvq.b_is_TP.size() ? kvq.b_is_TP[j] : false;
+            quads_for_pose_solution.push_back({k, j, q.Gamma, q.Gamma_bar, q.Tangent, q.Tangent_bar, is_veridical});
         }
     }
 
@@ -149,23 +152,107 @@ Camera_Pose MotionTracker::estimate_Pose_From_a_Quad_Pair(const Quad_for_Pose_So
     return Camera_Pose(R, t);
 }
 
+void MotionTracker::score_Pose_Hypothesis(const Camera_Pose &pose_hypothesis, const std::vector<Quad_for_Pose_Solution> &quads, \
+    const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Ransac_Options &opt, std::vector<size_t> &inlier_indices)
+{
+    inlier_indices.clear();
+    for (size_t i = 0; i < quads.size(); ++i) {
+        Eigen::Vector3d hypothesis_Gamma_bar = pose_hypothesis.transform(quads[i].Gamma);
+        Eigen::Vector3d proj_point = dataset->get_left_calib_matrix() * hypothesis_Gamma_bar;
+        proj_point.x() /= proj_point.z();
+        proj_point.y() /= proj_point.z();
+        //> find reprojection error between the projected point and the 2D point on the left CF edge location of the candidate quad
+        const auto &kvq = quads_by_kf[quads[i].KF_stereo_mate_index];
+        const auto *cf_left = kvq.candidate_quads[quads[i].candidate_quad_index].CF_left;
+        cv::Point2d proj_point_cv(proj_point.x(), proj_point.y());
+        double reproj_error = cv::norm(proj_point_cv - cf_left->center_edge.location);
+        if (reproj_error < opt.max_reprojection_location_error) {
+            inlier_indices.push_back(i);
+
+        }
+    }
+}
+
+bool MotionTracker::estimate_Relative_Pose_From_Quad_Pairs(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Ransac_Options &opt, Ransac_State &state)
+{
+    if (quads_by_kf.size() < 2) {
+        LOG_ERROR("Insufficient quad pairs, available: " + std::to_string(quads_by_kf.size()));
+        LOG_ERROR("Returning identity camera pose");
+        state.best_pose_hypothesis = Camera_Pose();
+        return false;
+    }
+
+    //> prepare quads for pose estimation
+    std::vector<Quad_for_Pose_Solution> quads_for_pose_solution = get_Quad_for_Pose_Solution(quads_by_kf);
+    size_t top_n_rank_ordered_list = static_cast<size_t>(opt.top_rank_ordered_percentage * quads_for_pose_solution.size());
+
+    //> prepare RANSAC settings
+    state.dynamic_max_iter = opt.max_iterations;
+    state.log_prob_missing_model = std::log(1.0 - opt.success_prob);
+    state.best_minimal_inlier_count = 0;
+
+    //> RANSAC main loop
+    for (state.iterations = 0; state.iterations < opt.max_iterations; state.iterations++) {
+
+        if (state.iterations > opt.min_iterations && state.iterations > state.dynamic_max_iter) {
+            break;
+        }
+
+        //> Randomly pick 2 indices
+        size_t idx1, idx2;
+        do {
+            idx1 = rand() % top_n_rank_ordered_list;
+            idx2 = rand() % top_n_rank_ordered_list;
+        } while (idx1 == idx2);
+        const auto &q1 = quads_for_pose_solution[idx1];
+        const auto &q2 = quads_for_pose_solution[idx2];
+
+        //> Pose hypothesis formation
+        Camera_Pose pose_hypothesis = estimate_Pose_From_a_Quad_Pair(q1, q2);
+
+        //> Pose hypothesis validation
+        std::vector<size_t> inlier_indices;
+        score_Pose_Hypothesis(pose_hypothesis, quads_for_pose_solution, quads_by_kf, opt, inlier_indices);
+        if (inlier_indices.size() > state.best_minimal_inlier_count) {
+            state.best_minimal_inlier_count = inlier_indices.size();
+            state.best_pose_hypothesis = pose_hypothesis;
+            state.inlier_ratio = static_cast<double>(inlier_indices.size()) / static_cast<double>(quads_for_pose_solution.size());
+        }
+
+        // update number of iterations
+        state.inlier_ratio = static_cast<double>(inlier_indices.size()) / static_cast<double>(quads_by_kf.size());
+        if (state.inlier_ratio >= 0.95) {
+            // this is to avoid log(prob_outlier) = -inf below
+            state.dynamic_max_iter = opt.min_iterations;
+        } else if (state.inlier_ratio <= 0.05) {
+            // this is to avoid log(prob_outlier) = 0 below
+            state.dynamic_max_iter = opt.max_iterations;
+        } else {
+            const double prob_outlier = 1.0 - std::pow(state.inlier_ratio, 2);
+            state.dynamic_max_iter = std::ceil(state.log_prob_missing_model / std::log(prob_outlier) * opt.dyn_num_trials_mult);
+        }
+    }
+
+    return true;
+}
+
 std::vector<Quad_Pair_Evaluation_Metrics> MotionTracker::Solution_Constraints_Application(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Ransac_Options &opt, Ransac_State &state) 
 {
     //> get quads for pose estimation
     std::vector<Quad_for_Pose_Solution> quads_for_pose_solution = get_Quad_for_Pose_Solution(quads_by_kf);
 
     std::vector<std::pair<size_t, size_t>> indices;
+    // std::vector<Quad_for_Pose_Solution> last_quads_for_pose_solution = 
 
     double precision = 0.0;
     double recall = 0.0;
     size_t num_of_veridical_quads = 0;
-    size_t num_of_non_veridical_quads = 0;
 
     std::vector<std::pair<size_t, size_t>> last_surviving_pair_of_indices;
     std::vector<std::pair<size_t, size_t>> surviving_pair_of_indices;
     const size_t total_num_of_quad_pairs = opt.max_iterations;
 
-    size_t top_n_rank_ordered_list = static_cast<size_t>(TOP_N_RANK_ORDERED_LIST * quads_for_pose_solution.size());
+    size_t top_n_rank_ordered_list = static_cast<size_t>(opt.top_rank_ordered_percentage * quads_for_pose_solution.size());
 
     //> RANSAC main loop
     for (state.iterations = 0; state.iterations < opt.max_iterations; state.iterations++) {
@@ -185,10 +272,12 @@ std::vector<Quad_Pair_Evaluation_Metrics> MotionTracker::Solution_Constraints_Ap
             num_of_veridical_quads++;
         } 
     }
-    num_of_non_veridical_quads = opt.max_iterations - num_of_veridical_quads;
-
     precision = static_cast<double>(num_of_veridical_quads) / static_cast<double>(total_num_of_quad_pairs);
-    recall = precision;
+    recall = 1.0;
+    size_t initial_num_of_veridical_quads = num_of_veridical_quads;
+
+    //>
+    // evaluate_Pose_Accuracy(quads_by_kf, quads_for_pose_solution, opt, state);
 
     std::vector<Quad_Pair_Evaluation_Metrics> quad_pair_evaluation_metrics;
     quad_pair_evaluation_metrics.push_back({"Baseline", recall, precision, num_of_veridical_quads});
@@ -208,7 +297,7 @@ std::vector<Quad_Pair_Evaluation_Metrics> MotionTracker::Solution_Constraints_Ap
             num_of_surviving_quad_pairs++;
         }
     }
-    recall = static_cast<double>(num_of_veridical_quads) / static_cast<double>(total_num_of_quad_pairs);
+    recall = static_cast<double>(num_of_veridical_quads) / static_cast<double>(initial_num_of_veridical_quads);
     precision = (num_of_surviving_quad_pairs == 0) ? 0.0 : static_cast<double>(num_of_veridical_quads) / static_cast<double>(num_of_surviving_quad_pairs);
     quad_pair_evaluation_metrics.push_back({"Normalized Length Constraint", recall, precision, num_of_veridical_quads});
     last_surviving_pair_of_indices = std::move(surviving_pair_of_indices);
@@ -228,7 +317,7 @@ std::vector<Quad_Pair_Evaluation_Metrics> MotionTracker::Solution_Constraints_Ap
             num_of_surviving_quad_pairs++;
         }
     }
-    recall = static_cast<double>(num_of_veridical_quads) / static_cast<double>(total_num_of_quad_pairs);
+    recall = static_cast<double>(num_of_veridical_quads) / static_cast<double>(initial_num_of_veridical_quads);
     precision = (num_of_surviving_quad_pairs == 0) ? 0.0 : static_cast<double>(num_of_veridical_quads) / static_cast<double>(num_of_surviving_quad_pairs);
     quad_pair_evaluation_metrics.push_back({"T1 Angle Similarity Constraint", recall, precision, num_of_veridical_quads});
     last_surviving_pair_of_indices = std::move(surviving_pair_of_indices);
@@ -248,7 +337,7 @@ std::vector<Quad_Pair_Evaluation_Metrics> MotionTracker::Solution_Constraints_Ap
             num_of_surviving_quad_pairs++;
         }
     }
-    recall = static_cast<double>(num_of_veridical_quads) / static_cast<double>(total_num_of_quad_pairs);
+    recall = static_cast<double>(num_of_veridical_quads) / static_cast<double>(initial_num_of_veridical_quads);
     precision = (num_of_surviving_quad_pairs == 0) ? 0.0 : static_cast<double>(num_of_veridical_quads) / static_cast<double>(num_of_surviving_quad_pairs);
     quad_pair_evaluation_metrics.push_back({"T2 Angle Similarity Constraint", recall, precision, num_of_veridical_quads});
     last_surviving_pair_of_indices = std::move(surviving_pair_of_indices);
@@ -268,7 +357,7 @@ std::vector<Quad_Pair_Evaluation_Metrics> MotionTracker::Solution_Constraints_Ap
             num_of_surviving_quad_pairs++;
         }
     }
-    recall = static_cast<double>(num_of_veridical_quads) / static_cast<double>(total_num_of_quad_pairs);
+    recall = static_cast<double>(num_of_veridical_quads) / static_cast<double>(initial_num_of_veridical_quads);
     precision = (num_of_surviving_quad_pairs == 0) ? 0.0 : static_cast<double>(num_of_veridical_quads) / static_cast<double>(num_of_surviving_quad_pairs);
     quad_pair_evaluation_metrics.push_back({"Tangent Angle Similarity Constraint", recall, precision, num_of_veridical_quads});
 

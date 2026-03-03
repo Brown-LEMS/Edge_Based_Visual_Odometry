@@ -118,7 +118,9 @@ void Pipeline::get_Stereo_Edge_Correspondences()
 
     //> construct stereo edge correspondences for the current_frame
     Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_current_frame_idx);
-    all_stereo_matches_metrics.push_back(metrics);
+    //> Only accumulate evaluation metrics when GT is available
+    if (dataset_->has_gt())
+        all_stereo_matches_metrics.push_back(metrics);
 
     //> Finalize the stereo edge pairs for the current_frame
     stereo_matches_engine->finalize_stereo_edge_mates(current_frame_stereo_left_constructor, current_frame_stereo_edge_mates);
@@ -160,7 +162,9 @@ void Pipeline::get_Temporal_Edge_Correspondences()
         keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
         keyframe, current_frame,
         stereo_key_frame_idx, stereo_current_frame_idx);
-    all_temporal_matches_metrics.push_back(metrics);
+    //> Only accumulate temporal evaluation metrics when GT is available
+    if (dataset_->has_gt())
+        all_temporal_matches_metrics.push_back(metrics);
 
     //> write quads to a file
     // temporal_matches_engine->write_quads_to_file(temporal_quads_by_kf, stereo_key_frame_idx, stereo_current_frame_idx);
@@ -170,16 +174,12 @@ void Pipeline::get_Temporal_Edge_Correspondences()
     //     stereo_key_frame_idx,
     //     stereo_current_frame_idx);
 
-    // //> print the relative pose from KF to CF
-    // Camera_Pose KF_GT_pose = keyframe.gt_camera_pose;
-    // Camera_Pose CF_GT_pose = current_frame.gt_camera_pose;
-    // Camera_Pose rel_pose = utility_tool->get_Relative_Pose(KF_GT_pose, CF_GT_pose);
-    // rel_pose.print_Camera_Pose("Relative pose from KF to CF");
-
     //> Memory cleanup: free memory from keyframe structures that are no longer needed
     // Memory_clear();
 
-    Print_Temporal_Matches_Metrics_Statistics();
+    //> Print temporal metrics only when GT is available
+    if (dataset_->has_gt())
+        Print_Temporal_Matches_Metrics_Statistics();
 
     status_ = PipelineStatus::STATUS_GET_POSE_FROM_QUAD_PAIRS;
     send_control_to_main = false;
@@ -191,12 +191,28 @@ void Pipeline::get_Pose_From_Quad_Pairs()
     Ransac_State state;
     std::vector<std::vector<Quad_Pair_Evaluation_Metrics>> all_quad_pair_evaluation_metrics;
 
-    for (size_t i = 0; i < 20; ++i) {
-        std::vector<Quad_Pair_Evaluation_Metrics> quad_pair_evaluation_metrics;
-        quad_pair_evaluation_metrics = motion_tracker_engine->Solution_Constraints_Application(temporal_quads_by_kf, opt, state);
-        all_quad_pair_evaluation_metrics.push_back(quad_pair_evaluation_metrics);
+    // for (size_t i = 0; i < 20; ++i) {
+    //     std::vector<Quad_Pair_Evaluation_Metrics> quad_pair_evaluation_metrics;
+    //     quad_pair_evaluation_metrics = motion_tracker_engine->Solution_Constraints_Application(temporal_quads_by_kf, opt, state);
+    //     all_quad_pair_evaluation_metrics.push_back(quad_pair_evaluation_metrics);
+    // }
+    // motion_tracker_engine->Print_Quad_Pairs_Metrics_Statistics(all_quad_pair_evaluation_metrics);
+
+    if( motion_tracker_engine->estimate_Relative_Pose_From_Quad_Pairs(temporal_quads_by_kf, opt, state) )
+    {
+        Camera_Pose estimated_pose = state.best_pose_hypothesis;
+        std::cout << "Inlier ratio: " << state.inlier_ratio << std::endl;
+        estimated_pose.print_Camera_Pose("Estimated relative pose from quad pairs");
     }
-    motion_tracker_engine->Print_Quad_Pairs_Metrics_Statistics(all_quad_pair_evaluation_metrics);
+    else {
+        std::cout << "Failed to estimate relative pose from quad pairs" << std::endl;
+    }
+
+    //> print the relative pose from KF to CF
+    Camera_Pose KF_GT_pose = keyframe.gt_camera_pose;
+    Camera_Pose CF_GT_pose = current_frame.gt_camera_pose;
+    Camera_Pose rel_pose = utility_tool->get_Relative_Pose(KF_GT_pose, CF_GT_pose);
+    rel_pose.print_Camera_Pose("Relative pose from KF to CF");
 
     send_control_to_main = true;
 }
