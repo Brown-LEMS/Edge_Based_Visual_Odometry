@@ -40,13 +40,14 @@ public:
     typedef std::shared_ptr<Utility> Ptr;
 
     Utility();
+    Eigen::Matrix3d get_Skew_Symmetric_Matrix(Eigen::Vector3d t);
     double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y);
     double getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &epiline_x, double &epiline_y);
     double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection);
     double getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::VectorXd edges, int index, double &x_intersection, double &y_intersection);
 
     Eigen::Vector3d backproject_2D_point_to_3D_point_using_rays( const Eigen::Matrix3d rel_R, const Eigen::Vector3d rel_T, const Eigen::Vector3d ray1, const Eigen::Vector3d ray2 );
-    Eigen::Vector3d reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, Eigen::Vector3d tangent1, Eigen::Vector3d tangent2 );
+    Eigen::Vector3d reconstruct_3D_Tangent_through_intersection_of_planes( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, Eigen::Vector3d tangent1, Eigen::Vector3d tangent2 );
     Eigen::Vector3d project_3D_Tangent_to_2D_Tangent( const Eigen::Vector3d Tangent_3D, Eigen::Vector3d gamma );
 
     Camera_Pose get_Relative_Pose( const Camera_Pose &source_pose, const Camera_Pose &target_pose );

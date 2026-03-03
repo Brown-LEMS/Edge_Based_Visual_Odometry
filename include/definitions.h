@@ -49,7 +49,6 @@
 #define TAU_C3 (0.12)
 #define TAU_C4 (0.32)
 
-#define TOP_N_RANK_ORDERED_LIST (0.7)
 
 #define MEASURE_TIMINGS (false)
 

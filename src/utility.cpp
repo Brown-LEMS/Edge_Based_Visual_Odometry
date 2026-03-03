@@ -30,6 +30,18 @@ Eigen::Vector3d Utility::e1 = Eigen::Vector3d::UnitX();
 Eigen::Vector3d Utility::e2 = Eigen::Vector3d::UnitY();
 Eigen::Vector3d Utility::e3 = Eigen::Vector3d::UnitZ();
 
+Eigen::Matrix3d Utility::get_Skew_Symmetric_Matrix(Eigen::Vector3d t) 
+{
+    Eigen::Matrix3d t_x = Eigen::Matrix3d::Zero();
+    t_x(0,1) = -t(2);
+    t_x(0,2) = t(1);
+    t_x(1,0) = t(2);
+    t_x(1,2) = -t(0);
+    t_x(2,0) = -t(1);
+    t_x(2,1) = t(0);
+    return t_x;
+}
+
 //> Normal distance from an edge to the corresponding epipolar line
 double Utility::getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y)
 {
@@ -89,7 +101,7 @@ Eigen::Vector3d Utility::backproject_2D_point_to_3D_point_using_rays( const Eige
     return rho1 * ray1;
 }
 
-Eigen::Vector3d Utility::reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, Eigen::Vector3d tangent1, Eigen::Vector3d tangent2 )
+Eigen::Vector3d Utility::reconstruct_3D_Tangent_through_intersection_of_planes( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, Eigen::Vector3d tangent1, Eigen::Vector3d tangent2 )
 {
   // Eigen::Vector3d T_3D = -(gamma2.dot(t2.cross(rel_R * t1))) * gamma1 + (gamma2.dot(t2.cross(rel_R * gamma1))) * t1;
   Eigen::Vector3d n1 = tangent1.cross(gamma1);
