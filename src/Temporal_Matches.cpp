@@ -182,29 +182,37 @@ Frame_Evaluation_Metrics Temporal_Matches::get_Temporal_Edge_Pairs_from_Quads(
     std::cout << "Veridical quads: " << temporal_quads_by_kf.size() << " KF groups, " << num_quads << " total quads" << std::endl;
 
     apply_spatial_grid_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, left_spatial_grids, right_spatial_grids, 30.0);
-    frame_metrics.stages.push_back({"Location Proximity", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Location Proximity Filtering")});
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"Location Proximity", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Location Proximity Filtering")});
 
     apply_orientation_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 10.0);
-    frame_metrics.stages.push_back({"Orientation", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Orientation Filtering")});
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"Orientation", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Orientation Filtering")});
 
     apply_NCC_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 0.8,
         keyframe.left_image, keyframe.right_image, current_frame.left_image, current_frame.right_image);
-    frame_metrics.stages.push_back({"NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "NCC Filtering")});
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "NCC Filtering")});
 
     apply_SIFT_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 200.0);
-    frame_metrics.stages.push_back({"SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "SIFT Filtering")});
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "SIFT Filtering")});
 
     apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.8, "NCC");
-    frame_metrics.stages.push_back({"BNB-NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB NCC Filtering")});
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"BNB-NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB NCC Filtering")});
 
     apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.8, "SIFT");
-    frame_metrics.stages.push_back({"BNB-SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB SIFT Filtering")});
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"BNB-SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB SIFT Filtering")});
 
     apply_photometric_refinement_quads(temporal_quads_by_kf, CF_stereo_edge_mates, keyframe, current_frame);
-    frame_metrics.stages.push_back({"Photometric Refinement", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Photometric Refinement")});
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"Photometric Refinement", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Photometric Refinement")});
 
     apply_temporal_edge_clustering_quads(temporal_quads_by_kf, true);
-    frame_metrics.stages.push_back({"Edge Clustering", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Edge Clustering")});
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"Edge Clustering", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Edge Clustering")});
 
     return frame_metrics;
 }
@@ -1076,7 +1084,7 @@ void Temporal_Matches::write_quads_to_file(const std::vector<KF_Temporal_Edge_Qu
     for (size_t k = 0; k < quads_by_kf.size(); ++k)
     {
         const auto &kvq = quads_by_kf[k];
-        if (!kvq.KF_stereo_mate->b_is_TP)
+        if (dataset->has_gt() && !kvq.KF_stereo_mate->b_is_TP)
             continue;
 
         //> write KF stereo of the quad
@@ -1098,7 +1106,7 @@ void Temporal_Matches::write_quads_to_file(const std::vector<KF_Temporal_Edge_Qu
             file_input << k << " " << j << " "
             << cq.CF_left->center_edge.location.x << " " << cq.CF_left->center_edge.location.y << " " << cq.CF_left->center_edge.orientation << " "
             << cq.CF_right->center_edge.location.x << " " << cq.CF_right->center_edge.location.y << " " << cq.CF_right->center_edge.orientation << " "
-            << (kvq.b_is_TP[j] ? 1 : 0) << "\n";
+            << (dataset->has_gt() && kvq.b_is_TP[j] ? 1 : 0) << "\n";
         }
     }
 }

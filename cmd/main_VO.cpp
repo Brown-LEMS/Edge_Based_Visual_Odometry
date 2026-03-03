@@ -113,7 +113,7 @@ int main(int argc, char **argv)
 	}
 
 	// edge_vo_system->Print_Stereo_Matches_Metrics_Statistics();
-	edge_vo_system->Print_Temporal_Matches_Metrics_Statistics();
+	// edge_vo_system->Print_Temporal_Matches_Metrics_Statistics();
 
 	return 0;
 }

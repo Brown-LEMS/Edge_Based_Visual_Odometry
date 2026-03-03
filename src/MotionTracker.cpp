@@ -168,7 +168,6 @@ void MotionTracker::score_Pose_Hypothesis(const Camera_Pose &pose_hypothesis, co
         double reproj_error = cv::norm(proj_point_cv - cf_left->center_edge.location);
         if (reproj_error < opt.max_reprojection_location_error) {
             inlier_indices.push_back(i);
-
         }
     }
 }
@@ -207,6 +206,24 @@ bool MotionTracker::estimate_Relative_Pose_From_Quad_Pairs(const std::vector<KF_
         const auto &q1 = quads_for_pose_solution[idx1];
         const auto &q2 = quads_for_pose_solution[idx2];
 
+        //> Apply constraints progressively
+        if (!Apply_Normalized_Length_Constraint(q1, q2)) {
+            state.iterations = (state.iterations > 0) ? (state.iterations - 1) : 0;
+            continue;
+        }
+        if (!Apply_T1_Angle_Similarity_Constraint(q1, q2)) {
+            state.iterations = (state.iterations > 0) ? (state.iterations - 1) : 0;
+            continue;
+        }
+        if (!Apply_T2_Angle_Similarity_Constraint(q1, q2)) {
+            state.iterations = (state.iterations > 0) ? (state.iterations - 1) : 0;
+            continue;
+        }
+        if (!Apply_Tangent_Angle_Similarity_Constraint(q1, q2)) {
+            state.iterations = (state.iterations > 0) ? (state.iterations - 1) : 0;
+            continue;
+        }
+
         //> Pose hypothesis formation
         Camera_Pose pose_hypothesis = estimate_Pose_From_a_Quad_Pair(q1, q2);
 
@@ -219,8 +236,7 @@ bool MotionTracker::estimate_Relative_Pose_From_Quad_Pairs(const std::vector<KF_
             state.inlier_ratio = static_cast<double>(inlier_indices.size()) / static_cast<double>(quads_for_pose_solution.size());
         }
 
-        // update number of iterations
-        state.inlier_ratio = static_cast<double>(inlier_indices.size()) / static_cast<double>(quads_by_kf.size());
+        //> Update number of iterations
         if (state.inlier_ratio >= 0.95) {
             // this is to avoid log(prob_outlier) = -inf below
             state.dynamic_max_iter = opt.min_iterations;
