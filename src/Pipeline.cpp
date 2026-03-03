@@ -18,7 +18,7 @@ Pipeline::Pipeline(Dataset::Ptr dataset) : dataset_(dataset)
     stereo_matches_engine = std::make_shared<Stereo_Matches>();
     temporal_matches_engine = std::make_shared<Temporal_Matches>(dataset_);
     utility_tool = std::make_shared<Utility>();
-    Camera_Motion_Estimate = std::make_shared<MotionTracker>();
+    motion_tracker_engine = std::make_shared<MotionTracker>(dataset_);
 }
 
 void Pipeline::ProcessEdges(const cv::Mat &image, std::vector<Edge> &edges)
@@ -49,6 +49,11 @@ bool Pipeline::Add_Stereo_Frame()
             //> Get temporal edge correspondences (keyframe <-> current frame)
             LOG_STATUS("GET_TEMPORAL_EDGE_CORRESPONDENCES");
             get_Temporal_Edge_Correspondences();
+            break;
+        case PipelineStatus::STATUS_GET_POSE_FROM_QUAD_PAIRS:
+            //> Get pose from quad pairs
+            LOG_STATUS("GET_POSE_FROM_QUAD_PAIRS");
+            get_Pose_From_Quad_Pairs();
             break;
         }
     } while (!send_control_to_main);
@@ -113,6 +118,9 @@ void Pipeline::get_Stereo_Edge_Correspondences()
 
     //> construct stereo edge correspondences for the current_frame
     Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_current_frame_idx);
+    //> Only accumulate evaluation metrics when GT is available
+    if (dataset_->has_gt())
+        all_stereo_matches_metrics.push_back(metrics);
 
     //> Finalize the stereo edge pairs for the current_frame
     stereo_matches_engine->finalize_stereo_edge_mates(current_frame_stereo_left_constructor, current_frame_stereo_edge_mates);
@@ -134,6 +142,8 @@ void Pipeline::get_Stereo_Edge_Correspondences()
 
 void Pipeline::get_Temporal_Edge_Correspondences()
 {
+    temporal_quads_by_kf.clear();
+    temporal_quads_by_kf.shrink_to_fit();
 
     //> construct spatial grids for the current stereo edge mates
     temporal_matches_engine->add_edges_to_spatial_grid(current_frame_stereo_edge_mates, left_spatial_grids, right_spatial_grids);
@@ -141,11 +151,10 @@ void Pipeline::get_Temporal_Edge_Correspondences()
     //> `temporal_quads_by_kf` is a struct that stores quads from KF stereo edge pairs
     //> One KF stereo edge pair could pair up with multiple veridical CF stereo edge pairs.
     //> The structure `temporal_quads_by_kf` contains the veridical CF stereo edge pairs, and the matching CF stereo edge pairs
-    std::vector<KF_Temporal_Edge_Quads> temporal_quads_by_kf;
     temporal_matches_engine->build_Veridical_Quads(temporal_quads_by_kf, keyframe_stereo_edge_mates, current_frame_stereo_edge_mates, keyframe_stereo_left_constructor, current_frame_stereo_left_constructor, left_spatial_grids, right_spatial_grids);
 
     //> Quad-centric pipeline: build veridical quads, apply filters, optionally convert to temporal pairs for backward compatibility
-    temporal_matches_engine->get_Temporal_Edge_Pairs_from_Quads(
+    Frame_Evaluation_Metrics metrics = temporal_matches_engine->get_Temporal_Edge_Pairs_from_Quads(
         temporal_quads_by_kf,
         keyframe_stereo_edge_mates,
         current_frame_stereo_edge_mates,
@@ -153,19 +162,71 @@ void Pipeline::get_Temporal_Edge_Correspondences()
         keyframe_stereo_left_constructor, current_frame_stereo_left_constructor,
         keyframe, current_frame,
         stereo_key_frame_idx, stereo_current_frame_idx);
+    //> Only accumulate temporal evaluation metrics when GT is available
+    if (dataset_->has_gt())
+        all_temporal_matches_metrics.push_back(metrics);
 
     //> write quads to a file
-    temporal_matches_engine->write_quads_to_file(temporal_quads_by_kf, stereo_key_frame_idx, stereo_current_frame_idx);
+    // temporal_matches_engine->write_quads_to_file(temporal_quads_by_kf, stereo_key_frame_idx, stereo_current_frame_idx);
 
-    temporal_matches_engine->test_Constraints_from_Two_Oriented_Points(
-        temporal_quads_by_kf,
-        stereo_key_frame_idx,
-        stereo_current_frame_idx);
+    // temporal_matches_engine->test_Constraints_from_Two_Oriented_Points(
+    //     temporal_quads_by_kf,
+    //     stereo_key_frame_idx,
+    //     stereo_current_frame_idx);
 
     //> Memory cleanup: free memory from keyframe structures that are no longer needed
-    Memory_clear();
+    // Memory_clear();
+
+    //> Print temporal metrics only when GT is available
+    if (dataset_->has_gt())
+        Print_Temporal_Matches_Metrics_Statistics();
+
+    status_ = PipelineStatus::STATUS_GET_POSE_FROM_QUAD_PAIRS;
+    send_control_to_main = false;
+}
+
+void Pipeline::get_Pose_From_Quad_Pairs()
+{
+    Ransac_Options opt;
+    Ransac_State state;
+    std::vector<std::vector<Quad_Pair_Evaluation_Metrics>> all_quad_pair_evaluation_metrics;
+
+    // for (size_t i = 0; i < 20; ++i) {
+    //     std::vector<Quad_Pair_Evaluation_Metrics> quad_pair_evaluation_metrics;
+    //     quad_pair_evaluation_metrics = motion_tracker_engine->Solution_Constraints_Application(temporal_quads_by_kf, opt, state);
+    //     all_quad_pair_evaluation_metrics.push_back(quad_pair_evaluation_metrics);
+    // }
+    // motion_tracker_engine->Print_Quad_Pairs_Metrics_Statistics(all_quad_pair_evaluation_metrics);
+
+    if( motion_tracker_engine->estimate_Relative_Pose_From_Quad_Pairs(temporal_quads_by_kf, opt, state) )
+    {
+        Camera_Pose estimated_pose = state.best_pose_hypothesis;
+        std::cout << "Inlier ratio: " << state.inlier_ratio << std::endl;
+        estimated_pose.print_Camera_Pose("Estimated relative pose from quad pairs");
+    }
+    else {
+        std::cout << "Failed to estimate relative pose from quad pairs" << std::endl;
+    }
+
+    //> print the relative pose from KF to CF
+    Camera_Pose KF_GT_pose = keyframe.gt_camera_pose;
+    Camera_Pose CF_GT_pose = current_frame.gt_camera_pose;
+    Camera_Pose rel_pose = utility_tool->get_Relative_Pose(KF_GT_pose, CF_GT_pose);
+    rel_pose.print_Camera_Pose("Relative pose from KF to CF");
 
     send_control_to_main = true;
 }
+
+void Pipeline::Print_Stereo_Matches_Metrics_Statistics()
+{
+    stereo_matches_engine->Stereo_Matches_Metrics_Statistics(all_stereo_matches_metrics);
+}
+
+void Pipeline::Print_Temporal_Matches_Metrics_Statistics()
+{
+    temporal_matches_engine->Temporal_Matches_Metrics_Statistics(all_temporal_matches_metrics);
+}
+
+
 
 #endif

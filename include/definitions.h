@@ -44,16 +44,18 @@
 
 #define GRID_SIZE (15) //> Size of the spatial grid cells in pixels
 
-#define MEASURE_TIMINGS (false)
+#define TAU_C1 (0.13)
+#define TAU_C2 (0.12)
+#define TAU_C3 (0.12)
+#define TAU_C4 (0.32)
 
-//> Generic definitions
-#define RANSAC_NUM_OF_ITERATIONS (500)
-#define EPSILON (1e-12)
-#define REPROJ_ERROR_THRESH (2) //> in pixels
+
+#define MEASURE_TIMINGS (false)
 
 //> Verbose
 #define DATASET_LOAD_VERBOSE (false)
 #define STEREO_EDGE_MATCH_EVAL_VERBOSE (false)
+#define TEMPORAL_EDGE_MATCH_EVAL_VERBOSE (false)
 
 //> Output for visualization
 #define RECORD_FILTER_DISTRIBUTIONS (false)

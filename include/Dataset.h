@@ -15,7 +15,6 @@
 #include <opencv2/core/eigen.hpp>
 
 #include "definitions.h"
-#include "Frame.h"
 #include "utility.h"
 #include "./toed/cpu_toed.hpp"
 #include "Stereo_Iterator.h"
@@ -145,8 +144,6 @@ struct CameraInfo
     Camera right;
     Eigen::Matrix3d rot_frame2body_left; // From cam to body
     Eigen::Vector3d transl_frame2body_left;
-    double focal_length;
-    double baseline;
 };
 
 struct EdgeCluster
@@ -373,15 +370,6 @@ public:
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
 
-    // should we make it edge pairs?
-    std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> forward_gt_data;
-    std::vector<std::tuple<cv::Point2d, cv::Point2d, double>> reverse_gt_data;
-
-    std::vector<std::pair<double, double>> ncc_one_vs_err;
-    std::vector<std::pair<double, double>> ncc_two_vs_err;
-
-    std::vector<cv::Point2d> ground_truth_right_edges_after_lowe;
-
     // getters
     bool has_gt() { return file_info.has_gt; };
 
@@ -396,21 +384,13 @@ public:
     int get_height() { return img_height; };
     int get_width() { return img_width; };
 
-    double get_focal_length() { return camera_info.focal_length; };
-
-    double get_left_focal_length() { return camera_info.left.intrinsics[0]; };
-    double get_right_focal_length() { return camera_info.right.intrinsics[0]; };
-
     Eigen::Matrix3d get_left_calib_matrix() { return camera_info.left.K; }
     Eigen::Matrix3d get_right_calib_matrix() { return camera_info.right.K; }
     cv::Mat get_left_calib_matrix_cvMat() { cv::Mat K; cv::eigen2cv(get_left_calib_matrix(), K); return K; }
     cv::Mat get_right_calib_matrix_cvMat() { cv::Mat K; cv::eigen2cv(get_right_calib_matrix(), K); return K; }
     cv::Mat get_left_dist_coeff_mat() { return (cv::Mat_<double>(1, 4) << camera_info.left.distortion[0], camera_info.left.distortion[1], camera_info.left.distortion[2], camera_info.left.distortion[3]); }
     cv::Mat get_right_dist_coeff_mat() { return (cv::Mat_<double>(1, 4) << camera_info.right.distortion[0], camera_info.right.distortion[1], camera_info.right.distortion[2], camera_info.right.distortion[3]); }
-    double get_left_baseline() { return camera_info.left.T[0]; };
-    double get_right_baseline() { return camera_info.right.T[0]; };
 
-    double get_baseline() { return camera_info.baseline; };
     Eigen::Matrix3d get_relative_rot_left_to_right() { return camera_info.left.R; }
     Eigen::Vector3d get_relative_transl_left_to_right() { return camera_info.left.T; }
     Eigen::Matrix3d get_relative_rot_right_to_left() { return camera_info.right.R; }

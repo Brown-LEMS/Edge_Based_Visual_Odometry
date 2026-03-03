@@ -8,6 +8,7 @@ class Dataset;
 #include <opencv2/xfeatures2d.hpp>
 #include <random>
 #include <unordered_set>
+#include <vector>
 
 #include "definitions.h"
 #include "utility.h"
@@ -25,7 +26,7 @@ struct Stage_Metrics
 
 struct Frame_Evaluation_Metrics
 {
-    std::map<std::string, Stage_Metrics> stages;
+    std::vector<std::pair<std::string, Stage_Metrics>> stages;  // preserves pipeline order
 };
 
 class Stereo_Matches
@@ -41,7 +42,7 @@ public:
 
     //> filtering methods
     void apply_Epipolar_Line_Distance_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, Dataset::Ptr dataset, const std::vector<Edge> right_edges, const std::string &output_dir = "", bool is_left = true, size_t frame_idx = 0, int num_random_edges_for_distribution = 0);
-    void apply_Disparity_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir = "", size_t frame_idx = 0, bool is_left = true);
+    void apply_Disparity_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir = "", size_t frame_idx = 0);
     void apply_SIFT_filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double sift_dist_threshold, const std::string &output_dir = "", size_t frame_idx = 0, bool is_left = true);
     void apply_NCC_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir, size_t frame_idx, bool is_left = true);
     void apply_Best_Nearly_Best_Test(Stereo_Edge_Pairs &stereo_frame_edge_pairs, double lowe_ratio_threshold = LOWES_RATIO, const std::string &output_dir = "", size_t frame_idx = 0, bool is_NCC = true);
@@ -56,6 +57,15 @@ public:
         double &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           /* optional inputs */
         int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
 
+    //> Same as above but optimizes displacement along an arbitrary epipolar line (1D along (ex,ey)).
+    //> epipolar_direction: unit vector (ex,ey) - corresponding point is at left - alpha * (ex,ey). For rectified stereo use (1,0).
+    void min_Edge_Photometric_Residual_by_Gauss_Newton_along_EpipolarLine(
+        Edge left_edge, cv::Point2d epipolar_direction, double init_alpha,
+        const cv::Mat &left_image_undistorted, const cv::Mat &right_image_undistorted,
+        const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y,
+        cv::Point2d &refined_displacement, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log, /* outputs */
+        int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
+
     void finalize_stereo_edge_mates(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<final_stereo_edge_pair> &final_stereo_edge_pairs);
 
     //> utility functions
@@ -67,6 +77,8 @@ public:
     void get_Stereo_Edge_GT_Pairs(Dataset::Ptr dataset, const StereoFrame &stereo_frame, Stereo_Edge_Pairs &stereo_frame_edge_pairs, bool is_left);
     void record_Filter_Distribution(const std::string &filter_name, const std::vector<double> &filter_values, const std::vector<int> &is_veridical, const std::string &output_dir, size_t frame_idx = 0);
     void record_Ambiguity_Distribution(const std::string &stage_name, const Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir, size_t frame_idx);
+
+    void Stereo_Matches_Metrics_Statistics(const std::vector<Frame_Evaluation_Metrics> &all_stereo_matches_metrics);
 
 private:
     //> visualization methods

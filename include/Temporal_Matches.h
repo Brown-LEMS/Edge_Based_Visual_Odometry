@@ -2,8 +2,10 @@
 #define TEMPORAL_MATCHES_H
 
 #include "Dataset.h"
+#include "Stereo_Iterator.h"
 #include "utility.h"
 #include "Stereo_Matches.h"
+
 
 #include <yaml-cpp/yaml.h>
 #include <unordered_map>
@@ -27,16 +29,6 @@ struct KF_Temporal_Edge_Quads
     std::vector<bool> b_is_TP;
 };
 
-struct Quad_Prepared_for_Constraints_Check
-{
-    size_t KF_stereo_mate_index;
-    size_t candidate_quad_index;
-    Eigen::Vector3d Gamma;
-    Eigen::Vector3d Gamma_bar;
-    Eigen::Vector3d Tangent;
-    Eigen::Vector3d Tangent_bar;
-};
-
 class Temporal_Matches
 {
 public:
@@ -45,8 +37,8 @@ public:
     Temporal_Matches(Dataset::Ptr dataset);
 
     //> Quad-centric pipeline: build veridical quads and apply all filters in one flow.
-    //> Output: filtered_quads. Optionally populates left/right temporal_edge_mates for backward compatibility.
-    void get_Temporal_Edge_Pairs_from_Quads(
+    //> Returns Frame_Evaluation_Metrics with recall/precision/ambiguity per stage for statistics.
+    Frame_Evaluation_Metrics get_Temporal_Edge_Pairs_from_Quads(
         std::vector<KF_Temporal_Edge_Quads> &filtered_quads,
         const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
         const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
@@ -92,13 +84,12 @@ public:
     double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset);
 
     void finalize_temporal_quads(std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf);
-
-    void get_Gammas_and_Tangents_From_Quads(const KF_Temporal_Edge_Quads &kvq, const size_t candidate_idx, \
-        Eigen::Matrix3d inv_K, Eigen::Vector3d &Gamma, Eigen::Vector3d &Gamma_bar, Eigen::Vector3d &Tangent, Eigen::Vector3d &Tangent_bar);
     
     void test_Constraints_from_Two_Oriented_Points( \
         const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, \
         const size_t keyframe_idx, const size_t current_frame_idx);
+
+    void Temporal_Matches_Metrics_Statistics(const std::vector<Frame_Evaluation_Metrics> &all_temporal_matches_metrics);
 
     //> Write all quads to a CSV file (for debugging/analysis).
     void write_quads_to_file(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf,
@@ -108,7 +99,8 @@ public:
 private:
     //> Evaluate precision/recall/ambiguity on candidate quads (from left/right temporal mates).
     //> TP = candidate quads whose left and right cluster centers are near GT.
-    void Evaluate_Temporal_Edge_Pairs_on_Quads(
+    //> Returns Stage_Metrics for the given stage (recall, precision, precision_pair=precision, ambiguity).
+    Stage_Metrics Evaluate_Temporal_Edge_Pairs_on_Quads(
         std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
         const size_t keyframe_idx, const size_t current_frame_idx, const std::string &stage_name);
 

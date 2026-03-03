@@ -30,6 +30,18 @@ Eigen::Vector3d Utility::e1 = Eigen::Vector3d::UnitX();
 Eigen::Vector3d Utility::e2 = Eigen::Vector3d::UnitY();
 Eigen::Vector3d Utility::e3 = Eigen::Vector3d::UnitZ();
 
+Eigen::Matrix3d Utility::get_Skew_Symmetric_Matrix(Eigen::Vector3d t) 
+{
+    Eigen::Matrix3d t_x = Eigen::Matrix3d::Zero();
+    t_x(0,1) = -t(2);
+    t_x(0,2) = t(1);
+    t_x(1,0) = t(2);
+    t_x(1,2) = -t(0);
+    t_x(2,0) = -t(1);
+    t_x(2,1) = t(0);
+    return t_x;
+}
+
 //> Normal distance from an edge to the corresponding epipolar line
 double Utility::getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &epiline_x, double &epiline_y)
 {
@@ -89,14 +101,28 @@ Eigen::Vector3d Utility::backproject_2D_point_to_3D_point_using_rays( const Eige
     return rho1 * ray1;
 }
 
-Eigen::Vector3d Utility::reconstruct_3D_Tangent( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, double theta1, double theta2 )
+Eigen::Vector3d Utility::reconstruct_3D_Tangent_through_intersection_of_planes( const Eigen::Matrix3d rel_R, Eigen::Vector3d gamma1, Eigen::Vector3d gamma2, Eigen::Vector3d tangent1, Eigen::Vector3d tangent2 )
 {
-  Eigen::Vector3d t1(cos(theta1), sin(theta1), 0);
-  Eigen::Vector3d t2(cos(theta2), sin(theta2), 0);
-
-  Eigen::Vector3d T_3D = -(gamma2.dot(t2.cross(rel_R * t1))) * gamma1 + (gamma2.dot(t2.cross(rel_R * gamma1))) * t1;
+  // Eigen::Vector3d T_3D = -(gamma2.dot(t2.cross(rel_R * t1))) * gamma1 + (gamma2.dot(t2.cross(rel_R * gamma1))) * t1;
+  Eigen::Vector3d n1 = tangent1.cross(gamma1);
+  Eigen::Vector3d n2 = rel_R.transpose() * (tangent2.cross(gamma2));
+  Eigen::Vector3d T_3D = n1.cross(n2);
   T_3D.normalize();
   return T_3D;
+}
+
+Eigen::Vector3d Utility::project_3D_Tangent_to_2D_Tangent( const Eigen::Vector3d Tangent_3D, Eigen::Vector3d gamma )
+{
+  Eigen::Vector3d projected_tangent = Tangent_3D - Tangent_3D.z() * gamma;
+  projected_tangent.normalize();
+  return projected_tangent;
+}
+
+Camera_Pose Utility::get_Relative_Pose( const Camera_Pose &source_pose, const Camera_Pose &target_pose )
+{
+  Eigen::Matrix3d rel_R = target_pose.R * (source_pose.R).transpose();
+  Eigen::Vector3d rel_T = -rel_R * source_pose.t + target_pose.t;
+  return Camera_Pose(rel_R, rel_T);
 }
 
 std::pair<cv::Point2d, cv::Point2d> Utility::get_Orthogonal_Shifted_Points(const Edge edgel, double shift_magnitude)

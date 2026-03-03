@@ -101,42 +101,33 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         camera_info.right.K = calib_right;
 
         // Stereo right-from-left (R21, T21, F21)
-        if (stereo["R21"] && stereo["T21"] && stereo["F21"])
+        if (stereo["R21"] && stereo["T21"])
         {
             camera_info.left.R = load_matrix(stereo["R21"]);
             camera_info.left.T = Eigen::Map<const Eigen::Vector3d>(stereo["T21"].as<std::vector<double>>().data());
-            camera_info.left.F = load_matrix(stereo["F21"]);
-        }
-        else
-        {
-            LOG_ERROR("ERROR: Missing left-to-right stereo parameters R21/T21/F21");
-        }
 
-        // Stereo left-from-right (R12, T12, F12)
-        if (stereo["R12"] && stereo["T12"] && stereo["F12"])
-        {
-            camera_info.right.R = load_matrix(stereo["R12"]);
-            camera_info.right.T = Eigen::Map<const Eigen::Vector3d>(stereo["T12"].as<std::vector<double>>().data());
-            camera_info.right.F = load_matrix(stereo["F12"]);
+            //> compute the fundamental matrix on the fly
+            camera_info.left.F = camera_info.left.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.left.T) * camera_info.left.R) * camera_info.right.K.inverse();
+
+            camera_info.right.R = camera_info.left.R.transpose();
+            camera_info.right.T = -camera_info.left.R.transpose() * camera_info.left.T;
+
+            //> compute the fundamental matrix on the fly
+            camera_info.right.F = camera_info.right.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.right.T) * camera_info.right.R) * camera_info.left.K.inverse();
         }
         else
         {
-            LOG_ERROR("ERROR: Missing right-to-left stereo parameters R12/T12/F12");
+            LOG_ERROR("ERROR: Missing left-to-right stereo parameters R21/T21");
         }
 
         // ETH3D stereo focal length and baseline
-        if (file_info.dataset_type == "ETH3D")
+        if (file_info.dataset_type == "ETH3D_stereo")
         {
             file_info.has_gt = true;
-            if (stereo["focal_length"] && stereo["baseline"])
-            {
-                camera_info.focal_length = stereo["focal_length"].as<double>();
-                camera_info.baseline = stereo["baseline"].as<double>();
-            }
-            else
-            {
-                LOG_ERROR("ERROR: Missing stereo parameters (focal_length, baseline) in YAML file!");
-            }
+        }
+        else if (file_info.dataset_type == "ETH3D_slam")
+        {
+            file_info.has_gt = false;
         }
 
         // EuRoc
@@ -183,13 +174,18 @@ void Dataset::load_dataset(const std::string &dataset_type,
             cam1_path,
             gt_path);
     }
-    else if (dataset_type == "ETH3D")
+    else if (dataset_type == "ETH3D_stereo")
     {
         std::string stereo_pairs_path = file_info.dataset_path + "/" + file_info.sequence_name + "/stereo_pairs";
         stereo_iterator = Iterators::createETH3DIterator(stereo_pairs_path);
         LoadETH3DDisparityMaps(stereo_pairs_path, left_ref_disparity_maps, right_ref_disparity_maps);
         left_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, true);
         right_occlusion_masks = LoadETH3DOcclusionMasks(stereo_pairs_path, false);
+    }
+    else if (dataset_type == "ETH3D_slam")
+    {
+        std::string dataset_path = file_info.dataset_path + "/" + file_info.sequence_name;
+        stereo_iterator = Iterators::createETH3DSLAMIterator(dataset_path);
     }
 }
 
@@ -665,25 +661,6 @@ void Dataset::PrintDatasetInfo()
     std::cout << "\nTranslation Vector: \n";
     std::cout << camera_info.left.T << std::endl;
     std::cout << std::endl;
-
-    std::cout << "\nFundamental Matrix: \n";
-    std::cout << camera_info.left.F << std::endl;
-
-    std::cout << "\nStereo Extrinsic Parameters (Right to Left): \n";
-
-    std::cout << "\nRotation Matrix: \n";
-    std::cout << camera_info.right.R << std::endl;
-
-    std::cout << "\nTranslation Vector: \n";
-    std::cout << camera_info.right.T << std::endl;
-
-    std::cout << "\nFundamental Matrix: \n";
-    std::cout << camera_info.right.F << std::endl;
-
-    std::cout << "\nStereo Camera Parameters: \n";
-    std::cout << "Focal Length: " << camera_info.focal_length << " pixels" << std::endl;
-    std::cout << "Baseline: " << camera_info.baseline << " meters" << std::endl
-              << std::endl;
 }
 
 #endif

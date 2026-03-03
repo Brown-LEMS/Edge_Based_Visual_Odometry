@@ -177,8 +177,8 @@ bool ETH3DIterator::readETH3DGroundTruth(const std::string &images_file, StereoF
                 double tz = std::stod(tokens[7]);
 
                 Eigen::Quaterniond q(qw, qx, qy, qz);
-                frame.gt_rotation = q.toRotationMatrix();
-                frame.gt_translation = Eigen::Vector3d(tx, ty, tz);
+                Camera_Pose gt_camera_pose(q, Eigen::Vector3d(tx, ty, tz));
+                frame.gt_camera_pose = gt_camera_pose;
 
                 found_im0 = true;
                 break;
@@ -353,11 +353,16 @@ bool ETH3DSLAMIterator::getNext(StereoFrame &frame)
     frame.timestamp = timestamp;
 
     // Load ground truth if available
-    if (!findClosestGTPose(timestamp, frame.gt_rotation, frame.gt_translation))
+    Eigen::Matrix3d R;
+    Eigen::Vector3d T;
+    if (!findClosestGTPose(timestamp, R, T))
     {
         // If no ground truth, set to identity
-        frame.gt_rotation = Eigen::Matrix3d::Identity();
-        frame.gt_translation = Eigen::Vector3d::Zero();
+        frame.gt_camera_pose = Camera_Pose();
+    }
+    else
+    {
+        frame.gt_camera_pose = Camera_Pose(R, T);
     }
 
     return true;
@@ -540,8 +545,8 @@ bool AlignedStereoIterator::getNext(StereoFrame &frame)
     Eigen::Vector3d T;
     if (gt_aligner->getAlignedGT(frame.timestamp, R, T))
     {
-        frame.gt_rotation = R;
-        frame.gt_translation = T;
+        Camera_Pose gt_camera_pose(R, T);
+        frame.gt_camera_pose = gt_camera_pose;
     }
 
     return true;

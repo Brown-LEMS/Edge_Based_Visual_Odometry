@@ -86,32 +86,32 @@ inline void write_Evaluated_Matching_Edge_Clusters_Data_to_file(Dataset &dataset
 //     edges_in_3D_file.close();
 // }
 
-inline void write_left_edge_pairs_and_3D_edges_to_file(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, int frame_idx)
-{
-    std::string output_dir = dataset.get_output_path();
-    std::string edge_pairs_and_3D_edges_filename = output_dir + "/edge_pairs_and_3D_edges_frame_" + std::to_string(frame_idx) + ".txt";
-    std::ofstream edge_pairs_and_3D_edges_file(edge_pairs_and_3D_edges_filename);
-    for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
-    {
-        Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
-        Eigen::Vector3d e_location_eigen(left_edge.location.x, left_edge.location.y, 1.0);
-        Eigen::Vector3d gamma_1 = dataset.get_left_calib_matrix().inverse() * e_location_eigen;
-        if (stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size() > 0)
-        {
-            for (int j = 0; j < stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size(); j++)
-            {
-                Edge matching_cluster_edge = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j].center_edge;
-                double disparity = left_edge.location.x - matching_cluster_edge.location.x;
+// inline void write_left_edge_pairs_and_3D_edges_to_file(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, int frame_idx)
+// {
+//     std::string output_dir = dataset.get_output_path();
+//     std::string edge_pairs_and_3D_edges_filename = output_dir + "/edge_pairs_and_3D_edges_frame_" + std::to_string(frame_idx) + ".txt";
+//     std::ofstream edge_pairs_and_3D_edges_file(edge_pairs_and_3D_edges_filename);
+//     for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
+//     {
+//         Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
+//         Eigen::Vector3d e_location_eigen(left_edge.location.x, left_edge.location.y, 1.0);
+//         Eigen::Vector3d gamma_1 = dataset.get_left_calib_matrix().inverse() * e_location_eigen;
+//         if (stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size() > 0)
+//         {
+//             for (int j = 0; j < stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size(); j++)
+//             {
+//                 Edge matching_cluster_edge = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j].center_edge;
+//                 double disparity = left_edge.location.x - matching_cluster_edge.location.x;
 
-                double rho = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
-                double rho_1 = (rho < 0.0) ? (-rho) : (rho);
-                Eigen::Vector3d Gamma_1 = rho_1 * gamma_1;
-                edge_pairs_and_3D_edges_file << Gamma_1.x() << " " << Gamma_1.y() << " " << Gamma_1.z() << std::endl;
-            }
-        }
-    }
-    edge_pairs_and_3D_edges_file.close();
-}
+//                 double rho = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
+//                 double rho_1 = (rho < 0.0) ? (-rho) : (rho);
+//                 Eigen::Vector3d Gamma_1 = rho_1 * gamma_1;
+//                 edge_pairs_and_3D_edges_file << Gamma_1.x() << " " << Gamma_1.y() << " " << Gamma_1.z() << std::endl;
+//             }
+//         }
+//     }
+//     edge_pairs_and_3D_edges_file.close();
+// }
 
 //> Write false negative edge clusters to file
 inline void write_False_Negative_Edge_Clusters_to_file(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, Evaluation_Statistics &evaluation_statistics, int frame_idx)
