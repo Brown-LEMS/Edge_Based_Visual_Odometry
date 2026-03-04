@@ -40,7 +40,7 @@
 #define SIFT_THRESHOLD (500.0)
 //> precision-recall experiments
 #define DIST_TO_GT_THRESH (1.0) //> in pixels
-
+#define DIST_TO_GT_THRESH_TEMP (1.5)
 #define GRID_SIZE (15) //> Size of the spatial grid cells in pixels
 
 #define MEASURE_TIMINGS (false)

@@ -66,6 +66,15 @@ struct SpatialGrid
         }
     }
 
+    void clear()
+    {
+        for (auto &cell : grid)
+        {
+            cell.clear();
+            cell.shrink_to_fit();
+        }
+    }
+
     std::vector<int> getCandidatesWithinRadius(Edge Edge, double radius)
     {
         std::vector<int> candidates;
@@ -212,15 +221,43 @@ struct Stereo_Edge_Pairs
     void clean_up_vector_data_structures()
     {
         focused_edge_indices.clear();
+        focused_edge_indices.shrink_to_fit();
         candidate_edge_indices.clear();
+        candidate_edge_indices.shrink_to_fit();
         GT_locations_from_left_edges.clear();
+        GT_locations_from_left_edges.shrink_to_fit();
         veridical_right_edges_indices.clear();
+        veridical_right_edges_indices.shrink_to_fit();
         Gamma_in_left_cam_coord.clear();
+        Gamma_in_left_cam_coord.shrink_to_fit();
+        Gamma_in_right_cam_coord.clear();
+        Gamma_in_right_cam_coord.shrink_to_fit();
         left_edge_descriptors.clear();
+        left_edge_descriptors.shrink_to_fit();
         grid_indices.clear();
+        grid_indices.shrink_to_fit();
         epip_line_coeffs_of_left_edges.clear();
+        epip_line_coeffs_of_left_edges.shrink_to_fit();
         left_edge_patches.clear();
+        left_edge_patches.shrink_to_fit();
+
+        //> Clear matching clusters thoroughly
+        for (auto &cluster_list : matching_edge_clusters)
+        {
+            cluster_list.edge_clusters.clear();
+            cluster_list.edge_clusters.shrink_to_fit();
+            cluster_list.refine_final_scores.clear();
+            cluster_list.refine_final_scores.shrink_to_fit();
+            cluster_list.refine_confidences.clear();
+            cluster_list.refine_confidences.shrink_to_fit();
+            cluster_list.refine_validities.clear();
+            cluster_list.refine_validities.shrink_to_fit();
+        }
         matching_edge_clusters.clear();
+        matching_edge_clusters.shrink_to_fit();
+
+        toed_left_id_to_Stereo_Edge_Pairs_left_id_map.clear();
+        final_candidate_set.clear();
     }
 
     void construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map()

@@ -63,6 +63,9 @@ function plot_edge_count_distribution(filename)
     
     fclose(fid);
     
+    % Combine left and right edges into one distribution
+    all_edge_counts = [left_edge_counts; right_edge_counts];
+    
     fprintf('\n=== Parsing Summary ===\n');
     fprintf('Total lines read: %d\n', line_count);
     fprintf('Left edge lines parsed: %d\n', left_line_count);
@@ -72,6 +75,8 @@ function plot_edge_count_distribution(filename)
         length(left_edge_counts), mean(left_edge_counts), min(left_edge_counts), max(left_edge_counts));
     fprintf('Right edges: n=%d, mean=%.1f, range=[%d, %d]\n', ...
         length(right_edge_counts), mean(right_edge_counts), min(right_edge_counts), max(right_edge_counts));
+    fprintf('All edges: n=%d, mean=%.1f, range=[%d, %d]\n', ...
+        length(all_edge_counts), mean(all_edge_counts), min(all_edge_counts), max(all_edge_counts));
     fprintf('Stereo edges: n=%d, mean=%.1f, range=[%d, %d]\n', ...
         length(stereo_left_edge_counts), mean(stereo_left_edge_counts), ...
         min(stereo_left_edge_counts), max(stereo_left_edge_counts));
@@ -83,9 +88,7 @@ function plot_edge_count_distribution(filename)
     end
     
     % Plot each edge type with PDF and CDF
-    plot_edge_type_distribution(left_edge_counts, 'Left Edges', [0.2, 0.4, 0.8], output_dir, 'left_edges');
-    plot_edge_type_distribution(right_edge_counts, 'Right Edges', [0.8, 0.2, 0.2], output_dir, 'right_edges');
-    plot_edge_type_distribution(stereo_left_edge_counts, 'Stereo Correspondence', [0.2, 0.7, 0.3], output_dir, 'stereo_correspondence');
+    plot_edge_type_distribution(stereo_left_edge_counts, 'Stereo Correspondence', [0.3, 0.5, 0.8], output_dir, 'stereo_edges');
 end
 
 function plot_edge_type_distribution(edge_counts, edge_type, color, output_dir, filename_base)
@@ -123,7 +126,7 @@ function plot_edge_type_distribution(edge_counts, edge_type, color, output_dir, 
         'LineWidth', 4, 'DisplayName', 'Median');
     
     % Styling
-    xlabel(ax_main, 'Number of Edges', 'FontSize', 32, 'FontWeight', 'bold');
+    xlabel(ax_main, 'Number of Stereo Correspondences', 'FontSize', 32, 'FontWeight', 'bold');
     ylabel(ax_main, 'Probability Density', 'FontSize', 32, 'FontWeight', 'bold');
     title(ax_main, sprintf('PDF - %s', edge_type), 'FontSize', 36, 'FontWeight', 'bold');
     
@@ -189,7 +192,7 @@ function plot_edge_type_distribution(edge_counts, edge_type, color, output_dir, 
     end
     
     % Styling
-    xlabel(ax_cdf, 'Number of Edges', 'FontSize', 36, 'FontWeight', 'bold');
+    xlabel(ax_cdf, 'Number of Stereo Correspondences', 'FontSize', 36, 'FontWeight', 'bold');
     ylabel(ax_cdf, 'Cumulative Percentage (%)', 'FontSize', 36, 'FontWeight', 'bold');
     title(ax_cdf, sprintf('CDF - %s', edge_type), 'FontSize', 38, 'FontWeight', 'bold');
     

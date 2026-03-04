@@ -84,9 +84,17 @@ public:
     //> Evaluations
     void Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_pair> &temporal_edge_mates,
                                              size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates);
+    void Evaluate_Temporal_Edge_Pairs_on_Quads(const std::vector<temporal_edge_pair> &left_edge_mates, const std::vector<temporal_edge_pair> &right_edge_mates,
+                                               size_t frame_idx);
+    //> Recording distributions
+    void record_Temporal_Ambiguity_Distribution(const std::string &stage_name,
+                                                const std::vector<temporal_edge_pair> &temporal_edge_mates,
+                                                const std::string &output_dir,
+                                                size_t frame_idx,
+                                                bool b_is_left);
 
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
-
+    void cleaning_temporal_edge_mates(std::vector<temporal_edge_pair> &temporal_edge_mates);
     double orientation_mapping(const Edge &e_left, const Edge &e_right, const Eigen::Vector3d projected_point, bool is_left_cam, const StereoFrame &last_keyframe, const StereoFrame &current_frame, Dataset &dataset);
 
 private:

@@ -47,13 +47,29 @@ function plot_distribution(filter_name, frame_idx, output_dir)
     is_ncc_filter = contains(filter_name, 'ncc');
     if is_ncc_filter
         filter_values = 1 - filter_values;
-        filter_display_name = 'NCC Dissimilarity (1 - NCC)';
+        if contains(filter_name, 'temporal')
+            side = regexp(filter_name, '(left|right)', 'match', 'once');
+            filter_display_name = sprintf('Temporal 1-NCC (%s)', upper(side));
+        else
+            filter_display_name = '1 - NCC';
+        end
     elseif strcmp(filter_name, 'location')
-        filter_display_name = 'Location Proximity';
+        filter_display_name = 'Disparity';
+    elseif contains(filter_name, 'temporal_location_error')
+        side = regexp(filter_name, '(left|right)', 'match', 'once');
+        filter_display_name = sprintf('Disparity (%s)', upper(side));
     elseif strcmp(filter_name, 'sift')
         filter_display_name = 'SIFT';
+    elseif contains(filter_name, 'temporal_sift_distance')
+        side = regexp(filter_name, '(left|right)', 'match', 'once');
+        filter_display_name = sprintf('Temporal SIFT (%s)', upper(side));
     elseif strcmp(filter_name, 'epipolar')
         filter_display_name = 'Epipolar Proximity';
+    elseif contains(filter_name, 'temporal_orientation_difference')
+        side = regexp(filter_name, '(left|right)', 'match', 'once');
+        filter_display_name = sprintf('Temporal Orientation Difference (degrees) (%s)', upper(side));
+    elseif strcmp(filter_name, 'orientation')
+        filter_display_name = 'Orientation Difference (degrees)';
     else
         filter_display_name = strrep(filter_name, '_', ' ');
     end
@@ -66,9 +82,48 @@ function plot_distribution(filter_name, frame_idx, output_dir)
     fprintf('  GT samples: %d\n', length(data_gt));
     fprintf('  Non-GT samples: %d\n', length(data_non_gt));
     
+    % Define threshold values for temporal and stereo filters
+    threshold_value = [];
+    threshold_label = '';
+    % Temporal filters
+    if contains(filter_name, 'temporal_location_error')
+        threshold_value = 30;
+        threshold_label = 'Threshold = 30 px';
+    elseif contains(filter_name, 'temporal_orientation_difference')
+        threshold_value = 10;
+        threshold_label = 'Threshold = 10°';
+    elseif contains(filter_name, 'temporal_ncc')
+        threshold_value = 0.2;  % 1 - 0.8 = 0.2 (dissimilarity)
+        threshold_label = 'Threshold = 0.2';
+    elseif contains(filter_name, 'temporal_sift_distance')
+        threshold_value = 200;
+        threshold_label = 'Threshold = 200';
+    % Stereo filters
+    elseif strcmp(filter_name, 'epipolar')
+        threshold_value = 0.5;
+        threshold_label = 'Threshold = 0.5 px';
+    elseif strcmp(filter_name, 'location')
+        threshold_value = 25;
+        threshold_label = 'Threshold = 25 px';
+    elseif strcmp(filter_name, 'orientation')
+        threshold_value = 10.0;
+        threshold_label = 'Threshold = 10°';
+    elseif strcmp(filter_name, 'sift')
+        threshold_value = 500;
+        threshold_label = 'Threshold = 500';
+    elseif strcmp(filter_name, 'ncc')
+        threshold_value = 0.4;  % 1 - 0.6 = 0.4 (dissimilarity)
+        threshold_label = 'Threshold = 0.4';
+    end
+    
     % Check which filter for zoomed inset
     is_epipolar = strcmp(filter_name, 'epipolar');
     is_location = strcmp(filter_name, 'location');
+    is_temporal_location = contains(filter_name, 'temporal_location_error');
+    is_sift = strcmp(filter_name, 'sift');
+    is_temporal_sift = contains(filter_name, 'temporal_sift_distance');
+    is_orientation = strcmp(filter_name, 'orientation');
+    is_temporal_orientation = contains(filter_name, 'temporal_orientation_difference');
     
     %% --- PLOT 1: PDF ---
     fig_pdf = figure('Position', [100, 100, 1200, 900]);
@@ -88,11 +143,36 @@ function plot_distribution(filter_name, frame_idx, output_dir)
         'FaceColor', [0.2, 0.6, 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.6, ...
         'DisplayName', 'Veridical');
     
+    % Add threshold vertical line if defined
+    if ~isempty(threshold_value)
+        yl = ylim(ax_main);
+        plot(ax_main, [threshold_value, threshold_value], yl, 'g--', 'LineWidth', 4, ...
+            'HandleVisibility', 'off');
+        xl = xlim(ax_main);
+        x_offset = (xl(2) - xl(1)) * 0.02;
+        % Special positioning for NCC - higher up at 85%
+        if is_ncc_filter
+            text(ax_main, threshold_value + x_offset, yl(2)*0.85, threshold_label, ...
+                'FontSize', 20, 'FontWeight', 'bold', 'HorizontalAlignment', 'left', ...
+                'VerticalAlignment', 'middle', ...
+                'BackgroundColor', [1 1 1 0.7], 'EdgeColor', 'k', 'LineWidth', 1.5);
+        % Special positioning for SIFT - to the right at middle height
+        elseif is_temporal_sift || is_sift
+            text(ax_main, threshold_value + x_offset, yl(2)*0.5, threshold_label, ...
+                'FontSize', 20, 'FontWeight', 'bold', 'HorizontalAlignment', 'left', ...
+                'VerticalAlignment', 'middle', ...
+                'BackgroundColor', [1 1 1 0.7], 'EdgeColor', 'k', 'LineWidth', 1.5);
+        else
+            % Default positioning - centered at top
+            text(ax_main, threshold_value, yl(2)*0.9, threshold_label, ...
+                'FontSize', 20, 'FontWeight', 'bold', 'HorizontalAlignment', 'center', ...
+                'BackgroundColor', [1 1 1 0.7], 'EdgeColor', 'k', 'LineWidth', 1.5);
+        end
+    end
+    
     % Styling
     xlabel(ax_main, filter_display_name, 'FontSize', 32, 'FontWeight', 'bold');
     ylabel(ax_main, 'Probability Density', 'FontSize', 32, 'FontWeight', 'bold');
-    title(ax_main, sprintf('PDF - %s ', filter_display_name), ...
-        'FontSize', 36, 'FontWeight', 'bold');
     
     % Legend
     leg = legend(ax_main, 'Location', 'northeast', 'FontSize', 28);
@@ -136,11 +216,24 @@ function plot_distribution(filter_name, frame_idx, output_dir)
         zoom_min = 0; 
         zoom_max = 2;
         zoom_title = 'Zoomed: EP 0-2 pixels';
-    elseif is_location
+    elseif is_location || is_temporal_location
         plot_inset = true;
         zoom_min = 0; 
-        zoom_max = 20;
-        zoom_title = 'Zoomed: LP 0-20 pixels';
+        zoom_max = 30;
+        if is_temporal_location
+            zoom_title = 'Zoomed: Temporal LD 0-30 pixels';
+        else
+            zoom_title = 'Zoomed: LP 0-20 pixels';
+        end
+    elseif is_orientation || is_temporal_orientation
+        plot_inset = true;
+        zoom_min = 0; 
+        zoom_max = 40;
+        if is_temporal_orientation
+            zoom_title = 'Zoomed: Temporal OD 0-40 degrees';
+        else
+            zoom_title = 'Zoomed: OD 0-40 degrees';
+        end
     end
     
     if plot_inset
@@ -158,6 +251,12 @@ function plot_distribution(filter_name, frame_idx, output_dir)
             'FaceColor', [0.8, 0.2, 0.2], 'EdgeColor', 'none', 'FaceAlpha', 0.6);
         histogram(ax_inset, data_gt_zoom, bin_edges_zoom, 'Normalization', 'pdf', ...
             'FaceColor', [0.2, 0.6, 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.6);
+        
+        % Add threshold line to inset if it falls within zoom range
+        if ~isempty(threshold_value) && threshold_value >= zoom_min && threshold_value <= zoom_max
+            yl_inset = ylim(ax_inset);
+            plot(ax_inset, [threshold_value, threshold_value], yl_inset, 'g--', 'LineWidth', 3);
+        end
         
         % Styling
         xlabel(ax_inset, filter_display_name, 'FontSize', 22, 'FontWeight', 'bold');
@@ -206,13 +305,38 @@ function plot_distribution(filter_name, frame_idx, output_dir)
     plot(ax_cdf, x_non_gt, f_non_gt*100, 'LineWidth', 7, 'Color', [0.8, 0.2, 0.2], 'DisplayName', 'Non-veridical');
     plot(ax_cdf, x_gt, f_gt*100, 'LineWidth', 7, 'Color', [0.2, 0.6, 0.8], 'DisplayName', 'Veridical');
     
+    % Add threshold vertical line if defined
+    if ~isempty(threshold_value)
+        plot(ax_cdf, [threshold_value, threshold_value], [0, 100], 'g--', 'LineWidth', 4, ...
+            'HandleVisibility', 'off');
+        xl_cdf_range = xlim(ax_cdf);
+        x_offset = (xl_cdf_range(2) - xl_cdf_range(1)) * 0.02;
+        % Special positioning for SIFT - lower at 25% (below legend)
+        if is_sift || is_temporal_sift
+            text(ax_cdf, threshold_value + x_offset, 25, threshold_label, ...
+                'FontSize', 22, 'FontWeight', 'bold', 'HorizontalAlignment', 'left', ...
+                'VerticalAlignment', 'middle', ...
+                'BackgroundColor', [1 1 1 0.8], 'EdgeColor', 'k', 'LineWidth', 1.5);
+        % Special positioning for location, NCC, orientation, epipolar - to the right at 70%
+        elseif is_temporal_location || is_ncc_filter || is_temporal_orientation || is_orientation || is_epipolar || is_location
+            text(ax_cdf, threshold_value + x_offset, 70, threshold_label, ...
+                'FontSize', 22, 'FontWeight', 'bold', 'HorizontalAlignment', 'left', ...
+                'VerticalAlignment', 'middle', ...
+                'BackgroundColor', [1 1 1 0.8], 'EdgeColor', 'k', 'LineWidth', 1.5);
+        else
+            % Default positioning for other filters - centered at top
+            text(ax_cdf, threshold_value, 105, threshold_label, ...
+                'FontSize', 22, 'FontWeight', 'bold', 'HorizontalAlignment', 'center', ...
+                'BackgroundColor', [1 1 1 0.8], 'EdgeColor', 'k', 'LineWidth', 1.5);
+        end
+    end
+    
     percentiles = [50, 90, 95, 99];
     p_gt = prctile(data_gt, percentiles);
     p_non_gt = prctile(data_non_gt, percentiles);
     
     xlabel(ax_cdf, filter_display_name, 'FontSize', 36, 'FontWeight', 'bold');
     ylabel(ax_cdf, 'Cumulative Percentage (%)', 'FontSize', 36, 'FontWeight', 'bold');
-    title(ax_cdf, sprintf('CDF - %s', filter_display_name), 'FontSize', 38, 'FontWeight', 'bold');
     
     grid(ax_cdf, 'on');
     set(ax_cdf, 'FontSize', 32, 'LineWidth', 3);
