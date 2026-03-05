@@ -6,3 +6,4 @@ build/
 outputs
 outputs_original
 output_files
+*.txt

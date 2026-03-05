@@ -329,18 +329,8 @@ struct Stereo_Edge_Pairs
 struct final_stereo_edge_pair
 {
     Edge left_edge;
-    Edge right_edge;
-
     std::pair<cv::Mat, cv::Mat> left_edge_patches;
-    std::pair<cv::Mat, cv::Mat> right_edge_patches;
-
     std::pair<cv::Mat, cv::Mat> left_edge_descriptors;
-    std::pair<cv::Mat, cv::Mat> right_edge_descriptors;
-
-    Eigen::Vector3d Gamma_in_left_cam_coord;
-    Eigen::Vector3d Gamma_in_right_cam_coord;
-
-    bool b_is_TP;
 };
 
 struct scores

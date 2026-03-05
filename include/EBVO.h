@@ -38,21 +38,24 @@ public:
     void ProcessEdges(const cv::Mat &image,
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
-    void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids);
+    void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids);
+    void Construct_final_stereo_edge_pairs(const StereoFrame &frame, std::vector<final_stereo_edge_pair> &stereo_edge_mates);
+
+    void construct_temporal_edge_pairs(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &key_mate, const std::vector<final_stereo_edge_pair> &cur_mate);
 
     //> filtering methods
-    void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
+    void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, SpatialGrid &spatial_grid, double grid_radius = 1.0);
     void apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                      const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
-                                     double orientation_threshold, bool b_is_left);
+                                     double orientation_threshold);
 
     void apply_SIFT_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                               const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
-                              double sift_dist_threshold, bool b_is_left);
+                              double sift_dist_threshold);
     void apply_NCC_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
                              const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                              double ncc_val_threshold,
-                             const cv::Mat &keyframe_image, const cv::Mat &current_image, bool b_is_left);
+                             const cv::Mat &keyframe_image, const cv::Mat &current_image);
     void apply_best_nearly_best_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, double threshold, const std::string scoring_type);
 
     void apply_mate_consistency_filtering(std::vector<temporal_edge_pair> &left_temporal_edge_mates,
@@ -62,8 +65,7 @@ public:
                                  const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates);
     void apply_photometric_refinement(std::vector<temporal_edge_pair> &temporal_edge_mates,
                                       const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
-                                      const StereoFrame &keyframe, const StereoFrame &current_frame,
-                                      bool b_is_left);
+                                      const StereoFrame &keyframe, const StereoFrame &current_frame);
 
     void apply_temporal_edge_clustering(std::vector<temporal_edge_pair> &temporal_edge_mates, bool b_cluster_by_orientation = true);
 
@@ -80,7 +82,7 @@ public:
                                                    const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
                                                    const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                                    Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
-                                                   SpatialGrid &spatial_grid, bool b_is_left, double gt_dist_threshold = 1.0);
+                                                   SpatialGrid &spatial_grid, double gt_dist_threshold = 1.0);
     //> Evaluations
     void Evaluate_KF_CF_Edge_Correspondences(const std::vector<temporal_edge_pair> &temporal_edge_mates,
                                              size_t frame_idx, const std::string &stage_name, const std::string which_side_of_temporal_edge_mates);
@@ -90,8 +92,7 @@ public:
     void record_Temporal_Ambiguity_Distribution(const std::string &stage_name,
                                                 const std::vector<temporal_edge_pair> &temporal_edge_mates,
                                                 const std::string &output_dir,
-                                                size_t frame_idx,
-                                                bool b_is_left);
+                                                size_t frame_idx);
 
     std::tuple<std::vector<cv::Point2d>, std::vector<double>, std::vector<cv::Point2d>> PickRandomEdges(int patch_size, const std::vector<cv::Point2d> &edges, const std::vector<cv::Point2d> &ground_truth_right_edges, const std::vector<double> &orientations, size_t num_points, int img_width, int img_height);
     void cleaning_temporal_edge_mates(std::vector<temporal_edge_pair> &temporal_edge_mates);
