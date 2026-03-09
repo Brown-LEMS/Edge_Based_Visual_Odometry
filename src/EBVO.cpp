@@ -192,43 +192,21 @@ void EBVO::PerformEdgeBasedVO()
             //> Construct a GT stereo edge pool
             stereo_edge_matcher.get_Stereo_Edge_GT_Pairs(dataset, last_keyframe, last_keyframe_stereo_left, true);
             std::cout << "Size of stereo edge correspondences pool = " << last_keyframe_stereo_left.focused_edge_indices.size() << std::endl;
-
             last_keyframe_stereo_left.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
-
-            //> construct stereo edge correspondences for the keyframe frame
-            Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, last_keyframe_stereo_left, frame_idx);
-            record_file << "Frame:" << frame_idx << ", after stereo left edge numbers: " << last_keyframe_stereo_left.focused_edge_indices.size() << std::endl;
-            //> Finalize the stereo edge pairs for the keyframe
-            stereo_edge_matcher.finalize_stereo_edge_mates(last_keyframe_stereo_left, keyframe_stereo_edge_mates);
-            all_metrics.push_back(metrics);
+            Construct_final_stereo_edge_pairs_with_stereo(last_keyframe_stereo_left, keyframe_stereo_edge_mates);
+            std::cout << "Finish constructing final stereo edge pairs for the keyframe with " << keyframe_stereo_edge_mates.size() << " pairs" << std::endl;
             b_is_keyframe = false;
         }
         else
         {
-            current_frame_stereo_left.clean_up_vector_data_structures();
-            current_frame_stereo_left.stereo_frame = &current_frame;
-            current_frame_stereo_left.left_disparity_map = left_disparity_map;
-            current_frame_stereo_left.right_disparity_map = right_disparity_map;
-
-            stereo_edge_matcher.Find_Stereo_GT_Locations(dataset, left_disparity_map, current_frame, current_frame_stereo_left, true);
-            std::cout << "Complete calculating GT locations for left edges of the current frame..." << current_frame_stereo_left.focused_edge_indices.size() << std::endl;
-
-            //> Construct a GT stereo edge pool
-            stereo_edge_matcher.get_Stereo_Edge_GT_Pairs(dataset, current_frame, current_frame_stereo_left, true);
-            std::cout << "Size of stereo edge correspondences pool for left edges= " << current_frame_stereo_left.focused_edge_indices.size() << std::endl;
-
-            // Construct TOED-to-Stereo_Edge_Pairs mapping for the current frame
-            current_frame_stereo_left.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
-
-            //> construct stereo edge correspondences for the current frame
-            Frame_Evaluation_Metrics metrics = stereo_edge_matcher.get_Stereo_Edge_Pairs(dataset, current_frame_stereo_left, frame_idx);
-
-            // //> Finalize the stereo edge pairs for the keyframe
-            stereo_edge_matcher.finalize_stereo_edge_mates(current_frame_stereo_left, current_frame_stereo_edge_mates);
-
+            Construct_final_stereo_edge_pairs(current_frame, current_frame_stereo_edge_mates);
+            std::cout << "Finish constructing final stereo edge pairs for the current frame with " << current_frame_stereo_edge_mates.size() << " pairs" << std::endl;
             //> Assign edges to spatial grids
             add_edges_to_spatial_grid(current_frame_stereo_edge_mates, left_spatial_grids, right_spatial_grids);
             std::cout << "Finish adding left and right edges of the current frame to spatial grid with cell size " << GRID_SIZE << std::endl;
+
+            //> Set current frame stereo pointer so Find_Veridical can access gt_rotation/gt_translation
+            current_frame_stereo_left.stereo_frame = &current_frame;
 
             Find_Veridical_Edge_Correspondences_on_CF(
                 left_temporal_edge_mates,
@@ -237,156 +215,40 @@ void EBVO::PerformEdgeBasedVO()
                 last_keyframe_stereo_left, current_frame_stereo_left,
                 left_spatial_grids, true, 1.0);
             std::cout << "Size of veridical edge pairs (left) = " << left_temporal_edge_mates.size() << std::endl;
-            Find_Veridical_Edge_Correspondences_on_CF(
-                right_temporal_edge_mates,
-                keyframe_stereo_edge_mates,
-                current_frame_stereo_edge_mates,
-                last_keyframe_stereo_left, current_frame_stereo_left,
-                right_spatial_grids, false, 1.0);
-            std::cout << "Size of veridical edge pairs (right) = " << right_temporal_edge_mates.size() << std::endl;
 
             //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             //> Stage 1: Apply spatial grid to the current frame
             apply_spatial_grid_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, left_spatial_grids, 30.0, true);
             Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Limited Disparity", "Left");
-            apply_spatial_grid_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, right_spatial_grids, 30.0, false);
-            Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Limited Disparity", "Right");
 
             //> Stage 2: Do orientation filtering (parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    apply_orientation_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 10.0, true);
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Orientation Filtering", "Left");
-                }
-#pragma omp section
-                {
-                    apply_orientation_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, 10.0, false);
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Orientation Filtering", "Right");
-                }
-            }
 
-            //> Stage 3: Do NCC (parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    apply_NCC_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 0.8, last_keyframe.left_image, current_frame.left_image, true);
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "NCC Filtering", "Left");
-                }
-#pragma omp section
-                {
-                    apply_NCC_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, 0.8, last_keyframe.right_image, current_frame.right_image, false);
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "NCC Filtering", "Right");
-                }
-            }
+            apply_orientation_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 10.0, true);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Orientation Filtering", "Left");
 
-            //> Stage 4: SIFT filtering (parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    apply_SIFT_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 200.0, true);
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "SIFT Filtering", "Left");
-                }
-#pragma omp section
-                {
-                    apply_SIFT_filtering(right_temporal_edge_mates, current_frame_stereo_edge_mates, 200.0, false);
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "SIFT Filtering", "Right");
-                }
-            }
+            apply_NCC_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 0.8, last_keyframe.left_image, current_frame.left_image, true);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "NCC Filtering", "Left");
 
-            //> Stage 5: Best-Nearly-Best filtering (NCC scoring, parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.9, "NCC");
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Left");
-                }
-#pragma omp section
-                {
-                    apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.9, "NCC");
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Right");
-                }
-            }
+            apply_SIFT_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, 200.0, true);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "SIFT Filtering", "Left");
 
-            //> Stage 6: Best-Nearly-Best filtering (SIFT scoring, parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.8, "SIFT");
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Left");
-                }
-#pragma omp section
-                {
-                    apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.8, "SIFT");
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Right");
-                }
-            }
+            apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.9, "NCC");
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB NCC Filtering", "Left");
 
-            //> Stage 7: Photometric refinement (parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    apply_photometric_refinement(left_temporal_edge_mates, current_frame_stereo_edge_mates, last_keyframe, current_frame, true);
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Photometric Refinement", "Left");
-                }
-#pragma omp section
-                {
-                    apply_photometric_refinement(right_temporal_edge_mates, current_frame_stereo_edge_mates, last_keyframe, current_frame, false);
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Photometric Refinement", "Right");
-                }
-            }
+            apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.8, "SIFT");
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Left");
 
-            //> Stage 8: Temporal edge clustering (parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    apply_temporal_edge_clustering(left_temporal_edge_mates, true);
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Left");
-                }
-#pragma omp section
-                {
-                    apply_temporal_edge_clustering(right_temporal_edge_mates, true);
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Right");
-                }
-            }
+            apply_photometric_refinement(left_temporal_edge_mates, current_frame_stereo_edge_mates, last_keyframe, current_frame, true);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Photometric Refinement", "Left");
 
-            //> Stage 6 (repeated): Best-Nearly-Best filtering (SIFT scoring, parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.8, "SIFT");
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Left");
-                }
-#pragma omp section
-                {
-                    apply_best_nearly_best_filtering(right_temporal_edge_mates, 0.8, "SIFT");
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Right");
-                }
-            }
+            apply_temporal_edge_clustering(left_temporal_edge_mates, true);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Temporal Edge Clustering", "Left");
 
-            //> Final cleaning and evaluation (parallelized left/right)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    cleaning_temporal_edge_mates(left_temporal_edge_mates);
-                    Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Cleaning Temporal Edge Mates", "Left");
-                }
-#pragma omp section
-                {
-                    cleaning_temporal_edge_mates(right_temporal_edge_mates);
-                    Evaluate_KF_CF_Edge_Correspondences(right_temporal_edge_mates, frame_idx, "Cleaning Temporal Edge Mates", "Right");
-                }
-            }
-            Evaluate_Temporal_Edge_Pairs_on_Quads(left_temporal_edge_mates, right_temporal_edge_mates, frame_idx);
+            apply_best_nearly_best_filtering(left_temporal_edge_mates, 0.8, "SIFT");
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "BNB SIFT Filtering", "Left");
+
+            cleaning_temporal_edge_mates(left_temporal_edge_mates);
+            Evaluate_KF_CF_Edge_Correspondences(left_temporal_edge_mates, frame_idx, "Cleaning Temporal Edge Mates", "Left");
 
             //> Record temporal match statistics (parallelized counting)
             size_t left_surviving_clusters = 0;
@@ -421,56 +283,10 @@ void EBVO::PerformEdgeBasedVO()
             std::cout << "==============================\n"
                       << std::endl;
 
-            //> Clean up memory for completed keyframe (parallelized)
-#pragma omp parallel sections
-            {
-#pragma omp section
-                {
-                    last_keyframe_stereo_left.left_edge_patches.clear();
-                    last_keyframe_stereo_left.left_edge_patches.shrink_to_fit();
-                    last_keyframe_stereo_left.left_edge_descriptors.clear();
-                    last_keyframe_stereo_left.left_edge_descriptors.shrink_to_fit();
-                }
-#pragma omp section
-                {
-#pragma omp parallel for
-                    for (int i = 0; i < static_cast<int>(last_keyframe_stereo_left.matching_edge_clusters.size()); ++i)
-                    {
-                        auto &cluster_list = last_keyframe_stereo_left.matching_edge_clusters[i];
-                        cluster_list.edge_clusters.clear();
-                        cluster_list.edge_clusters.shrink_to_fit();
-                        cluster_list.refine_final_scores.clear();
-                        cluster_list.refine_confidences.clear();
-                        cluster_list.refine_validities.clear();
-                    }
-                }
-#pragma omp section
-                {
-                    last_keyframe_stereo_left.veridical_right_edges_indices.clear();
-                    last_keyframe_stereo_left.veridical_right_edges_indices.shrink_to_fit();
-                    last_keyframe_stereo_left.GT_locations_from_left_edges.clear();
-                    last_keyframe_stereo_left.GT_locations_from_left_edges.shrink_to_fit();
-                }
-            }
-            last_keyframe_stereo_left.matching_edge_clusters.clear();
-            last_keyframe_stereo_left.matching_edge_clusters.shrink_to_fit();
+            //> Static KF experiment: keep keyframe (frame 0) fixed, only clean up CF data
 
-            last_keyframe_stereo_left.veridical_right_edges_indices.clear();
-            last_keyframe_stereo_left.veridical_right_edges_indices.shrink_to_fit();
-            last_keyframe_stereo_left.GT_locations_from_left_edges.clear();
-            last_keyframe_stereo_left.GT_locations_from_left_edges.shrink_to_fit();
-
-            //> Transfer current frame to become the new keyframe
-            last_keyframe = current_frame;
-            keyframe_stereo_edge_mates = current_frame_stereo_edge_mates;
-
-            //> Swap the stereo_left structures to reuse memory efficiently
-            std::swap(last_keyframe_stereo_left, current_frame_stereo_left);
-            last_keyframe_stereo_left.stereo_frame = &last_keyframe;
-
-            //> Clean up the swapped-out current_frame_stereo_left (now contains old keyframe data)
+            //> Clean up current frame stereo structures
             current_frame_stereo_left.clean_up_vector_data_structures();
-            //> Reset pointers to prevent stale references
             current_frame_stereo_left.stereo_frame = nullptr;
             current_frame_stereo_left.left_disparity_map = cv::Mat();
             current_frame_stereo_left.right_disparity_map = cv::Mat();
@@ -489,8 +305,7 @@ void EBVO::PerformEdgeBasedVO()
             left_spatial_grids.reset();
             right_spatial_grids.reset();
 
-            //> Update keyframe index
-            keyframe_idx = frame_idx;
+            //> keyframe_idx stays fixed (frame 0 remains KF)
         }
 
         frame_idx++;
@@ -544,31 +359,124 @@ void EBVO::PerformEdgeBasedVO()
     temporal_record_file.close();
 }
 
+void EBVO::Construct_final_stereo_edge_pairs_with_stereo(Stereo_Edge_Pairs &stereo_edge_pairs, std::vector<final_stereo_edge_pair> &stereo_edge_mates)
+{
+    // Only works for left edges for purpose of experiment
+    // also, for KF frames which we are constucting, we also dont have half of the structures ;).
+    stereo_edge_mates.clear();
+    cv::Mat left_image = stereo_edge_pairs.stereo_frame->left_image_undistorted;
+    if (left_image.type() != CV_64F)
+        left_image.convertTo(left_image, CV_64F);
+    const size_t num_edges = stereo_edge_pairs.focused_edge_indices.size();
+    if (num_edges == 0)
+        return;
+
+    // Pre-size the output vector
+    stereo_edge_mates.resize(num_edges);
+
+#pragma omp parallel
+    {
+
+        Utility thread_util;
+        cv::Ptr<cv::SIFT> thread_sift = cv::SIFT::create();
+
+#pragma omp for schedule(dynamic)
+        for (int i = 0; i < static_cast<int>(num_edges); ++i)
+        {
+            const Edge &left_edge = dataset.left_edges[stereo_edge_pairs.focused_edge_indices[i]];
+            final_stereo_edge_pair mate;
+            mate.left_edge = left_edge;
+            mate.left_edge_patches = thread_util.get_edge_patches(left_edge, left_image);
+            // We also have Gamma now
+            mate.Gamma_in_left_cam_coord = stereo_edge_pairs.Gamma_in_left_cam_coord[i];
+            // Extract SIFT descriptors at orthogonally shifted points
+            std::pair<cv::Point2d, cv::Point2d> shifted_points = thread_util.get_Orthogonal_Shifted_Points(left_edge, 8);
+            std::vector<cv::KeyPoint> keypoints;
+            keypoints.reserve(2);
+            keypoints.emplace_back(cv::KeyPoint(shifted_points.first, 1.0f, static_cast<float>(180.0 / M_PI * left_edge.orientation)));
+            keypoints.emplace_back(cv::KeyPoint(shifted_points.second, 1.0f, static_cast<float>(180.0 / M_PI * left_edge.orientation)));
+
+            cv::Mat descriptors;
+            thread_sift->compute(stereo_edge_pairs.stereo_frame->left_image_undistorted, keypoints, descriptors);
+            if (descriptors.rows == 2)
+            {
+                mate.left_edge_descriptors = std::make_pair(descriptors.row(0).clone(), descriptors.row(1).clone());
+            }
+            else
+            {
+                mate.left_edge_descriptors = std::make_pair(cv::Mat(), cv::Mat());
+            }
+            stereo_edge_mates[i] = mate;
+        }
+    }
+}
+void EBVO::Construct_final_stereo_edge_pairs(const StereoFrame &frame, std::vector<final_stereo_edge_pair> &stereo_edge_mates)
+{
+    // Only works for left edges for purpose of experiment
+    // also, for CF frames which we are constucting, we dont have half of the structures.
+    stereo_edge_mates.clear();
+    cv::Mat left_image = frame.left_image_undistorted;
+    if (left_image.type() != CV_64F)
+        left_image.convertTo(left_image, CV_64F);
+    const size_t num_edges = dataset.left_edges.size();
+    if (num_edges == 0)
+        return;
+
+    // Pre-size the output vector
+    stereo_edge_mates.resize(num_edges);
+
+#pragma omp parallel
+    {
+
+        Utility thread_util;
+        cv::Ptr<cv::SIFT> thread_sift = cv::SIFT::create();
+
+#pragma omp for schedule(dynamic)
+        for (int i = 0; i < static_cast<int>(num_edges); ++i)
+        {
+            const Edge &left_edge = dataset.left_edges[i];
+            final_stereo_edge_pair mate;
+            mate.left_edge = left_edge;
+            mate.left_edge_patches = thread_util.get_edge_patches(left_edge, left_image);
+
+            // Extract SIFT descriptors at orthogonally shifted points
+            std::pair<cv::Point2d, cv::Point2d> shifted_points = thread_util.get_Orthogonal_Shifted_Points(left_edge, 8);
+            std::vector<cv::KeyPoint> keypoints;
+            keypoints.reserve(2);
+            keypoints.emplace_back(cv::KeyPoint(shifted_points.first, 1.0f, static_cast<float>(180.0 / M_PI * left_edge.orientation)));
+            keypoints.emplace_back(cv::KeyPoint(shifted_points.second, 1.0f, static_cast<float>(180.0 / M_PI * left_edge.orientation)));
+
+            cv::Mat descriptors;
+            thread_sift->compute(frame.left_image_undistorted, keypoints, descriptors);
+            if (descriptors.rows == 2)
+            {
+                mate.left_edge_descriptors = std::make_pair(descriptors.row(0).clone(), descriptors.row(1).clone());
+            }
+            else
+            {
+                mate.left_edge_descriptors = std::make_pair(cv::Mat(), cv::Mat());
+            }
+            stereo_edge_mates[i] = mate;
+        }
+    }
+}
+
 void EBVO::add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids)
 {
-    // Pre-compute grid cell assignments in parallel (read-only)
+    left_spatial_grids.reset();
+
     std::vector<std::pair<int, int>> left_edge_to_grid(stereo_edge_mates.size());
-    std::vector<std::pair<int, int>> right_edge_to_grid(stereo_edge_mates.size());
 
 #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < static_cast<int>(stereo_edge_mates.size()); ++i)
     {
         const cv::Point2d &left_loc = stereo_edge_mates[i].left_edge.location;
-        const cv::Point2d &right_loc = stereo_edge_mates[i].right_edge.location;
-
         int lx = static_cast<int>(left_loc.x) / left_spatial_grids.cell_size;
         int ly = static_cast<int>(left_loc.y) / left_spatial_grids.cell_size;
         if (lx >= 0 && lx < left_spatial_grids.grid_width && ly >= 0 && ly < left_spatial_grids.grid_height)
             left_edge_to_grid[i] = {i, ly * left_spatial_grids.grid_width + lx};
         else
             left_edge_to_grid[i] = {i, -1};
-
-        int rx = static_cast<int>(right_loc.x) / right_spatial_grids.cell_size;
-        int ry = static_cast<int>(right_loc.y) / right_spatial_grids.cell_size;
-        if (rx >= 0 && rx < right_spatial_grids.grid_width && ry >= 0 && ry < right_spatial_grids.grid_height)
-            right_edge_to_grid[i] = {i, ry * right_spatial_grids.grid_width + rx};
-        else
-            right_edge_to_grid[i] = {i, -1};
     }
 
     for (size_t i = 0; i < stereo_edge_mates.size(); ++i)
@@ -576,10 +484,6 @@ void EBVO::add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &
         int left_grid_idx = left_edge_to_grid[i].second;
         if (left_grid_idx >= 0 && left_grid_idx < static_cast<int>(left_spatial_grids.grid.size()))
             left_spatial_grids.grid[left_grid_idx].push_back(i);
-
-        int right_grid_idx = right_edge_to_grid[i].second;
-        if (right_grid_idx >= 0 && right_grid_idx < static_cast<int>(right_spatial_grids.grid.size()))
-            right_spatial_grids.grid[right_grid_idx].push_back(i);
     }
 }
 

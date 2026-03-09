@@ -39,7 +39,8 @@ public:
                       std::shared_ptr<ThirdOrderEdgeDetectionCPU> &toed,
                       std::vector<Edge> &edges);
     void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids);
-
+    void Construct_final_stereo_edge_pairs(const StereoFrame &frame, std::vector<final_stereo_edge_pair> &stereo_edge_mates);
+    void Construct_final_stereo_edge_pairs_with_stereo(Stereo_Edge_Pairs &stereo_edge_pairs, std::vector<final_stereo_edge_pair> &stereo_edge_mates);
     //> filtering methods
     void apply_spatial_grid_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, SpatialGrid &spatial_grid, double grid_radius = 1.0, bool b_is_left = true);
     void apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal_edge_mates,
