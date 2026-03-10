@@ -90,6 +90,63 @@ double Bilinear_Interpolation(cv::Mat meshGrid, cv::Point2d P)
     double f_x_y2 = ((Q21.x - P.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q12.y, Q12.x) + ((P.x - Q11.x) / (Q21.x - Q11.x)) * meshGrid.at<T>(Q22.y, Q22.x);
     return ((Q12.y - P.y) / (Q12.y - Q11.y)) * f_x_y1 + ((P.y - Q11.y) / (Q12.y - Q11.y)) * f_x_y2;
 }
+
+/*
+    Bilinear interpolation for a 3-channel (BGR) image.
+    Returns interpolated BGR values as cv::Vec3d.
+    Returns (NaN, NaN, NaN) if the point is out of bounds.
+*/
+inline cv::Vec3d Bilinear_Interpolation_RGB(const cv::Mat &image, cv::Point2d P)
+{
+    cv::Point2d Q12(floor(P.x), floor(P.y));
+    cv::Point2d Q22(ceil(P.x), floor(P.y));
+    cv::Point2d Q11(floor(P.x), ceil(P.y));
+    cv::Point2d Q21(ceil(P.x), ceil(P.y));
+
+    if (Q11.x < 0 || Q11.y < 0 || Q21.x >= image.cols || Q21.y >= image.rows ||
+        Q12.x < 0 || Q12.y < 0 || Q22.x >= image.cols || Q22.y >= image.rows)
+    {
+        double nan_val = std::numeric_limits<double>::quiet_NaN();
+        return cv::Vec3d(nan_val, nan_val, nan_val);
+    }
+
+    double dx1 = Q21.x - Q11.x;
+    double dy1 = Q12.y - Q11.y;
+
+    //> Handle exact integer coordinates (avoid 0/0)
+    if (dx1 == 0.0 && dy1 == 0.0)
+    {
+        cv::Vec3b pixel = image.at<cv::Vec3b>((int)P.y, (int)P.x);
+        return cv::Vec3d(pixel[0], pixel[1], pixel[2]);
+    }
+
+    cv::Vec3b pQ11 = image.at<cv::Vec3b>((int)Q11.y, (int)Q11.x);
+    cv::Vec3b pQ21 = image.at<cv::Vec3b>((int)Q21.y, (int)Q21.x);
+    cv::Vec3b pQ12 = image.at<cv::Vec3b>((int)Q12.y, (int)Q12.x);
+    cv::Vec3b pQ22 = image.at<cv::Vec3b>((int)Q22.y, (int)Q22.x);
+
+    cv::Vec3d result;
+    for (int c = 0; c < 3; c++)
+    {
+        double f_x_y1, f_x_y2;
+        if (dx1 == 0.0)
+        {
+            f_x_y1 = pQ11[c];
+            f_x_y2 = pQ12[c];
+        }
+        else
+        {
+            f_x_y1 = ((Q21.x - P.x) / dx1) * pQ11[c] + ((P.x - Q11.x) / dx1) * pQ21[c];
+            f_x_y2 = ((Q21.x - P.x) / dx1) * pQ12[c] + ((P.x - Q11.x) / dx1) * pQ22[c];
+        }
+        if (dy1 == 0.0)
+            result[c] = f_x_y1;
+        else
+            result[c] = ((Q12.y - P.y) / dy1) * f_x_y1 + ((P.y - Q11.y) / dy1) * f_x_y2;
+    }
+    return result;
+}
+
 /*
     Other version of Bilinear interpolation for a point P in a mesh grid.
     Returns NaN if the point is out of bounds.

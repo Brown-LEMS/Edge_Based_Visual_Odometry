@@ -195,6 +195,7 @@ void EBVO::PerformEdgeBasedVO()
             last_keyframe_stereo_left.construct_toed_left_id_to_Stereo_Edge_Pairs_left_id_map();
             Construct_final_stereo_edge_pairs_with_stereo(last_keyframe_stereo_left, keyframe_stereo_edge_mates);
             std::cout << "Finish constructing final stereo edge pairs for the keyframe with " << keyframe_stereo_edge_mates.size() << " pairs" << std::endl;
+
             b_is_keyframe = false;
         }
         else
@@ -215,7 +216,15 @@ void EBVO::PerformEdgeBasedVO()
                 last_keyframe_stereo_left, current_frame_stereo_left,
                 left_spatial_grids, true, 1.0);
             std::cout << "Size of veridical edge pairs (left) = " << left_temporal_edge_mates.size() << std::endl;
-
+            Utility util;
+            for (int i = 0; i < keyframe_stereo_edge_mates.size(); i++)
+            {
+                Eigen::Vector3d Gamma_left = keyframe_stereo_edge_mates[i].Gamma_in_left_cam_coord;
+                Eigen::Vector3d orientation = keyframe_stereo_edge_mates[i].orientation;
+                cv::Vec3d bgr = Bilinear_Interpolation_RGB(current_frame.left_image, keyframe_stereo_edge_mates[i].left_edge.location);
+                record_file << "Left Edge Index: " << i << ", GT Location : (" << Gamma_left[0] << ", " << Gamma_left[1] << ", " << Gamma_left[2] << "), orientation: (" << orientation[0] << ", " << orientation[1] << ", " << orientation[2]
+                            << "), RGB: (" << (int)bgr[2] << ", " << (int)bgr[1] << ", " << (int)bgr[0] << ")" << std::endl;
+            }
             //> Now that the GT edge correspondences are constructed between the keyframe and the current frame, we can apply various filters from the beginning
             //> Stage 1: Apply spatial grid to the current frame
             apply_spatial_grid_filtering(left_temporal_edge_mates, current_frame_stereo_edge_mates, left_spatial_grids, 30.0, true);
@@ -384,11 +393,29 @@ void EBVO::Construct_final_stereo_edge_pairs_with_stereo(Stereo_Edge_Pairs &ster
         for (int i = 0; i < static_cast<int>(num_edges); ++i)
         {
             const Edge &left_edge = dataset.left_edges[stereo_edge_pairs.focused_edge_indices[i]];
+            const Edge &right_edge = dataset.right_edges[stereo_edge_pairs.veridical_right_edges_indices[i][0]];
             final_stereo_edge_pair mate;
             mate.left_edge = left_edge;
+            mate.right_edge = right_edge;
             mate.left_edge_patches = thread_util.get_edge_patches(left_edge, left_image);
             // We also have Gamma now
             mate.Gamma_in_left_cam_coord = stereo_edge_pairs.Gamma_in_left_cam_coord[i];
+            // Step 1: Get the stereo baseline rotation (Left -> Right)
+            Eigen::Matrix3d R_stereo = dataset.get_relative_rot_left_to_right();
+
+            // Step 2: Reconstruct 3D direction T_1 in Left KF
+            Eigen::Vector3d t1(cos(left_edge.orientation), sin(left_edge.orientation), 0);
+            Eigen::Vector3d t2(cos(right_edge.orientation), sin(right_edge.orientation), 0);
+
+            Eigen::Vector3d gamma_1(left_edge.location.x, left_edge.location.y, 1.0);
+            gamma_1 = dataset.get_left_calib_matrix().inverse() * gamma_1;
+            Eigen::Vector3d gamma_2(right_edge.location.x, right_edge.location.y, 1.0);
+            gamma_2 = dataset.get_right_calib_matrix().inverse() * gamma_2;
+
+            Eigen::Vector3d T_1 = -(gamma_2.dot(t2.cross(R_stereo * t1))) * gamma_1 + (gamma_2.dot(t2.cross(R_stereo * gamma_1))) * t1;
+            T_1 = -T_1;
+            T_1.normalize();
+            mate.orientation = T_1;
             // Extract SIFT descriptors at orthogonally shifted points
             std::pair<cv::Point2d, cv::Point2d> shifted_points = thread_util.get_Orthogonal_Shifted_Points(left_edge, 8);
             std::vector<cv::KeyPoint> keypoints;
@@ -1497,7 +1524,7 @@ void EBVO::apply_orientation_filtering(std::vector<temporal_edge_pair> &temporal
         for (int i = 0; i < static_cast<int>(temporal_edge_mates.size()); ++i)
         {
             temporal_edge_pair &tp = temporal_edge_mates[i];
-            double ref_orientation = tp.projected_orientation;
+            double ref_orientation = tp.KF_stereo_edge_mate->left_edge.orientation; // Assuming left KF edge is the reference; could also consider right edge or an average
 
             std::vector<Temporal_CF_Edge_Cluster> filtered_clusters;
             filtered_clusters.reserve(tp.matching_CF_edge_clusters.size());

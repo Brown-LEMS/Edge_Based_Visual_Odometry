@@ -340,6 +340,7 @@ struct final_stereo_edge_pair
     Eigen::Vector3d Gamma_in_left_cam_coord;
     Eigen::Vector3d Gamma_in_right_cam_coord;
 
+    Eigen::Vector3d orientation;
     bool b_is_TP;
 };
 
