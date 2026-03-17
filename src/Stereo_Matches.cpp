@@ -7,14 +7,17 @@
 // */
 std::vector<Eigen::Vector3d> Stereo_Matches::CalculateEpipolarLine(const Eigen::Matrix3d &fund_mat, const std::vector<Edge> &edges)
 {
+    std::ofstream debug_file("debug_epipolar_lines.txt");
     std::vector<Eigen::Vector3d> epipolar_lines;
     for (const Edge &edge : edges)
     {
         Eigen::Vector3d homo_point(edge.location.x, edge.location.y, 1.0);
         Eigen::Vector3d epipolar_line = fund_mat * homo_point;
         epipolar_lines.push_back(epipolar_line);
+        debug_file << "Epipolar line for edge at (" << edge.location.x << ", " << edge.location.y << "): " << epipolar_line.transpose() << std::endl;
     }
     return epipolar_lines;
+    debug_file.close();
 }
 
 /*

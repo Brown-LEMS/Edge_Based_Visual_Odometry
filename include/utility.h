@@ -62,7 +62,7 @@ public:
     Eigen::Vector3d multiview_linear_triangulation(
         const int N, const std::vector<Eigen::Vector2d> pts,
         const std::vector<Eigen::Matrix3d> &Rs, const std::vector<Eigen::Vector3d> &Ts, const Eigen::Matrix3d K);
-
+    Eigen::Matrix3d getSkewSymmetricMatrix(const Eigen::Vector3d &T);
     std::string cvMat_Type(int type);
 };
 

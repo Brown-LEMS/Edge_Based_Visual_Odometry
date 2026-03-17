@@ -65,8 +65,10 @@ public:
                                       const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
                                       const StereoFrame &keyframe, const StereoFrame &current_frame,
                                       bool b_is_left);
+    void apply_Epipolar_Line_Distance_Filtering(std::vector<temporal_edge_pair> &temporal_edge_mates, const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates, std::vector<Eigen::Vector3d> &epip_line_coeffs);
 
     void apply_temporal_edge_clustering(std::vector<temporal_edge_pair> &temporal_edge_mates, bool b_cluster_by_orientation = true);
+    std::vector<int> extract_Epipolar_Edge_Indices(const Eigen::Vector3d &epipolar_line, const std::vector<final_stereo_edge_pair> &edges, const double dist_tol);
 
     void min_Edge_Photometric_Residual_by_Gauss_Newton(
         /* inputs */

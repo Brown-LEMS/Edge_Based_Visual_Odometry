@@ -41,7 +41,14 @@ double Utility::getNormalDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs,
   Eigen::Vector3d edge(edges(index, 0), edges(index, 1), 1.0);
   return getNormalDistance2EpipolarLine(Epip_Line_Coeffs, edge, epiline_x, epiline_y);
 }
-
+Eigen::Matrix3d Utility::getSkewSymmetricMatrix(const Eigen::Vector3d &T)
+{
+  Eigen::Matrix3d skew;
+  skew << 0, -T.z(), T.y(),
+      T.z(), 0, -T.x(),
+      -T.y(), T.x(), 0;
+  return skew;
+};
 //> Tangential distance from an edge to the corresponding epipolar line
 double Utility::getTangentialDistance2EpipolarLine(Eigen::Vector3d Epip_Line_Coeffs, Eigen::Vector3d edge, double &x_intersection, double &y_intersection)
 {

@@ -331,6 +331,7 @@ struct final_stereo_edge_pair
     Edge left_edge;
     Edge right_edge;
 
+    int original_index;
     std::pair<cv::Mat, cv::Mat> left_edge_patches;
     std::pair<cv::Mat, cv::Mat> right_edge_patches;
 
