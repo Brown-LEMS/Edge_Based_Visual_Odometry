@@ -29,6 +29,23 @@ struct Frame_Evaluation_Metrics
     std::vector<std::pair<std::string, Stage_Metrics>> stages;  // preserves pipeline order
 };
 
+struct Timing_Statistics
+{
+    double time_EP = 0.0;
+    double time_DP = 0.0;
+    double time_OR = 0.0;
+    double time_NCC = 0.0;
+    double time_SIFT = 0.0;
+    double time_BNB_NCC = 0.0;
+    double time_BNB_SIFT = 0.0;
+    double time_Refinement = 0.0;
+    double time_Clustering = 0.0;
+    double time_Post_NCC = 0.0;
+    double time_Best = 0.0;
+    double time_Finalize = 0.0;
+    double total_time = 0.0;
+};
+
 class Stereo_Matches
 {
 public:
@@ -38,7 +55,7 @@ public:
     typedef std::shared_ptr<Stereo_Matches> Ptr;
 
     //> main function to get stereo edge pairs
-    Frame_Evaluation_Metrics get_Stereo_Edge_Pairs(Dataset::Ptr dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx);
+    Frame_Evaluation_Metrics get_Stereo_Edge_Pairs(Dataset::Ptr dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx, Timing_Statistics &timing_statistics);
 
     //> filtering methods
     void apply_Epipolar_Line_Distance_Filtering(Stereo_Edge_Pairs &stereo_frame_edge_pairs, Dataset::Ptr dataset, const std::vector<Edge> right_edges, const std::string &output_dir = "", bool is_left = true, size_t frame_idx = 0, int num_random_edges_for_distribution = 0);
@@ -60,10 +77,10 @@ public:
     //> Same as above but optimizes displacement along an arbitrary epipolar line (1D along (ex,ey)).
     //> epipolar_direction: unit vector (ex,ey) - corresponding point is at left - alpha * (ex,ey). For rectified stereo use (1,0).
     void min_Edge_Photometric_Residual_by_Gauss_Newton_along_EpipolarLine(
-        Edge left_edge, cv::Point2d epipolar_direction, double init_alpha,
-        const cv::Mat &left_image_undistorted, const cv::Mat &right_image_undistorted,
+        Edge left_edge, Edge right_candidate_edge, cv::Point2d epipolar_direction,
+        double init_alpha, const cv::Mat &left_image_undistorted, const cv::Mat &right_image_undistorted,
         const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y,
-        cv::Point2d &refined_displacement, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log, /* outputs */
+        double &refined_alpha, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,
         int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
 
     void finalize_stereo_edge_mates(Stereo_Edge_Pairs &stereo_frame_edge_pairs, std::vector<final_stereo_edge_pair> &final_stereo_edge_pairs);
@@ -78,7 +95,25 @@ public:
     void record_Filter_Distribution(const std::string &filter_name, const std::vector<double> &filter_values, const std::vector<int> &is_veridical, const std::string &output_dir, size_t frame_idx = 0);
     void record_Ambiguity_Distribution(const std::string &stage_name, const Stereo_Edge_Pairs &stereo_frame_edge_pairs, const std::string &output_dir, size_t frame_idx);
 
+    //> disparity recording
+    void record_disparities(const std::vector<final_stereo_edge_pair> &final_stereo_edge_pairs,
+                            const std::string &output_dir, size_t frame_idx);
+
     void Stereo_Matches_Metrics_Statistics(const std::vector<Frame_Evaluation_Metrics> &all_stereo_matches_metrics);
+
+    void write_finalized_stereo_edge_pairs_to_file(Dataset::Ptr dataset, const std::vector<final_stereo_edge_pair> &final_stereo_edge_pairs, size_t frame_idx);
+
+    //> write timings to a file
+    void write_timings_to_file(std::ofstream &out_file_stream, Timing_Statistics &timing_statistics)
+    {
+        out_file_stream << timing_statistics.time_EP << " " << timing_statistics.time_DP << " " \
+                        << timing_statistics.time_OR << " " << timing_statistics.time_NCC << " " \
+                        << timing_statistics.time_SIFT << " " << timing_statistics.time_BNB_NCC << " " \
+                        << timing_statistics.time_BNB_SIFT << " " << timing_statistics.time_Refinement << " " \
+                        << timing_statistics.time_Clustering << " " << timing_statistics.time_Post_NCC << " " \
+                        << timing_statistics.time_Best << " " << timing_statistics.time_Finalize << " " \
+                        << timing_statistics.total_time << std::endl;
+    }
 
 private:
     //> visualization methods

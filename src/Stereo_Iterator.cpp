@@ -333,8 +333,11 @@ bool ETH3DSLAMIterator::getNext(StereoFrame &frame)
     current_index++;
 
     // Construct paths for left and right images
-    std::string left_path = dataset_path + "/" + filename;
-    std::string right_path = dataset_path + "/rgb2/" + filename.substr(4); // Remove "rgb/" prefix and add "rgb2/"
+    std::string right_path = dataset_path + "/" + filename;
+    std::string left_path = dataset_path + "/rgb2/" + filename.substr(4); // Remove "rgb/" prefix and add "rgb2/"
+
+    std::cout << "Left path: " << left_path << std::endl;
+    std::cout << "Right path: " << right_path << std::endl;
 
     // Load images
     cv::Mat left = cv::imread(left_path, cv::IMREAD_GRAYSCALE);
