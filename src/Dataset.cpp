@@ -107,13 +107,13 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
             camera_info.left.T = Eigen::Map<const Eigen::Vector3d>(stereo["T21"].as<std::vector<double>>().data());
 
             //> compute the fundamental matrix on the fly
-            camera_info.left.F = camera_info.left.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.left.T) * camera_info.left.R) * camera_info.right.K.inverse();
+            camera_info.left.F = camera_info.right.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.left.T) * camera_info.left.R) * camera_info.left.K.inverse();
 
             camera_info.right.R = camera_info.left.R.transpose();
             camera_info.right.T = -camera_info.left.R.transpose() * camera_info.left.T;
 
             //> compute the fundamental matrix on the fly
-            camera_info.right.F = camera_info.right.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.right.T) * camera_info.right.R) * camera_info.left.K.inverse();
+            camera_info.right.F = camera_info.left.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.right.T) * camera_info.right.R) * camera_info.right.K.inverse();
         }
         else
         {
