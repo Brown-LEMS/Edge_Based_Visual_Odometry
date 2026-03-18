@@ -302,6 +302,9 @@ struct final_stereo_edge_pair
     Eigen::Vector3d Gamma_in_left_cam_coord;
     Eigen::Vector3d Gamma_in_right_cam_coord;
 
+    //> Ground-truth right-edge location corresponding to the left edge (if available)
+    cv::Point2d gt_right_location;
+
     bool b_is_TP;
 };
 
@@ -381,8 +384,10 @@ public:
     int get_omp_threads() const { return omp_threads; }
 
     unsigned get_num_imgs() { return Total_Num_Of_Imgs; };
-    int get_height() { return img_height; };
-    int get_width() { return img_width; };
+    int get_left_height() { return left_img_height; };
+    int get_left_width() { return left_img_width; };
+    int get_right_height() { return right_img_height; };
+    int get_right_width() { return right_img_width; };
 
     Eigen::Matrix3d get_left_calib_matrix() { return camera_info.left.K; }
     Eigen::Matrix3d get_right_calib_matrix() { return camera_info.right.K; }
@@ -411,16 +416,6 @@ public:
     cv::Mat readPFM(const std::string &file_path);
 
     /**
-     * Read Middlebury disparity file (disp0GT.pfm) with non-occlusion mask
-     *
-     * @param disp_file_path Path to disp0GT.pfm file
-     * @param disparity Output disparity map (CV_32F, single channel)
-     * @param valid_mask Output validity mask (CV_8U, 0 or 255)
-     * @return true if successful, false otherwise
-     */
-    bool readDispMiddlebury(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask);
-
-    /**
      * Read ETH3D disparity file (disp0GT.pfm)
      * Uses readPFM and reads mask0nocc.png separately
      *
@@ -431,21 +426,12 @@ public:
      */
     bool readDispETH3D(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask);
 
-    /**
-     * Read third-order edge data from a text file.
-     * File format: x y orientation disparity (space or tab separated)
-     *
-     * @param file_path Path to the text file containing edge data
-     * @param edges Output vector of Edge objects (left_edges)
-     * @param edge_disparity_map Output map from edge index to ground-truth disparity
-     * @return true if successful, false otherwise
-     */
-    bool read_edges_and_disparities_from_file(const std::string &file_path, std::vector<Edge> &edges, std::vector<double> &edge_disparities);
-
     // setters
     void increment_num_imgs() { Total_Num_Of_Imgs++; };
-    void set_height(int height) { img_height = height; };
-    void set_width(int width) { img_width = width; };
+    void set_left_height(int height) { left_img_height = height; };
+    void set_left_width(int width) { left_img_width = width; };
+    void set_right_height(int height) { right_img_height = height; };
+    void set_right_width(int width) { right_img_width = width; };
 
 private:
     YAML::Node config_file;
@@ -456,7 +442,8 @@ private:
     CameraInfo camera_info;
     // Images info
     unsigned Total_Num_Of_Imgs;
-    int img_height, img_width;
+    int left_img_height, left_img_width;
+    int right_img_height, right_img_width;
 
     // functions
     void PrintDatasetInfo();
