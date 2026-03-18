@@ -1305,14 +1305,11 @@ void Stereo_Matches::refine_edge_disparity(Stereo_Edge_Pairs &stereo_frame_edge_
             stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences.clear();
             stereo_frame_edge_pairs.matching_edge_clusters[i].refine_validities.clear();
 
-            double gt_right_x = stereo_frame_edge_pairs.GT_locations_from_left_edges[i].x;
-
             for (auto const &edge_cluster : stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters)
             {
                 Edge right_edge = edge_cluster.center_edge;
-                bool initial_was_correct = (std::abs(right_edge.location.x - gt_right_x) < DIST_TO_GT_THRESH);
 
-                double initial_disparity = left_edge.location.x - right_edge.location.x;
+                // double initial_disparity = left_edge.location.x - right_edge.location.x;
                 // double refined_disparity;
                 double initial_score, refined_final_score, refined_confidence;
                 bool refined_validity;
@@ -1341,14 +1338,6 @@ void Stereo_Matches::refine_edge_disparity(Stereo_Edge_Pairs &stereo_frame_edge_
                     left_edge, right_edge, epipolar_direction, 0.0, left_cur_undistorted_32F, right_cur_undistorted_32F, candidate_image_gradients_x, candidate_image_gradients_y,
                     refined_alpha, refined_final_score, refined_confidence, refined_validity, residual_log);
 
-                /*
-                void Stereo_Matches::min_Edge_Photometric_Residual_by_Gauss_Newton_along_EpipolarLine(
-                    Edge left_edge, Edge right_candidate_edge, cv::Point2d epipolar_direction,
-                    double init_alpha, const cv::Mat &left_image_undistorted, const cv::Mat &right_image_undistorted,
-                    const cv::Mat &right_image_gradients_x, const cv::Mat &right_image_gradients_y,
-                    double &refined_alpha, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,
-                    int max_iter, double tol, double huber_delta, bool b_verbose)
-                */
                 stereo_frame_edge_pairs.matching_edge_clusters[i].refine_final_scores.push_back(refined_final_score);
                 stereo_frame_edge_pairs.matching_edge_clusters[i].refine_confidences.push_back(refined_confidence);
                 stereo_frame_edge_pairs.matching_edge_clusters[i].refine_validities.push_back(refined_validity);
@@ -1378,8 +1367,7 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     std::chrono::high_resolution_clock::time_point start_time, end_time;
 
     //> Apply epipolar line distance filtering (must be first to extract candidates)
-    //> Set num_random_edges_for_distribution to 5-10 to record ALL right edges for random subset of left edges (shows pre-filtering distribution)
-    //> Set to 0 to disable distribution recording
+    //> Set num_random_edges_for_distribution to 0 to disable distribution recording
     // start_time = std::chrono::high_resolution_clock::now();
     apply_Epipolar_Line_Distance_Filtering(stereo_frame_edge_pairs, dataset, stereo_frame_edge_pairs.stereo_frame->right_edges, "output_files", true, frame_idx, 10);
     // end_time = std::chrono::high_resolution_clock::now();

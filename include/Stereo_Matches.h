@@ -74,8 +74,8 @@ public:
         double &refined_disparity, double &refined_final_score, double &refined_confidence, bool &refined_validity, std::vector<double> &residual_log,           /* optional inputs */
         int max_iter = 20, double tol = 1e-3, double huber_delta = 3.0, bool b_verbose = false);
 
-    //> Same as above but optimizes displacement along an arbitrary epipolar line (1D along (ex,ey)).
-    //> epipolar_direction: unit vector (ex,ey) - corresponding point is at left - alpha * (ex,ey). For rectified stereo use (1,0).
+    //> Same as above but optimizes displacement along an arbitrary epipolar line (1D along (dx,dy)).
+    //> epipolar_direction: unit vector (dx,dy) - corresponding point is at left - alpha * (dx,dy). For rectified stereo use (1,0).
     void min_Edge_Photometric_Residual_by_Gauss_Newton_along_EpipolarLine(
         Edge left_edge, Edge right_candidate_edge, cv::Point2d epipolar_direction,
         double init_alpha, const cv::Mat &left_image_undistorted, const cv::Mat &right_image_undistorted,
