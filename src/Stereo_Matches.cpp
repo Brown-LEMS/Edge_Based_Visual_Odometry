@@ -1235,7 +1235,7 @@ void Stereo_Matches::min_Edge_Photometric_Residual_by_Gauss_Newton_along_Epipola
                 double r = Lc[k] - (Rf[k] - meanR);
 
                 //> projected gradient
-                double g = gxRf[k] * epipolar_direction.x + gyRf[k] * epipolar_direction.y;
+                double g = -(gxRf[k] * epipolar_direction.x + gyRf[k] * epipolar_direction.y);
                 double absr = std::abs(r);
                 double w = (absr <= huber_delta) ? 1.0 : huber_delta / absr;
 
@@ -1508,12 +1508,12 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
         frame_metrics.stages.push_back({"Best", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
     }
 
-    std::cout << "Edge size before cleaning: " << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
+    // std::cout << "Edge size before cleaning: " << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
     // start_time = std::chrono::high_resolution_clock::now();
     remove_empty_clusters(stereo_frame_edge_pairs);
     // end_time = std::chrono::high_resolution_clock::now();
     // timing_statistics.time_Finalize = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-    std::cout << "Edge size after cleaning: " << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
+    // std::cout << "Edge size after cleaning: " << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "cleaning",
                                             recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
