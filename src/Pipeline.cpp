@@ -117,14 +117,15 @@ void Pipeline::get_Stereo_Edge_Correspondences()
     std::cout << "Size of stereo edge correspondences pool = " << current_frame_stereo_left_constructor.focused_edge_indices.size() << std::endl;
 
     //> construct stereo edge correspondences for the current_frame
-    Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_current_frame_idx);
+    Timing_Statistics timing_statistics;
+    Frame_Evaluation_Metrics metrics = stereo_matches_engine->get_Stereo_Edge_Pairs(dataset_, current_frame_stereo_left_constructor, stereo_current_frame_idx, timing_statistics);
     //> Only accumulate evaluation metrics when GT is available
     if (dataset_->has_gt())
         all_stereo_matches_metrics.push_back(metrics);
 
     //> Finalize the stereo edge pairs for the current_frame
     stereo_matches_engine->finalize_stereo_edge_mates(current_frame_stereo_left_constructor, current_frame_stereo_edge_mates);
-
+    stereo_matches_engine->write_finalized_stereo_edge_pairs_to_file(dataset_, current_frame_stereo_edge_mates, stereo_current_frame_idx);
     //> If the current frame is the first frame, make current frame the keyframe
     if (stereo_current_frame_idx == 0)
     {
@@ -198,13 +199,14 @@ void Pipeline::get_Pose_From_Quad_Pairs()
     // }
     // motion_tracker_engine->Print_Quad_Pairs_Metrics_Statistics(all_quad_pair_evaluation_metrics);
 
-    if( motion_tracker_engine->estimate_Relative_Pose_From_Quad_Pairs(temporal_quads_by_kf, opt, state) )
+    if (motion_tracker_engine->estimate_Relative_Pose_From_Quad_Pairs(temporal_quads_by_kf, opt, state))
     {
         Camera_Pose estimated_pose = state.best_pose_hypothesis;
         std::cout << "Inlier ratio: " << state.inlier_ratio << std::endl;
         estimated_pose.print_Camera_Pose("Estimated relative pose from quad pairs");
     }
-    else {
+    else
+    {
         std::cout << "Failed to estimate relative pose from quad pairs" << std::endl;
     }
 
@@ -226,7 +228,5 @@ void Pipeline::Print_Temporal_Matches_Metrics_Statistics()
 {
     temporal_matches_engine->Temporal_Matches_Metrics_Statistics(all_temporal_matches_metrics);
 }
-
-
 
 #endif

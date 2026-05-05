@@ -98,10 +98,10 @@ void Temporal_Matches::build_Veridical_Quads(
             cv::Point2d proj_left_cv(projected_point_left.x(), projected_point_left.y());
             cv::Point2d proj_right_cv(projected_point_right.x(), projected_point_right.y());
             if (projected_point_left.x() <= img_margin || projected_point_left.y() <= img_margin ||
-                projected_point_left.x() >= dataset->get_width() - img_margin || projected_point_left.y() >= dataset->get_height() - img_margin)
+                projected_point_left.x() >= dataset->get_left_width() - img_margin || projected_point_left.y() >= dataset->get_left_height() - img_margin)
                 continue;
             if (projected_point_right.x() <= img_margin || projected_point_right.y() <= img_margin ||
-                projected_point_right.x() >= dataset->get_width() - img_margin || projected_point_right.y() >= dataset->get_height() - img_margin)
+                projected_point_right.x() >= dataset->get_left_width() - img_margin || projected_point_right.y() >= dataset->get_left_height() - img_margin)
                 continue;
 
             std::vector<int> left_candidates = left_spatial_grids.getCandidatesWithinRadius(proj_left_cv, search_radius);

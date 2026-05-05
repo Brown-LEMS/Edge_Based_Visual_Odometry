@@ -187,7 +187,7 @@ public:
 
 private:
     std::ifstream gt_stream;
-    Eigen::Matrix4d inv_T_frame2body;
+    Eigen::Matrix4d T_frame2body;
     bool first_line_skipped = false;
 };
 

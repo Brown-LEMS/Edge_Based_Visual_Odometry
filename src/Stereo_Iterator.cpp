@@ -7,7 +7,7 @@
 //    Jue  25-06-14    Initially created.
 //
 //> (c) LEMS, Brown University
-//> Jue Han (jhan192@brown.edu)
+//> Jue Han (jue_han@brown.edu)
 // ======================================================================================================================
 
 /////////////////////////
@@ -386,11 +386,10 @@ EuRoCGTPoseIterator::EuRoCGTPoseIterator(const std::string &gt_file,
         return;
     }
 
-    Eigen::Matrix4d T_frame2body = Eigen::Matrix4d::Identity();
+    T_frame2body = Eigen::Matrix4d::Identity();
     T_frame2body.block<3, 3>(0, 0) = R_frame2body;
     T_frame2body.block<3, 1>(0, 3) = T_frame2body_vec;
 
-    inv_T_frame2body = T_frame2body.inverse();
 }
 
 bool EuRoCGTPoseIterator::hasNext()
@@ -443,7 +442,7 @@ bool EuRoCGTPoseIterator::getNext(Eigen::Matrix3d &R_out, Eigen::Vector3d &T_out
         T_world_from_body.block<3, 3>(0, 0) = R_body;
         T_world_from_body.block<3, 1>(0, 3) = T_body;
 
-        Eigen::Matrix4d T_world_from_frame = (inv_T_frame2body * T_world_from_body.inverse()).inverse();
+        Eigen::Matrix4d T_world_from_frame =  T_world_from_body * T_frame2body;
 
         R_out = T_world_from_frame.block<3, 3>(0, 0);
         T_out = T_world_from_frame.block<3, 1>(0, 3);

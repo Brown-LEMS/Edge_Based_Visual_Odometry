@@ -55,12 +55,6 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
     file_info.dataset_path = config_file["dataset_dir"].as<std::string>();
     file_info.output_path = config_file["output_dir"].as<std::string>();
     file_info.sequence_name = config_file["sequence_name"].as<std::string>();
-    if (file_info.dataset_type == "EuRoC")
-    {
-        file_info.GT_file_name = config_file["state_GT_estimate_file_name"].as<std::string>();
-        file_info.has_gt = true;
-    }
-
     try
     {
         YAML::Node left_cam = config_file["left_camera"];
@@ -172,7 +166,9 @@ void Dataset::load_dataset(const std::string &dataset_type,
             csv_path,
             cam0_path,
             cam1_path,
-            gt_path);
+            gt_path,
+            camera_info.rot_frame2body_left,
+            camera_info.transl_frame2body_left);
     }
     else if (dataset_type == "ETH3D_stereo")
     {

@@ -54,7 +54,7 @@
 
 //> Verbose
 #define DATASET_LOAD_VERBOSE (false)
-#define STEREO_EDGE_MATCH_EVAL_VERBOSE (false)
+#define STEREO_EDGE_MATCH_EVAL_VERBOSE (true)
 #define TEMPORAL_EDGE_MATCH_EVAL_VERBOSE (false)
 
 //> Output for visualization
