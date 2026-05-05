@@ -1,4 +1,5 @@
 #include "Stereo_Iterator.h"
+#include <stdexcept>
 
 // =====================================================================================================================
 // class Stereo_Iterator: image iterator to load images from dataset once at a time
@@ -39,7 +40,7 @@ void EuRoCIterator::reset()
     first_line_skipped = false;
 }
 
-bool EuRoCIterator::getNext(StereoFrame &frame)
+bool EuRoCIterator::getNext(StereoFrame &frame, bool b_img_path_verbose)
 {
     std::string line;
     while (std::getline(csv_file, line))
@@ -54,7 +55,6 @@ bool EuRoCIterator::getNext(StereoFrame &frame)
         std::string ts_str;
         std::getline(line_stream, ts_str, ',');
 
-        double timestamp = std::stod(ts_str);
         std::string left_img = left_path + ts_str + ".png";
         std::string right_img = right_path + ts_str + ".png";
 
@@ -65,7 +65,7 @@ bool EuRoCIterator::getNext(StereoFrame &frame)
         {
             frame.left_image = left;
             frame.right_image = right;
-            frame.timestamp = timestamp;
+            frame.timestamp = ts_str;
             // Ground truth will be handled by AlignedStereoIterator
             return true;
         }
@@ -102,7 +102,7 @@ bool ETH3DIterator::hasNext()
     return current_index < folders.size();
 }
 
-bool ETH3DIterator::getNext(StereoFrame &frame)
+bool ETH3DIterator::getNext(StereoFrame &frame, bool b_img_path_verbose)
 {
     while (hasNext())
     {
@@ -120,7 +120,7 @@ bool ETH3DIterator::getNext(StereoFrame &frame)
         {
             frame.left_image = left;
             frame.right_image = right;
-            frame.timestamp = static_cast<double>(current_index - 1);
+            frame.timestamp = std::to_string(current_index - 1);
 
             if (!readETH3DGroundTruth(camera_motion, frame))
             {
@@ -198,8 +198,12 @@ bool ETH3DIterator::readETH3DGroundTruth(const std::string &images_file, StereoF
 // ETH3DSLAMIterator
 /////////////////////////
 
-ETH3DSLAMIterator::ETH3DSLAMIterator(const std::string &dataset_path)
-    : dataset_path(dataset_path)
+ETH3DSLAMIterator::ETH3DSLAMIterator(const std::string &dataset_path,
+    const Eigen::Matrix3d &R_left_to_right,
+    const Eigen::Vector3d &t_left_to_right)
+    : dataset_path(dataset_path),
+      R_left_to_right_(R_left_to_right),
+      t_left_to_right_(t_left_to_right)
 {
     if (!loadImageList())
     {
@@ -232,16 +236,16 @@ bool ETH3DSLAMIterator::loadImageList()
             continue;
 
         std::istringstream iss(line);
-        double timestamp;
+        std::string timestamp_str;
         std::string filename;
 
-        if (iss >> timestamp >> filename)
+        if (iss >> timestamp_str >> filename)
         {
-            image_list.push_back({timestamp, filename});
+            image_list.push_back({timestamp_str, filename});
         }
     }
 
-    std::cout << "Loaded " << image_list.size() << " stereo image pairs from rgb.txt" << std::endl;
+    std::cout << "Loaded " << image_list.size() << " stereo image pairs" << std::endl;
     return !image_list.empty();
 }
 
@@ -272,12 +276,29 @@ bool ETH3DSLAMIterator::loadGroundTruth()
             Eigen::Matrix3d R = q.toRotationMatrix();
             Eigen::Vector3d T(tx, ty, tz);
 
+            //> IMPORTANT: The GT poses of ETH3D-SLAM dataset is camera-to-world convention
+            //> Throughout this code, we use world-to-camera convention
+            Eigen::Matrix3d R_top = R.transpose();
+            T = -R_top * T;
+            R = R_top;
+
+            //> groundtruth.txt tracks the right camera (rgb/), so we need to convert world-to-camera on the 
+            //  right to world-to-camera on the left using the left-to-right stereo parameters.
+            //> P_r = R_left_to_right * P_l + t_left_to_right => R_l = R_lr^T R_r,  t_l = R_lr^T (t_r - t_lr).
+            {
+                const Eigen::Matrix3d R_r = R;
+                const Eigen::Vector3d t_r = T;
+                const Eigen::Matrix3d R_left_to_right_top = R_left_to_right_.transpose();
+                R = R_left_to_right_top * R_r;
+                T = R_left_to_right_top * (t_r - t_left_to_right_);
+            }
+
             gt_poses.emplace_back(timestamp, R, T);
         }
     }
 
-    // Sort by timestamp for efficient lookup
-    std::sort(gt_poses.begin(), gt_poses.end());
+    // // Sort by timestamp for efficient lookup
+    // std::sort(gt_poses.begin(), gt_poses.end());
 
     std::cout << "Loaded " << gt_poses.size() << " ground truth poses" << std::endl;
     return !gt_poses.empty();
@@ -323,21 +344,34 @@ bool ETH3DSLAMIterator::hasNext()
     return current_index < image_list.size();
 }
 
-bool ETH3DSLAMIterator::getNext(StereoFrame &frame)
+bool ETH3DSLAMIterator::getNext(StereoFrame &frame, bool b_img_path_verbose)
 {
     if (!hasNext())
         return false;
 
-    double timestamp = image_list[current_index].first;
+    const std::string &timestamp_str = image_list[current_index].first;
     std::string filename = image_list[current_index].second;
     current_index++;
+
+    double timestamp_val = 0.0;
+    try
+    {
+        timestamp_val = std::stod(timestamp_str);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "ERROR: Invalid timestamp in rgb.txt: " << timestamp_str << " (" << e.what() << ")" << std::endl;
+        return false;
+    }
 
     // Construct paths for left and right images
     std::string right_path = dataset_path + "/" + filename;
     std::string left_path = dataset_path + "/rgb2/" + filename.substr(4); // Remove "rgb/" prefix and add "rgb2/"
 
-    std::cout << "Left path: " << left_path << std::endl;
-    std::cout << "Right path: " << right_path << std::endl;
+    if (b_img_path_verbose) {
+        std::cout << "Left path: " << left_path << std::endl;
+        std::cout << "Right path: " << right_path << std::endl;
+    }
 
     // Load images
     cv::Mat left = cv::imread(left_path, cv::IMREAD_GRAYSCALE);
@@ -353,12 +387,12 @@ bool ETH3DSLAMIterator::getNext(StereoFrame &frame)
 
     frame.left_image = left;
     frame.right_image = right;
-    frame.timestamp = timestamp;
+    frame.timestamp = timestamp_str;
 
     // Load ground truth if available
     Eigen::Matrix3d R;
     Eigen::Vector3d T;
-    if (!findClosestGTPose(timestamp, R, T))
+    if (!findClosestGTPose(timestamp_val, R, T))
     {
         // If no ground truth, set to identity
         frame.gt_camera_pose = Camera_Pose();
@@ -536,20 +570,27 @@ bool AlignedStereoIterator::hasNext()
     return image_iterator->hasNext();
 }
 
-bool AlignedStereoIterator::getNext(StereoFrame &frame)
+bool AlignedStereoIterator::getNext(StereoFrame &frame, bool b_img_path_verbose)
 {
-    if (!image_iterator->getNext(frame))
+    if (!image_iterator->getNext(frame, b_img_path_verbose))
     {
         return false;
     }
 
-    // Try to align with GT
+    // Try to align with GT (numeric comparison against preloaded GT timestamps)
     Eigen::Matrix3d R;
     Eigen::Vector3d T;
-    if (gt_aligner->getAlignedGT(frame.timestamp, R, T))
+    try
     {
-        Camera_Pose gt_camera_pose(R, T);
-        frame.gt_camera_pose = gt_camera_pose;
+        const double img_ts = std::stod(frame.timestamp);
+        if (gt_aligner->getAlignedGT(img_ts, R, T))
+        {
+            frame.gt_camera_pose = Camera_Pose(R, T);
+        }
+    }
+    catch (const std::exception &)
+    {
+        // Leave gt_camera_pose unchanged if timestamp does not parse as a number
     }
 
     return true;
@@ -581,9 +622,11 @@ namespace Iterators
     }
 
     std::unique_ptr<StereoIterator> createETH3DSLAMIterator(
-        const std::string &dataset_path)
+        const std::string &dataset_path,
+        const Eigen::Matrix3d &R_left_to_right,
+        const Eigen::Vector3d &t_left_to_right)
     {
-        return std::make_unique<ETH3DSLAMIterator>(dataset_path);
+        return std::make_unique<ETH3DSLAMIterator>(dataset_path, R_left_to_right, t_left_to_right);
     }
 
     std::unique_ptr<GTPoseIterator> createEuRoCGTPoseIterator(

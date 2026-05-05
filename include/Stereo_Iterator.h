@@ -66,7 +66,7 @@ struct StereoFrame
     cv::Mat right_image;
     cv::Mat left_image_undistorted;
     cv::Mat right_image_undistorted;
-    double timestamp;
+    std::string timestamp;
 
     //> gradients in x and y directions
     cv::Mat left_image_gradients_x;
@@ -77,6 +77,8 @@ struct StereoFrame
     //> third-order edges
     std::vector<Edge> left_edges;
     std::vector<Edge> right_edges;
+
+    Camera_Pose estimated_camera_pose;
 
     //> disparity maps
     cv::Mat left_disparity_map;
@@ -108,7 +110,7 @@ class StereoIterator
 {
 public:
     virtual bool hasNext() = 0;
-    virtual bool getNext(StereoFrame &frame) = 0;
+    virtual bool getNext(StereoFrame &frame, bool b_img_path_verbose = false) = 0;
     virtual void reset() = 0;
     virtual ~StereoIterator() = default;
 };
@@ -121,7 +123,7 @@ public:
                   const std::string &right_path);
 
     bool hasNext() override;
-    bool getNext(StereoFrame &frame) override;
+    bool getNext(StereoFrame &frame, bool b_img_path_verbose = false) override;
     void reset() override;
 
 private:
@@ -136,7 +138,7 @@ public:
     ETH3DIterator(const std::string &stereo_pairs_path);
 
     bool hasNext() override;
-    bool getNext(StereoFrame &frame) override;
+    bool getNext(StereoFrame &frame, bool b_img_path_verbose = false) override;
     void reset() override;
     bool readETH3DGroundTruth(const std::string &images_file, StereoFrame &frame);
 
@@ -148,10 +150,14 @@ private:
 class ETH3DSLAMIterator : public StereoIterator
 {
 public:
-    ETH3DSLAMIterator(const std::string &dataset_path);
+    //> R_left_to_right, t_left_to_right: config stereo R21/T21 (same as Dataset::get_relative_rot/transl_left_to_right).
+    //> ETH3D SLAM groundtruth.txt is the right camera (rgb/); poses are converted to left camera (rgb2/) after C2W -> W2C.
+    ETH3DSLAMIterator(const std::string &dataset_path,
+        const Eigen::Matrix3d &R_left_to_right = Eigen::Matrix3d::Identity(),
+        const Eigen::Vector3d &t_left_to_right = Eigen::Vector3d::Zero());
 
     bool hasNext() override;
-    bool getNext(StereoFrame &frame) override;
+    bool getNext(StereoFrame &frame, bool b_img_path_verbose = false) override;
     void reset() override;
 
 private:
@@ -160,9 +166,12 @@ private:
     bool findClosestGTPose(double timestamp, Eigen::Matrix3d &R, Eigen::Vector3d &T);
 
     std::string dataset_path;
-    std::vector<std::pair<double, std::string>> image_list; // (timestamp, filename)
+    std::vector<std::pair<std::string, std::string>> image_list; // (timestamp, filename)
     std::vector<GTPose> gt_poses;
     size_t current_index = 0;
+
+    Eigen::Matrix3d R_left_to_right_;
+    Eigen::Vector3d t_left_to_right_;
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -213,7 +222,7 @@ public:
         std::unique_ptr<GTPoseAligner> gt_aligner);
 
     bool hasNext() override;
-    bool getNext(StereoFrame &frame) override;
+    bool getNext(StereoFrame &frame, bool b_img_path_verbose = false) override;
     void reset() override;
 
 private:
@@ -234,7 +243,9 @@ namespace Iterators
         const std::string &stereo_pairs_path);
 
     std::unique_ptr<StereoIterator> createETH3DSLAMIterator(
-        const std::string &dataset_path);
+        const std::string &dataset_path,
+        const Eigen::Matrix3d &R_left_to_right = Eigen::Matrix3d::Identity(),
+        const Eigen::Vector3d &t_left_to_right = Eigen::Vector3d::Zero());
 
     std::unique_ptr<GTPoseIterator> createEuRoCGTPoseIterator(
         const std::string &gt_file,
