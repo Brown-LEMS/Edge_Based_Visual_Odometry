@@ -1,4 +1,5 @@
 #include "Stereo_Iterator.h"
+#include <iomanip>
 
 // =====================================================================================================================
 // class Stereo_Iterator: image iterator to load images from dataset once at a time
@@ -76,6 +77,111 @@ bool EuRoCIterator::getNext(StereoFrame &frame)
     return false;
 }
 
+/////////////////////////
+// KITTIIterator
+/////////////////////////
+
+KITTIIterator::KITTIIterator(const std::string &dataset_path, const std::string &gt_path)
+    : dataset_path(dataset_path), gt_path(gt_path)
+{
+    loadImageCount();
+
+    if (!gt_path.empty())
+    {
+        gt_file.open(gt_path);
+        if (!gt_file.is_open())
+            std::cerr << "WARNING: Could not open KITTI GT file: " << gt_path << std::endl;
+        else
+            has_gt = true;
+    }
+}
+
+void KITTIIterator::loadImageCount()
+{
+    std::string left_dir = dataset_path + "/image_0/";
+    total_images = 0;
+    std::error_code ec;
+    for (const auto &entry : std::filesystem::directory_iterator(left_dir, ec))
+    {
+        if (entry.path().extension() == ".png")
+            total_images++;
+    }
+    if (ec)
+        std::cerr << "WARNING: Could not scan KITTI image directory: " << left_dir << std::endl;
+    else
+        std::cout << "Found " << total_images << " KITTI image pairs" << std::endl;
+}
+
+bool KITTIIterator::hasNext()
+{
+    return current_index < total_images;
+}
+
+void KITTIIterator::reset()
+{
+    current_index = 0;
+    if (has_gt)
+    {
+        gt_file.close();
+        gt_file.open(gt_path);
+    }
+}
+
+bool KITTIIterator::getNext(StereoFrame &frame)
+{
+    if (!hasNext())
+        return false;
+
+    std::ostringstream ss;
+    ss << std::setw(6) << std::setfill('0') << current_index;
+    std::string filename = ss.str() + ".png";
+
+    std::string left_path  = dataset_path + "/image_0/" + filename;
+    std::string right_path = dataset_path + "/image_1/" + filename;
+
+    cv::Mat left  = cv::imread(left_path,  cv::IMREAD_GRAYSCALE);
+    cv::Mat right = cv::imread(right_path, cv::IMREAD_GRAYSCALE);
+
+    if (left.empty() || right.empty())
+    {
+        std::cerr << "ERROR: Failed to load KITTI images at index " << current_index << std::endl;
+        std::cerr << "  Left:  " << left_path  << " (" << (left.empty()  ? "failed" : "ok") << ")" << std::endl;
+        std::cerr << "  Right: " << right_path << " (" << (right.empty() ? "failed" : "ok") << ")" << std::endl;
+        return false;
+    }
+
+    frame.left_image  = left;
+    frame.right_image = right;
+    frame.timestamp   = static_cast<double>(current_index);
+
+    // Read the corresponding GT line (one line per frame, aligned by index)
+    if (has_gt)
+    {
+        std::string line;
+        if (std::getline(gt_file, line) && !line.empty())
+        {
+            std::istringstream iss(line);
+            double v[12];
+            bool ok = true;
+            for (int i = 0; i < 12; i++)
+                if (!(iss >> v[i])) { ok = false; break; }
+
+            if (ok)
+            {
+                // Row-major [R|t]: r11 r12 r13 t1  r21 r22 r23 t2  r31 r32 r33 t3
+                Eigen::Matrix3d R;
+                R << v[0], v[1], v[2],
+                     v[4], v[5], v[6],
+                     v[8], v[9], v[10];
+                Eigen::Vector3d T(v[3], v[7], v[11]);
+                frame.gt_camera_pose = Camera_Pose(R, T);
+            }
+        }
+    }
+
+    current_index++;
+    return true;
+}
 /////////////////////////
 // ETH3DIterator
 /////////////////////////
@@ -389,7 +495,6 @@ EuRoCGTPoseIterator::EuRoCGTPoseIterator(const std::string &gt_file,
     T_frame2body = Eigen::Matrix4d::Identity();
     T_frame2body.block<3, 3>(0, 0) = R_frame2body;
     T_frame2body.block<3, 1>(0, 3) = T_frame2body_vec;
-
 }
 
 bool EuRoCGTPoseIterator::hasNext()
@@ -442,7 +547,7 @@ bool EuRoCGTPoseIterator::getNext(Eigen::Matrix3d &R_out, Eigen::Vector3d &T_out
         T_world_from_body.block<3, 3>(0, 0) = R_body;
         T_world_from_body.block<3, 1>(0, 3) = T_body;
 
-        Eigen::Matrix4d T_world_from_frame =  T_world_from_body * T_frame2body;
+        Eigen::Matrix4d T_world_from_frame = T_world_from_body * T_frame2body;
 
         R_out = T_world_from_frame.block<3, 3>(0, 0);
         T_out = T_world_from_frame.block<3, 1>(0, 3);
@@ -571,6 +676,13 @@ namespace Iterators
         const std::string &right_path)
     {
         return std::make_unique<EuRoCIterator>(csv_path, left_path, right_path);
+    }
+
+    std::unique_ptr<StereoIterator> createKITTIIterator(
+        const std::string &dataset_path,
+        const std::string &gt_path)
+    {
+        return std::make_unique<KITTIIterator>(dataset_path, gt_path);
     }
 
     std::unique_ptr<StereoIterator> createETH3DIterator(

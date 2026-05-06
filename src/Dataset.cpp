@@ -55,6 +55,8 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
     file_info.dataset_path = config_file["dataset_dir"].as<std::string>();
     file_info.output_path = config_file["output_dir"].as<std::string>();
     file_info.sequence_name = config_file["sequence_name"].as<std::string>();
+    if (config_file["gt_file_path"])
+        file_info.GT_file_name = config_file["gt_file_path"].as<std::string>();
     try
     {
         YAML::Node left_cam = config_file["left_camera"];
@@ -114,8 +116,14 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
             LOG_ERROR("ERROR: Missing left-to-right stereo parameters R21/T21");
         }
 
+        // KITTI
+        if (file_info.dataset_type == "KITTI")
+        {
+            file_info.has_gt = false;
+        }
+
         // ETH3D stereo focal length and baseline
-        if (file_info.dataset_type == "ETH3D_stereo")
+        else if (file_info.dataset_type == "ETH3D_stereo")
         {
             file_info.has_gt = true;
         }
@@ -153,7 +161,19 @@ void Dataset::load_dataset(const std::string &dataset_type,
                            std::vector<cv::Mat> &left_occlusion_masks,
                            std::vector<cv::Mat> &right_occlusion_masks)
 {
-    if (dataset_type == "EuRoC")
+    if (dataset_type == "KITTI")
+    {
+        std::string sequence_path = file_info.dataset_path + "/" + file_info.sequence_name;
+        std::string gt_file = "";
+        if (!file_info.GT_file_name.empty())
+        {
+            std::string seq_id = file_info.sequence_name.substr(file_info.sequence_name.find_last_of('/') + 1);
+            gt_file = file_info.dataset_path + "/" + file_info.GT_file_name + "/" + seq_id + ".txt";
+        }
+
+        stereo_iterator = Iterators::createKITTIIterator(sequence_path, gt_file);
+    }
+    else if (dataset_type == "EuRoC")
     {
         std::string base = file_info.dataset_path + "/" + file_info.sequence_name + "/mav0/";
 

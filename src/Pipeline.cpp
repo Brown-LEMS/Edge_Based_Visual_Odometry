@@ -87,6 +87,9 @@ void Pipeline::prepare_Stereo_Images()
     if (dataset_->get_num_imgs() == 0)
         initialize_TOED_and_Spatial_Grids();
 
+    cv::imwrite(dataset_->get_output_path() + "/left_undistorted_frame_" + std::to_string(stereo_current_frame_idx) + ".png", left_cur_undistorted);
+    cv::imwrite(dataset_->get_output_path() + "/right_undistorted_frame_" + std::to_string(stereo_current_frame_idx) + ".png", right_cur_undistorted);
+
     ProcessEdges(left_cur_undistorted, dataset_->left_edges);
     std::cout << "Number of edges on the left image: " << dataset_->left_edges.size() << std::endl;
     current_frame.left_edges = dataset_->left_edges;
