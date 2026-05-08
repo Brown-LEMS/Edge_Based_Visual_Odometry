@@ -13,7 +13,8 @@
 #include <algorithm>
 #include "toed/cpu_toed.hpp"
 
-struct alignas(32) Camera_Pose {
+struct alignas(32) Camera_Pose
+{
     //> Credits: https://github.com/PoseLib/PoseLib/blob/master/PoseLib/camera_pose.h
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -23,25 +24,28 @@ struct alignas(32) Camera_Pose {
     Eigen::Quaterniond q;
 
     // Constructors (Defaults to identity camera)
-    Camera_Pose() : R(Eigen::Matrix3d::Identity()), t(0.0, 0.0, 0.0), q(Eigen::Quaterniond(R).normalized()) { }
+    Camera_Pose() : R(Eigen::Matrix3d::Identity()), t(0.0, 0.0, 0.0), q(Eigen::Quaterniond(R).normalized()) {}
     Camera_Pose(const Eigen::Quaterniond &qq, const Eigen::Vector3d &tt) : q(qq), t(tt) { R = q.normalized().toRotationMatrix(); }
     Camera_Pose(const Eigen::Matrix3d &R, const Eigen::Vector3d &tt) : R(R), t(tt) { q = Eigen::Quaterniond(R).normalized(); }
 
     // Helper functions
     inline Eigen::Matrix3d quat_to_R() const { return q.normalized().toRotationMatrix(); }
-    inline Eigen::Matrix<double, 3, 4> make_Rt_in_3x4() const { 
+    inline Eigen::Matrix<double, 3, 4> make_Rt_in_3x4() const
+    {
         Eigen::Matrix<double, 3, 4> tmp = Eigen::Matrix<double, 3, 4>::Zero();
         tmp.block<3, 3>(0, 0) = R;
         tmp.col(3) = t;
         return tmp;
     }
-    inline Eigen::Matrix<double, 4, 4> make_Rt_in_4x4() const {
+    inline Eigen::Matrix<double, 4, 4> make_Rt_in_4x4() const
+    {
         Eigen::Matrix<double, 4, 4> tmp = Eigen::Matrix<double, 4, 4>::Identity();
         tmp.block<3, 3>(0, 0) = R;
         tmp.block<3, 1>(0, 3) = t;
         return tmp;
     }
-    inline Eigen::Matrix<double, 4, 4> inverse_in_4x4() const {
+    inline Eigen::Matrix<double, 4, 4> inverse_in_4x4() const
+    {
         Eigen::Matrix<double, 4, 4> tmp = Eigen::Matrix<double, 4, 4>::Identity();
         tmp.block<3, 3>(0, 0) = R.transpose();
         tmp.block<3, 1>(0, 3) = -R.transpose() * t;
@@ -53,10 +57,14 @@ struct alignas(32) Camera_Pose {
 
     inline Eigen::Vector3d center() const { return -detransform(t); }
 
-    inline void print_Camera_Pose(const std::string &pose_name) const {
+    inline void print_Camera_Pose(const std::string &pose_name) const
+    {
         std::cout << pose_name << ": " << std::endl;
-        std::cout << "- Rotation:\n" << R << std::endl;
-        std::cout << "- Translation:\n" << t.transpose() << std::endl << std::endl;
+        std::cout << "- Rotation:\n"
+                  << R << std::endl;
+        std::cout << "- Translation:\n"
+                  << t.transpose() << std::endl
+                  << std::endl;
     }
 };
 
@@ -130,6 +138,25 @@ private:
     bool first_line_skipped = false;
 };
 
+class KITTIIterator : public StereoIterator
+{
+public:
+    KITTIIterator(const std::string &dataset_path, const std::string &gt_path = "");
+    bool hasNext() override;
+    bool getNext(StereoFrame &frame) override;
+    void reset() override;
+
+private:
+    std::string dataset_path;
+    std::string gt_path;
+    std::ifstream gt_file;
+    size_t current_index = 0;
+    size_t total_images = 0;
+    bool has_gt = false;
+
+    void loadImageCount();
+};
+
 class ETH3DIterator : public StereoIterator
 {
 public:
@@ -187,7 +214,7 @@ public:
 
 private:
     std::ifstream gt_stream;
-    Eigen::Matrix4d inv_T_frame2body;
+    Eigen::Matrix4d T_frame2body;
     bool first_line_skipped = false;
 };
 
@@ -229,6 +256,10 @@ namespace Iterators
         const std::string &csv_path,
         const std::string &left_path,
         const std::string &right_path);
+
+    std::unique_ptr<StereoIterator> createKITTIIterator(
+        const std::string &dataset_path,
+        const std::string &gt_path = "");
 
     std::unique_ptr<StereoIterator> createETH3DIterator(
         const std::string &stereo_pairs_path);

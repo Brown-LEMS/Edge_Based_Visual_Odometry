@@ -89,15 +89,15 @@ private:
     void initialize_TOED_and_Spatial_Grids()
     {
         //> Set the image dimensions
-        dataset_->set_height(current_frame.left_image_undistorted.rows);
-        dataset_->set_width(current_frame.left_image_undistorted.cols);
+        dataset_->set_left_height(current_frame.left_image_undistorted.rows);
+        dataset_->set_left_width(current_frame.left_image_undistorted.cols);
 
         //> Initialize the third-order edge detector class pointer
-        TOED = ThirdOrderEdgeDetectionCPU::Ptr(new ThirdOrderEdgeDetectionCPU(dataset_->get_height(), dataset_->get_width()));
+        TOED = ThirdOrderEdgeDetectionCPU::Ptr(new ThirdOrderEdgeDetectionCPU(dataset_->get_left_height(), dataset_->get_left_width()));
 
         //> Initialize the spatial grids with a cell size of defined GRID_SIZE
-        left_spatial_grids = SpatialGrid(dataset_->get_width(), dataset_->get_height(), GRID_SIZE);
-        right_spatial_grids = SpatialGrid(dataset_->get_width(), dataset_->get_height(), GRID_SIZE);
+        left_spatial_grids = SpatialGrid(dataset_->get_left_width(), dataset_->get_left_height(), GRID_SIZE);
+        right_spatial_grids = SpatialGrid(dataset_->get_left_width(), dataset_->get_left_height(), GRID_SIZE);
     };
 
     void ProcessEdges(const cv::Mat &image, std::vector<Edge> &edges);

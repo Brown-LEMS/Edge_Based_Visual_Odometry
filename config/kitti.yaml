@@ -1,0 +1,28 @@
+#> KITTI Odometry benchmark dataset (gray stereo, rectified)
+#> https://www.cvlibs.net/datasets/kitti/eval_odometry.php
+#> Calibration extracted from calib.txt P0 and P1 matrices
+
+# Dataset Details
+dataset_dir: "/oscar/data/bkimia/Datasets"
+output_dir: "./outputs_kitti"
+sequence_name: "KITTI-gray/00"
+dataset_type: "KITTI"
+gt_file_path: "KITTI-gray/KITTI-gt/poses"   
+
+left_camera:
+  resolution: [1241, 376]
+  intrinsics: [718.856, 718.856, 607.1928, 185.2157]   
+  distortion_coefficients: [0, 0, 0, 0]
+
+right_camera:
+  resolution: [1241, 376]
+  intrinsics: [718.856, 718.856, 607.1928, 185.2157]   
+  distortion_coefficients: [0, 0, 0, 0]
+
+stereo:
+  R21:
+  - [1.0, 0.0, 0.0]
+  - [0.0, 1.0, 0.0]
+  - [0.0, 0.0, 1.0]
+
+  T21: [0.54, 0.0, 0.0]

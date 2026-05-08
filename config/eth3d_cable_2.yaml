@@ -1,20 +1,21 @@
-# ETH3D Low-Resolution, Multi-View Delivery Area Dataset
+#> ETH3D SLAM benchmark dataset
+#> https://www.eth3d.net/slam_overview
 
 # Dataset Details
-dataset_dir: "/oscar/data/bkimia/jhan192/dataset"
-output_dir: "/oscar/data/bkimia/jhan192/jue_dev_ebvo/Edge_Based_Visual_Odometry/outputs"
-sequence_name: "training/cables_2"
+dataset_dir: "/oscar/data/bkimia/Datasets"
+output_dir: "./outputs"
+sequence_name: "ETH3D/slam/cables_2"
 dataset_type: "ETH3D_slam"
 
 # Stereo Intrinsic Parameters
 left_camera:
-  resolution: [739, 458]
-  intrinsics: [726.28741455078, 726.28741455078, 354.6496887207, 186.46566772461]
+  resolution: [742, 464]
+  intrinsics: [726.04388427734, 726.04388427734, 385.73248291016, 262.19641113281]
   distortion_coefficients: [0, 0, 0, 0]
 
 right_camera:
   resolution: [739, 458]
-  intrinsics: [726.04388427734, 726.04388427734, 385.73248291016, 262.19641113281]
+  intrinsics: [726.28741455078, 726.28741455078, 354.6496887207, 186.46566772461]
   distortion_coefficients: [0, 0, 0, 0]
 
 # Stereo Extrinsic Parameters
@@ -25,4 +26,9 @@ stereo:
   - [-0.012378259561956, 0.99991494417191, -0.0041112052276731]
   - [0.0024453257210553, 0.0041417786851525, 0.99998843669891]
 
-  T21: [-0.089831538498402, 0.0001915143802762, 0.00019389642693568]
+  T21: [-0.089831538498402, -0.0001915143802762, 0.00019389642693568]
+
+# Note that the "extrinsics_1_2.txt" provided by the ETH3D dataset is the transformation 
+# from the camera 2 (corresponding to `rgb2/` folder) to the camera 1 (corresponding to `rgb/` folder).
+# The code uses rgb2/ images as the left camera and rgb/ images as the right camera, so R21 and T21 can directly taken from the file.
+# Otherwise, if rgb/ and rgb2/ are designated as left and right cameras, the transformation matrix needs to be inverted.

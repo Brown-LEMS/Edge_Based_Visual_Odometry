@@ -55,12 +55,8 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
     file_info.dataset_path = config_file["dataset_dir"].as<std::string>();
     file_info.output_path = config_file["output_dir"].as<std::string>();
     file_info.sequence_name = config_file["sequence_name"].as<std::string>();
-    if (file_info.dataset_type == "EuRoC")
-    {
-        file_info.GT_file_name = config_file["state_GT_estimate_file_name"].as<std::string>();
-        file_info.has_gt = true;
-    }
-
+    if (config_file["gt_file_path"])
+        file_info.GT_file_name = config_file["gt_file_path"].as<std::string>();
     try
     {
         YAML::Node left_cam = config_file["left_camera"];
@@ -107,21 +103,27 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
             camera_info.left.T = Eigen::Map<const Eigen::Vector3d>(stereo["T21"].as<std::vector<double>>().data());
 
             //> compute the fundamental matrix on the fly
-            camera_info.left.F = camera_info.left.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.left.T) * camera_info.left.R) * camera_info.right.K.inverse();
+            camera_info.left.F = camera_info.right.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.left.T) * camera_info.left.R) * camera_info.left.K.inverse();
 
             camera_info.right.R = camera_info.left.R.transpose();
             camera_info.right.T = -camera_info.left.R.transpose() * camera_info.left.T;
 
             //> compute the fundamental matrix on the fly
-            camera_info.right.F = camera_info.right.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.right.T) * camera_info.right.R) * camera_info.left.K.inverse();
+            camera_info.right.F = camera_info.left.K.inverse().transpose() * (utility_tool->get_Skew_Symmetric_Matrix(camera_info.right.T) * camera_info.right.R) * camera_info.right.K.inverse();
         }
         else
         {
             LOG_ERROR("ERROR: Missing left-to-right stereo parameters R21/T21");
         }
 
+        // KITTI
+        if (file_info.dataset_type == "KITTI")
+        {
+            file_info.has_gt = false;
+        }
+
         // ETH3D stereo focal length and baseline
-        if (file_info.dataset_type == "ETH3D_stereo")
+        else if (file_info.dataset_type == "ETH3D_stereo")
         {
             file_info.has_gt = true;
         }
@@ -159,7 +161,19 @@ void Dataset::load_dataset(const std::string &dataset_type,
                            std::vector<cv::Mat> &left_occlusion_masks,
                            std::vector<cv::Mat> &right_occlusion_masks)
 {
-    if (dataset_type == "EuRoC")
+    if (dataset_type == "KITTI")
+    {
+        std::string sequence_path = file_info.dataset_path + "/" + file_info.sequence_name;
+        std::string gt_file = "";
+        if (!file_info.GT_file_name.empty())
+        {
+            std::string seq_id = file_info.sequence_name.substr(file_info.sequence_name.find_last_of('/') + 1);
+            gt_file = file_info.dataset_path + "/" + file_info.GT_file_name + "/" + seq_id + ".txt";
+        }
+
+        stereo_iterator = Iterators::createKITTIIterator(sequence_path, gt_file);
+    }
+    else if (dataset_type == "EuRoC")
     {
         std::string base = file_info.dataset_path + "/" + file_info.sequence_name + "/mav0/";
 
@@ -172,7 +186,9 @@ void Dataset::load_dataset(const std::string &dataset_type,
             csv_path,
             cam0_path,
             cam1_path,
-            gt_path);
+            gt_path,
+            camera_info.rot_frame2body_left,
+            camera_info.transl_frame2body_left);
     }
     else if (dataset_type == "ETH3D_stereo")
     {
@@ -396,88 +412,6 @@ cv::Mat Dataset::readPFM(const std::string &file_path)
     return mat;
 }
 
-bool Dataset::readDispMiddlebury(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask)
-{
-    try
-    {
-        // Extract base path and construct mask path
-        // disp_file_path: .../disp0GT.pfm
-        // mask_path: .../mask0nocc.png
-        std::string mask_path = disp_file_path;
-        size_t pos = mask_path.find("disp0.pfm");
-        if (pos == std::string::npos)
-        {
-            std::cerr << "Error: disp_file_path must contain 'disp0.pfm'" << std::endl;
-            return false;
-        }
-        mask_path.replace(pos, 11, "mask0nocc.png");
-
-        // Read disparity from PFM file
-        cv::Mat disp_full = readPFM(disp_file_path);
-
-        // Ensure it's single channel (2D)
-        if (disp_full.channels() != 1)
-        {
-            // If it's 3-channel, take first channel or convert to grayscale
-            if (disp_full.channels() == 3)
-            {
-                std::vector<cv::Mat> channels;
-                cv::split(disp_full, channels);
-                disparity = channels[0].clone();
-            }
-            else
-            {
-                std::cerr << "Error: Unexpected number of channels in PFM file" << std::endl;
-                return false;
-            }
-        }
-        else
-        {
-            disparity = disp_full.clone();
-        }
-
-        // Convert to float32 if needed
-        if (disparity.type() != CV_32F)
-        {
-            disparity.convertTo(disparity, CV_32F);
-        }
-
-        // Read non-occlusion mask from PNG
-        cv::Mat mask_img = cv::imread(mask_path, cv::IMREAD_GRAYSCALE);
-        if (mask_img.empty())
-        {
-            std::cerr << "Error: Cannot read mask file: " << mask_path << std::endl;
-            return false;
-        }
-
-        // Create validity mask: mask == 255 (non-occluded pixels)
-        // Mirrors: nocc_pix = imageio.imread(nocc_pix) == 255
-        valid_mask = (mask_img == 255);
-        valid_mask.convertTo(valid_mask, CV_8U); // Convert bool to uint8 (0 or 255)
-
-        // Verify mask has valid pixels
-        if (cv::countNonZero(valid_mask) == 0)
-        {
-            std::cerr << "Warning: No valid pixels in mask" << std::endl;
-            return false;
-        }
-
-        // Ensure disparity and mask have same dimensions
-        if (disparity.size() != valid_mask.size())
-        {
-            std::cerr << "Error: Disparity and mask size mismatch" << std::endl;
-            return false;
-        }
-
-        return true;
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error reading Middlebury disparity: " << e.what() << std::endl;
-        return false;
-    }
-}
-
 bool Dataset::readDispETH3D(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask)
 {
     try
@@ -549,91 +483,6 @@ bool Dataset::readDispETH3D(const std::string &disp_file_path, cv::Mat &disparit
     catch (const std::exception &e)
     {
         std::cerr << "Error reading ETH3D disparity: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool Dataset::read_edges_and_disparities_from_file(const std::string &file_path, std::vector<Edge> &edges, std::vector<double> &edge_disparities)
-{
-    try
-    {
-        std::ifstream file(file_path);
-        if (!file.is_open())
-        {
-            std::cerr << "Error: Could not open file: " << file_path << std::endl;
-            return false;
-        }
-
-        edges.clear();
-        edge_disparities.clear();
-
-        std::string line;
-        int edge_index = 0;
-
-        while (std::getline(file, line))
-        {
-            // Skip empty lines and comments
-            if (line.empty() || line[0] == '#')
-            {
-                continue;
-            }
-
-            // Parse the line - support both space and tab separators
-            std::istringstream iss(line);
-            std::vector<std::string> tokens;
-            std::string token;
-
-            while (iss >> token)
-            {
-                tokens.push_back(token);
-            }
-
-            // Expect 4 columns: x, y, orientation, disparity
-            if (tokens.size() < 4)
-            {
-                std::cerr << "Warning: Skipping line with insufficient columns: " << line << std::endl;
-                continue;
-            }
-
-            try
-            {
-                double y = std::stod(tokens[0]);
-                double x = std::stod(tokens[1]);
-                double orientation = std::stod(tokens[2]);
-                double disparity = std::stod(tokens[3]);
-
-                // Create Edge object
-                cv::Point2d location(x, y);
-                Edge edge(location, orientation, false, 0); // b_isEmpty=false, frame_source=0
-                edge.index = edge_index;
-
-                edges.push_back(edge);
-                edge_disparities.push_back(disparity);
-
-                edge_index++;
-            }
-            catch (const std::exception &e)
-            {
-                std::cerr << "Warning: Error parsing line: " << line << " - " << e.what() << std::endl;
-                continue;
-            }
-        }
-
-        file.close();
-
-        if (edges.empty())
-        {
-            std::cerr << "Warning: No valid edge data found in file: " << file_path << std::endl;
-            return false;
-        }
-#if DATASET_LOAD_VERBOSE
-        std::cout << "Successfully loaded " << edges.size() << " third-order edges from: " << file_path << std::endl;
-#endif
-        return true;
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Error reading third-order edges from file: " << e.what() << std::endl;
         return false;
     }
 }
