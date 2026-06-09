@@ -1357,7 +1357,6 @@ void Stereo_Matches::refine_edge_disparity(Stereo_Edge_Pairs &stereo_frame_edge_
 
 Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, size_t frame_idx, Timing_Statistics &timing_statistics)
 {
-
     Evaluation_Statistics evaluation_statistics;
     Evaluation_Statistics evaluation_statistics_right;
     Frame_Evaluation_Metrics frame_metrics;
@@ -1368,10 +1367,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
 
     //> Apply epipolar line distance filtering (must be first to extract candidates)
     //> Set num_random_edges_for_distribution to 0 to disable distribution recording
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_Epipolar_Line_Distance_Filtering(stereo_frame_edge_pairs, dataset, stereo_frame_edge_pairs.stereo_frame->right_edges, "output_files", true, frame_idx, 10);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_EP = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_EP = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Epipolar Line Distance Filtering",
                                             recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1380,10 +1379,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     }
 
     //> Apply disparity filtering
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_Disparity_Filtering(stereo_frame_edge_pairs, "output_files", frame_idx);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_DP = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_DP = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Maximal Disparity Filtering",
                                             recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1391,10 +1390,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
         frame_metrics.stages.push_back({"Location Proximity", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
     }
 
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_orientation_filter(stereo_frame_edge_pairs, 10.0, "output_files", frame_idx);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_OR = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_OR = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Orientation Filtering",
                                             recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1405,10 +1404,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     augment_Edge_Data(stereo_frame_edge_pairs, true);
 
     //> Apply SIFT filtering
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_SIFT_filtering(stereo_frame_edge_pairs, SIFT_THRESHOLD, "output_files", frame_idx);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_SIFT = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_SIFT = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "SIFT Filtering",
                                             recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1417,10 +1416,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     }
 
     //> Apply NCC filtering
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_NCC_Filtering(stereo_frame_edge_pairs, "output_files", frame_idx);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_NCC = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_NCC = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "NCC Filtering",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1429,10 +1428,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     }
 
     //> Apply Best-Nearly-Best test with both NCC and SIFT scores
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_Best_Nearly_Best_Test(stereo_frame_edge_pairs, BNB_NCC, "output_files", frame_idx, true);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_BNB_NCC = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_BNB_NCC = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB-NCC",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1440,10 +1439,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
         frame_metrics.stages.push_back({"BNB-NCC", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
     }
 
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_Best_Nearly_Best_Test(stereo_frame_edge_pairs, BNB_SIFT, "output_files", frame_idx, false);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_BNB_SIFT = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_BNB_SIFT = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {    
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "BNB-SIFT",
                                             recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1452,13 +1451,13 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     }
 
     //> Shift edges to the epipolar line and cluster them to consolidate redundant edge hypothesis
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     consolidate_redundant_edge_hypothesis(stereo_frame_edge_pairs, frame_idx, true, false);
     
     //> Refine the edge disparity after redundant edge hypothesis are consolidated
     refine_edge_disparity(stereo_frame_edge_pairs, frame_idx, true);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_Refinement = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_Refinement = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Photometric Refinement",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1469,10 +1468,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
         frame_metrics.stages.push_back({"Photometric Refinement", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
     }
 
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     consolidate_redundant_edge_hypothesis(stereo_frame_edge_pairs, false, true);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_Clustering = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_Clustering = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
 
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Edge Clustering",
@@ -1485,10 +1484,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     }
 
     //> Post NCC filtering after clustering
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_NCC_Filtering(stereo_frame_edge_pairs, "output_files", frame_idx);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_Post_NCC = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_Post_NCC = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "NCC Filtering(Post-Clustering)",
                                          recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1497,10 +1496,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
     }
 
     //> Apply Best filter after all filtering to disambiguate final candidates
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     apply_Lowe_Ratio_Test(stereo_frame_edge_pairs, LOWES_RATIO, "output_files", frame_idx);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_Best = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_Best = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "Best",
                                             recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1508,12 +1507,10 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
         frame_metrics.stages.push_back({"Best", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
     }
 
-    // std::cout << "Edge size before cleaning: " << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
-    // start_time = std::chrono::high_resolution_clock::now();
+    start_time = std::chrono::high_resolution_clock::now();
     remove_empty_clusters(stereo_frame_edge_pairs);
-    // end_time = std::chrono::high_resolution_clock::now();
-    // timing_statistics.time_Finalize = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-    // std::cout << "Edge size after cleaning: " << stereo_frame_edge_pairs.focused_edge_indices.size() << std::endl;
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_Finalize = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     if (dataset->has_gt()) {
         Evaluate_Stereo_Edge_Correspondences(stereo_frame_edge_pairs, frame_idx, "cleaning",
                                             recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg,
@@ -1521,7 +1518,7 @@ Frame_Evaluation_Metrics Stereo_Matches::get_Stereo_Edge_Pairs(Dataset::Ptr data
         frame_metrics.stages.push_back({"Final", {recall_per_image, precision_per_image, precision_pair_per_image, num_of_target_edges_per_source_edge_avg}});
     }
 
-    // timing_statistics.total_time = timing_statistics.time_EP + timing_statistics.time_DP + timing_statistics.time_OR + timing_statistics.time_NCC + timing_statistics.time_SIFT + timing_statistics.time_BNB_NCC + timing_statistics.time_BNB_SIFT + timing_statistics.time_Refinement + timing_statistics.time_Clustering + timing_statistics.time_Post_NCC + timing_statistics.time_Best + timing_statistics.time_Finalize;
+    timing_statistics.total_time = timing_statistics.time_EP + timing_statistics.time_DP + timing_statistics.time_OR + timing_statistics.time_NCC + timing_statistics.time_SIFT + timing_statistics.time_BNB_NCC + timing_statistics.time_BNB_SIFT + timing_statistics.time_Refinement + timing_statistics.time_Clustering + timing_statistics.time_Post_NCC + timing_statistics.time_Best + timing_statistics.time_Finalize;
     return frame_metrics;
 }
 
@@ -1620,15 +1617,16 @@ void Stereo_Matches::finalize_stereo_edge_mates(Stereo_Edge_Pairs &stereo_frame_
             sift->compute(right_image, edge_keypoints, right_edge_descriptors);
             stereo_mate.right_edge_descriptors = std::make_pair(right_edge_descriptors.row(0).clone(), right_edge_descriptors.row(1).clone());
 
-            //> 3D points in left and right camera coordinates
+            //> 3D points in left and right camera coordinates (from disparity GT when has_GT; else placeholders from Find_Stereo_GT_Locations)
             stereo_mate.Gamma_in_left_cam_coord = stereo_frame_edge_pairs.Gamma_in_left_cam_coord[i];
             stereo_mate.Gamma_in_right_cam_coord = stereo_frame_edge_pairs.Gamma_in_right_cam_coord[i];
 
             //> Ground-truth right-edge location (used for disparity error computation)
             stereo_mate.gt_right_location = stereo_frame_edge_pairs.GT_locations_from_left_edges[i];
 
-            //> Whether the stereo edge pair is true positive
-            stereo_mate.b_is_TP = (cv::norm(right_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH) ? (true) : (false);
+            //> Whether the stereo edge pair is true positive (meaningful only when stereo_frame_edge_pairs.has_GT)
+            stereo_mate.b_is_TP = stereo_frame_edge_pairs.has_GT &&
+                (cv::norm(right_edge.location - stereo_frame_edge_pairs.GT_locations_from_left_edges[i]) <= DIST_TO_GT_THRESH);
 
             //> Push back the stereo edge pair
             final_stereo_edge_pairs[i] = stereo_mate;

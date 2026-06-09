@@ -17,11 +17,12 @@
 #define EPIPOLAR_LINE_DIST_THRESH (0.5)  //> in pixels
 #define EPIP_TENGENCY_ORIENT_THRESH (12) //> in degrees
 #define EPIP_TENGENCY_PROXIM_THRESH (4)  //> in pixels
-#define MAX_DISPARITY (25)
+#define MAX_DISPARITY (150)
 #define EDGE_CLUSTER_THRESH (0.3) //> in pixels
 #define ORTHOGONAL_SHIFT_MAG (5)  //> in pixels
 #define PATCH_SIZE (7)            //> in pixels
 #define NCC_THRESH (0.6)
+#define SIFT_THRESHOLD (500.0)
 
 #define EPIP_TANGENCY_DISPL_THRESH (3) //> in pixels
 #define LOCATION_PERTURBATION (0.4)    //> in pixels
@@ -35,12 +36,20 @@
 #define HUBER_DELTA (1.0) //> Huber threshold
 #define LOWES_RATIO (0.8) //> Suggested in Lowe's paper
 
+//> TODO: remove this
 #define BIDIRECTIONAL_FILTERING (false)
 
-#define SIFT_THRESHOLD (500.0)
 //> precision-recall experiments
 #define DIST_TO_GT_THRESH (1.0) //> in pixels
 #define DIST_TO_GT_THRESH_QUADS (2.0) //> in pixels
+#define ORIENT_THRESHOLD_QUADS (10.0)
+#define SEARCH_RADIUS_QUADS (15.0 + DIST_TO_GT_THRESH_QUADS + 3.0)
+#define IMG_MARGIN_QUADS (10)
+
+//> Chain quad correspondences across multiple frames by intersecting adjacent quad sets (shared bridge stereo index).
+//> When false, behavior is unchanged. When true and frame gap > 1, use stored adjacent snapshots when available.
+#define ENABLE_QUAD_PROPAGATION 0
+#define QUAD_PROPAGATION_HISTORY_MAX (64)
 
 #define GRID_SIZE (15) //> Size of the spatial grid cells in pixels
 
@@ -49,8 +58,7 @@
 #define TAU_C3 (0.12)
 #define TAU_C4 (0.32)
 
-
-#define MEASURE_TIMINGS (false)
+#define SAVE_GROUND_TRUTH_POSES (false)
 
 //> Verbose
 #define DATASET_LOAD_VERBOSE (false)
@@ -61,6 +69,8 @@
 #define RECORD_FILTER_DISTRIBUTIONS (false)
 
 //> DEBUGGING PURPOSE
+#define WRITE_GT_REPROJECTION_MATLAB_FILE (true)
+
 #define SHOW_YAML_FILE_DATA (false)
 #define DEBUG_FALSE_NEGATIVES (false)
 #define DEBUG_COLLECT_NCC_AND_ERR (false)

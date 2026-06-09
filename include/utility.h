@@ -19,18 +19,6 @@
 #include "definitions.h"
 #include "toed/cpu_toed.hpp"
 
-// =====================================================================================================================
-// UTILITY_TOOLS: useful functions for debugging, writing data to files, displaying images, etc.
-//
-// ChangeLogs
-//    Chien  23-01-18    Initially created.
-//    Chien  23-01-19    Add bilinear interpolation
-//    Jue    25-06-11    Added other utility functions
-//
-//> (c) LEMS, Brown University
-//> Chiang-Heng Chien (chiang-heng_chien@brown.edu)
-// ======================================================================================================================
-
 class Utility
 {
 
@@ -51,6 +39,8 @@ public:
     Eigen::Vector3d project_3D_Tangent_to_2D_Tangent( const Eigen::Vector3d Tangent_3D, Eigen::Vector3d gamma );
 
     Camera_Pose get_Relative_Pose( const Camera_Pose &source_pose, const Camera_Pose &target_pose );
+    double evaluate_Relative_Rotation_Accuracy(const Camera_Pose &estimated_pose, const Camera_Pose &ground_truth_pose);
+    double evaluate_Relative_Translation_Accuracy(const Camera_Pose &estimated_pose, const Camera_Pose &ground_truth_pose);
     
     std::pair<cv::Mat, cv::Mat> get_edge_patches(const Edge edge, const cv::Mat img, bool b_debug = false);
     std::pair<cv::Point2d, cv::Point2d> get_Orthogonal_Shifted_Points(const Edge edgel);

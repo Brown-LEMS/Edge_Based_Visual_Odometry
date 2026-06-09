@@ -31,19 +31,23 @@ struct Quad_Pair_Evaluation_Metrics
     double recall;
     double precision;
     size_t num_of_surviving_veridical_quad_pairs;
+    double rot_err;
+    double trans_err;
+    size_t num_of_iterations;
+    double inlier_ratio;
 };
 
 //> Edited based on PoseLib: https://github.com/PoseLib/PoseLib/blob/master/PoseLib/types.h
 struct Ransac_Options {
-    size_t max_iterations = 5000;
-    size_t min_iterations = 1000;
+    size_t max_iterations = 1000;
+    size_t min_iterations = 400;
     double dyn_num_trials_mult = 3.0;
-    double success_prob = 0.97;
-    double max_reprojection_location_error = 1.5; //> in pixels
+    double success_prob = 0.95;
+    double max_reprojection_location_error = 2.0; //> in pixels
     double max_reprojection_orientation_error = 5.0; 
     unsigned long seed = 0; //> 0 for deterministic behavior (uses fixed seed 42); non-zero values use std::random_device for different sequence each run
     size_t max_prosac_iterations = 100000;
-    double top_rank_ordered_percentage = 0.7;
+    double top_rank_ordered_percentage = 0.55;
 };
 
 //> Edited based on PoseLib: https://github.com/PoseLib/PoseLib/blob/master/PoseLib/ransac_impl.h
@@ -70,14 +74,25 @@ public:
     //> Constructor (nothing special)
     MotionTracker(Dataset::Ptr dataset);   
 
+    void score_Pose_Hypothesis(const Camera_Pose &pose_hypothesis, const std::vector<Quad_for_Pose_Solution> &quads, \
+        const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Ransac_Options &opt, std::vector<size_t> &inlier_indices);
+
+    /** One text row per quad (whitespace-separated): GT reprojection vs CF left center; plot in visualization/visualize_gt_reprojection.m */
+    void save_GT_reprojection_table_for_matlab(const Camera_Pose &rel_pose_gt, const std::vector<Quad_for_Pose_Solution> &quads,
+        const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Ransac_Options &opt, const std::string &file_path,
+        size_t current_frame_index);
+
     std::vector<Quad_for_Pose_Solution> get_Quad_for_Pose_Solution(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf);
     Camera_Pose estimate_Pose_From_a_Quad_Pair(const Quad_for_Pose_Solution &q1, const Quad_for_Pose_Solution &q2);
     bool estimate_Relative_Pose_From_Quad_Pairs(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Ransac_Options &opt, Ransac_State &state);
     void get_Gammas_and_Tangents_From_Quads(const KF_Temporal_Edge_Quads &kvq, const size_t candidate_idx, \
         Eigen::Matrix3d inv_K, Eigen::Vector3d &Gamma, Eigen::Vector3d &Gamma_bar, Eigen::Vector3d &Tangent, Eigen::Vector3d &Tangent_bar);
     
-    std::vector<Quad_Pair_Evaluation_Metrics> Solution_Constraints_Application(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Ransac_Options &opt, Ransac_State &state);
-    void Print_Quad_Pairs_Metrics_Statistics(const std::vector<std::vector<Quad_Pair_Evaluation_Metrics>> &all_quad_pair_evaluation_metrics);
+    void save_Quad_for_Pose_Solution_to_File(Dataset &dataset, const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf,
+        const std::vector<Quad_for_Pose_Solution> &quads_for_pose_solution, const std::string &file_name);
+    
+    std::vector<Quad_Pair_Evaluation_Metrics> Solution_Constraints_Application(const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Camera_Pose &ground_truth_pose, const Ransac_Options &opt, Ransac_State &state);
+    void Print_Quad_Pairs_Metrics_Statistics(const std::vector<std::vector<Quad_Pair_Evaluation_Metrics>> &all_quad_pair_evaluation_metrics, const bool b_print_average_metrics, std::ofstream &file_quad_pair_constraints_metrics);
 
 private:
 
@@ -86,9 +101,6 @@ private:
     bool Apply_T1_Angle_Similarity_Constraint(const Quad_for_Pose_Solution &q1, const Quad_for_Pose_Solution &q2); 
     bool Apply_T2_Angle_Similarity_Constraint(const Quad_for_Pose_Solution &q1, const Quad_for_Pose_Solution &q2);
     bool Apply_Tangent_Angle_Similarity_Constraint(const Quad_for_Pose_Solution &q1, const Quad_for_Pose_Solution &q2);
-
-    void score_Pose_Hypothesis(const Camera_Pose &pose_hypothesis, const std::vector<Quad_for_Pose_Solution> &quads, \
-        const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, const Ransac_Options &opt, std::vector<size_t> &inlier_indices);
 
     unsigned long get_seed_value_for_rng(const Ransac_Options &opt) {
         if (opt.seed == 0) 
@@ -106,6 +118,13 @@ private:
 
     Eigen::Matrix3d Estimated_Rel_Rot;
     Eigen::Vector3d Estimated_Rel_Transl;
+
+    bool Solution_Constrained_Pose_Estimation( \
+        const std::vector<KF_Temporal_Edge_Quads> &quads_by_kf, \
+        std::vector<Quad_for_Pose_Solution> quads_for_pose_solution, \
+        std::vector<Quad_for_Pose_Solution> all_quads_for_pose_solution, \
+        std::vector<std::pair<size_t, size_t>> picked_indices, \
+        const Ransac_Options &opt, Ransac_State &state);
 };
 
 

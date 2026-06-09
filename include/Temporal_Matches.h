@@ -45,7 +45,17 @@ public:
         const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids,
         Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
         const StereoFrame &keyframe, const StereoFrame &current_frame,
-        size_t keyframe_idx, size_t current_frame_idx);
+        size_t keyframe_idx, size_t current_frame_idx, Timing_Statistics &timing_statistics);
+
+    //> Intersect veridical quads source→bridge and bridge→dest on matching bridge stereo pair indices (cf index / KF index on the middle frame).
+    //> Output quads map KF edges from the first segment to CF stereo indices in `mates_dest`. KF_stereo_mate pointers must reference `mates_source_kf`.
+    static void propagate_veridical_quads_one_hop(
+        const std::vector<KF_Temporal_Edge_Quads> &quads_source_to_bridge,
+        const std::vector<final_stereo_edge_pair> &mates_source_kf,
+        const std::vector<final_stereo_edge_pair> &mates_bridge,
+        const std::vector<KF_Temporal_Edge_Quads> &quads_bridge_to_dest,
+        const std::vector<final_stereo_edge_pair> &mates_dest,
+        std::vector<KF_Temporal_Edge_Quads> &out_source_to_dest);
 
     void add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids);
 
@@ -96,7 +106,24 @@ public:
         size_t keyframe_idx, size_t current_frame_idx,
         const std::string &filename_suffix = "");
 
+    //> write timings to a file
+    void write_timings_to_file(std::ofstream &out_file_stream, Timing_Statistics &timing_statistics)
+    {
+        out_file_stream << timing_statistics.time_DP << " " \
+                        << timing_statistics.time_OR << " " << timing_statistics.time_NCC << " " \
+                        << timing_statistics.time_SIFT << " " << timing_statistics.time_BNB_NCC << " " \
+                        << timing_statistics.time_BNB_SIFT << " " << timing_statistics.time_Refinement << " " \
+                        << timing_statistics.time_Clustering << " " << timing_statistics.total_time << std::endl;
+    }
+
 private:
+    Frame_Evaluation_Metrics run_temporal_quad_pipeline_filters(
+        std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
+        const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
+        const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids,
+        const StereoFrame &keyframe, const StereoFrame &current_frame,
+        size_t keyframe_idx, size_t current_frame_idx, Timing_Statistics &timing_statistics);
+
     //> Evaluate precision/recall/ambiguity on candidate quads (from left/right temporal mates).
     //> TP = candidate quads whose left and right cluster centers are near GT.
     //> Returns Stage_Metrics for the given stage (recall, precision, precision_pair=precision, ambiguity).

@@ -383,7 +383,7 @@ public:
     std::string get_output_path() { return file_info.output_path; }
     int get_omp_threads() const { return omp_threads; }
 
-    unsigned get_num_imgs() { return Total_Num_Of_Imgs; };
+    unsigned get_Total_Num_of_Stereo_Frames() { return Total_Num_of_Stereo_Frames; };
     int get_left_height() { return left_img_height; };
     int get_left_width() { return left_img_width; };
     int get_right_height() { return right_img_height; };
@@ -427,7 +427,7 @@ public:
     bool readDispETH3D(const std::string &disp_file_path, cv::Mat &disparity, cv::Mat &valid_mask);
 
     // setters
-    void increment_num_imgs() { Total_Num_Of_Imgs++; };
+    void increment_num_imgs() { Total_Num_of_Stereo_Frames++; };
     void set_left_height(int height) { left_img_height = height; };
     void set_left_width(int width) { left_img_width = width; };
     void set_right_height(int height) { right_img_height = height; };
@@ -441,12 +441,9 @@ private:
     // camera info
     CameraInfo camera_info;
     // Images info
-    unsigned Total_Num_Of_Imgs;
+    unsigned Total_Num_of_Stereo_Frames;
     int left_img_height, left_img_width;
     int right_img_height, right_img_width;
-
-    // functions
-    void PrintDatasetInfo();
 
     //> ETH3D dataset
     std::vector<cv::Mat> LoadETH3DOcclusionMasks(const std::string &stereo_pairs_path, bool left = true);

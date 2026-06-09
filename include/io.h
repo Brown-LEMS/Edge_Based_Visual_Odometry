@@ -10,87 +10,90 @@
 #include "Dataset.h"
 #include "utility.h"
 
-//> Truncate incremental-append outputs so each program run starts from an empty file (append_* then writes headers on first line).
-void reset_incremental_append_outputs()
-{
-    const std::string pose_path = "outputs/results_incremental_append.txt";
-    const std::string eval_path = "outputs/evaluation_results_incremental_append.txt";
-    std::ofstream(pose_path, std::ios::trunc).close();
-    std::ofstream(eval_path, std::ios::trunc).close();
-}
+class quad_Edge_vo_io{
+public:
+    quad_Edge_vo_io() = default;
+    virtual ~quad_Edge_vo_io() = default;
+    typedef std::shared_ptr<quad_Edge_vo_io> Ptr;
 
-//> Append one pose line in TUM format; writes header if the file is missing or empty. Flush for crash safety.
-void append_pose_to_file_tum_format(const std::pair<std::string, Camera_Pose>& pose, const std::string& file_name)
-{
-    const std::string path = "outputs/" + file_name + ".txt";
-    std::ifstream probe(path, std::ios::ate | std::ios::binary);
-    const bool file_nonempty = probe.is_open() && probe.tellg() > 0;
-    probe.close();
-
-    std::ofstream file(path, std::ios::app);
-    if (!file) {
-        LOG_FILE_ERROR("Failed to open the file for append: " + path);
-        return;
+    //> Truncate incremental-append outputs so each program run starts from an empty file (append_* then writes headers on first line).
+    void reset_incremental_append_outputs()
+    {
+        const std::string pose_path = "outputs/results_incremental_append.txt";
+        std::ofstream(pose_path, std::ios::trunc).close();
     }
-    //> write the header only if the file is empty
-    if (!file_nonempty) {
+
+    //> Append one pose line in TUM format; writes header if the file is missing or empty. Flush for crash safety.
+    void append_pose_to_file_tum_format(const std::pair<std::string, Camera_Pose>& pose, const std::string& file_name)
+    {
+        const std::string path = "outputs/" + file_name + ".txt";
+        std::ifstream probe(path, std::ios::ate | std::ios::binary);
+        const bool file_nonempty = probe.is_open() && probe.tellg() > 0;
+        probe.close();
+
+        std::ofstream file(path, std::ios::app);
+        if (!file) {
+            LOG_FILE_ERROR("Failed to open the file for append: " + path);
+            return;
+        }
+        //> write the header only if the file is empty
+        if (!file_nonempty) {
+            file << "timestamp tx ty tz qx qy qz qw" << std::endl;
+        }
+        const Camera_Pose& p = pose.second;
+        file << pose.first << " " << p.t.x() << " " << p.t.y() << " " << p.t.z() << " "
+            << p.q.x() << " " << p.q.y() << " " << p.q.z() << " " << p.q.w() << std::endl;
+        file.flush();
+    }
+
+    void save_poses_to_file_tum_format(const std::vector<std::pair<std::string, Camera_Pose>>& poses, const std::string& file_name) 
+    {
+        std::ofstream file;
+        file.open("outputs/" + file_name + ".txt");
         file << "timestamp tx ty tz qx qy qz qw" << std::endl;
+        for (size_t i = 0; i < poses.size(); ++i) {
+            const std::string& time_stamp = poses[i].first;
+            Camera_Pose pose = poses[i].second;
+            file << time_stamp << " " << pose.t.x() << " " << pose.t.y() << " " << pose.t.z() \
+                    << " " << pose.q.x() << " " << pose.q.y() << " " << pose.q.z() << " " << pose.q.w() << std::endl;
+        }
+        LOG_STATUS("Saved poses to file: " + file_name + ".txt");
+        file.close();
     }
-    const Camera_Pose& p = pose.second;
-    file << pose.first << " " << p.t.x() << " " << p.t.y() << " " << p.t.z() << " "
-         << p.q.x() << " " << p.q.y() << " " << p.q.z() << " " << p.q.w() << std::endl;
-    file.flush();
-}
 
-//> Append evaluation results. Flush for crash safety.
-void append_evaluation_results_to_file(const std::pair<std::string, Camera_Pose>& pose, const evaluation_results& eval_results, const std::string& file_name)
-{
-    const std::string path = "outputs/" + file_name + ".txt";
-    std::ifstream probe(path, std::ios::ate | std::ios::binary);
-    const bool file_nonempty = probe.is_open() && probe.tellg() > 0;
-    probe.close();
-
-    std::ofstream file(path, std::ios::app);
-    if (!file) {
-        LOG_FILE_ERROR("Failed to open the file for appending the evaluation results: " + path);
-        return;
-    }
-    //> write the header only if the file is empty
-    if (!file_nonempty) {
-        file << "timestamp err_R err_t err_scale" << std::endl;
-    }
-    file << pose.first << " " << eval_results.err_R << " " << eval_results.err_t << " " << eval_results.err_scale << std::endl;
-    file.flush();
-}
-
-void save_poses_to_file_tum_format(const std::vector<std::pair<std::string, Camera_Pose>>& poses, const std::string& file_name) 
-{
-    std::ofstream file;
-    file.open("outputs/" + file_name + ".txt");
-    file << "timestamp tx ty tz qx qy qz qw" << std::endl;
-    for (size_t i = 0; i < poses.size(); ++i) {
-        const std::string& time_stamp = poses[i].first;
-        Camera_Pose pose = poses[i].second;
-        file << time_stamp << " " << pose.t.x() << " " << pose.t.y() << " " << pose.t.z() \
+    void save_Poses_to_File_TUM_Format(Dataset &dataset, const std::vector<Camera_Pose>& poses, const std::vector<double>& timestamps, const std::string& file_name) 
+    {
+        std::ofstream file;
+        std::string output_dir = dataset.get_output_path();
+        file.open(output_dir + "/" + file_name + ".txt");
+        file << "timestamp tx ty tz qx qy qz qw" << std::endl;
+        file << std::setprecision(10);
+        for (size_t i = 0; i < poses.size(); ++i) {
+            Camera_Pose pose = poses[i];
+            file << timestamps[i] << " " << pose.t.x() << " " << pose.t.y() << " " << pose.t.z() \
                 << " " << pose.q.x() << " " << pose.q.y() << " " << pose.q.z() << " " << pose.q.w() << std::endl;
+        }
+        LOG_INFO("Saved poses to TUM format file: " + file_name + ".txt");
+        file.close();
     }
-    LOG_STATUS("Saved poses to file: " + file_name + ".txt");
-    file.close();
-}
 
-void save_evaluation_results_to_file(const std::vector<std::pair<std::string, evaluation_results>>& evaluation_results_paired_with_timestamp, const std::string& file_name) 
-{
-    std::ofstream file;
-    file.open("outputs/" + file_name + ".txt");
-    file << "timestamp err_R err_t err_scale" << std::endl;
-    for (size_t i = 0; i < evaluation_results_paired_with_timestamp.size(); ++i) {
-        const std::string& time_stamp = evaluation_results_paired_with_timestamp[i].first;
-        evaluation_results eval_results = evaluation_results_paired_with_timestamp[i].second;
-        file << time_stamp << " " << eval_results.err_R << " " << eval_results.err_t << " " << eval_results.err_scale << std::endl;
+    void save_Poses_to_File_KITTI_Format(Dataset &dataset, const std::vector<Camera_Pose>& poses, const std::string& file_name) 
+    {
+        std::ofstream file;
+        std::string output_dir = dataset.get_output_path();
+        file.open(output_dir + "/" + file_name + ".txt");
+        file << "" << std::endl;
+        for (size_t i = 0; i < poses.size(); ++i) {
+            Camera_Pose pose = poses[i];
+            file << std::setprecision(9) \
+                << pose.R(0, 0) << " " << pose.R(0, 1) << " " << pose.R(0, 2) << " " << pose.t.x() << " "
+                << pose.R(1, 0) << " " << pose.R(1, 1) << " " << pose.R(1, 2) << " " << pose.t.y() << " "
+                << pose.R(2, 0) << " " << pose.R(2, 1) << " " << pose.R(2, 2) << " " << pose.t.z() << "\n";
+        }
+        LOG_INFO("Saved poses to KITTI format file: " + file_name + ".txt");
+        file.close();
     }
-    LOG_STATUS("Saved evaluation results to file: " + file_name + ".txt");
-    file.close();
-}
+};
 
 //> Write evaluation statistics to file, specifically the data from photometric refinement
 inline void write_Evaluated_Photometric_Refinement_Data_to_file(Dataset &dataset, Evaluation_Statistics &evaluation_statistics, int frame_idx)
@@ -116,8 +119,6 @@ inline void write_Evaluated_Photometric_Refinement_Data_to_file(Dataset &dataset
 }
 
 //> Write evaluation statistics to file, specifically the data from photometric refinement
-//> Stages:
-//  Epipolar Line Distance Filtering, Maximal Disparity Filtering, Epipolar Shift and Clustering, Photometric Refinement
 inline void write_Evaluated_Matching_Edge_Clusters_Data_to_file(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, Evaluation_Statistics &evaluation_statistics, int frame_idx)
 {
     std::string output_dir = dataset.get_output_path();
@@ -166,33 +167,6 @@ inline void write_Evaluated_Matching_Edge_Clusters_Data_to_file(Dataset &dataset
 //                          << stereo_frame_edge_pairs.triangulated_3D_tangents[i].z() << std::endl;
 //     }
 //     edges_in_3D_file.close();
-// }
-
-// inline void write_left_edge_pairs_and_3D_edges_to_file(Dataset &dataset, Stereo_Edge_Pairs &stereo_frame_edge_pairs, int frame_idx)
-// {
-//     std::string output_dir = dataset.get_output_path();
-//     std::string edge_pairs_and_3D_edges_filename = output_dir + "/edge_pairs_and_3D_edges_frame_" + std::to_string(frame_idx) + ".txt";
-//     std::ofstream edge_pairs_and_3D_edges_file(edge_pairs_and_3D_edges_filename);
-//     for (int i = 0; i < stereo_frame_edge_pairs.focused_edge_indices.size(); i++)
-//     {
-//         Edge left_edge = stereo_frame_edge_pairs.get_focused_edge_by_Stereo_Edge_Pairs_index(i);
-//         Eigen::Vector3d e_location_eigen(left_edge.location.x, left_edge.location.y, 1.0);
-//         Eigen::Vector3d gamma_1 = dataset.get_left_calib_matrix().inverse() * e_location_eigen;
-//         if (stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size() > 0)
-//         {
-//             for (int j = 0; j < stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters.size(); j++)
-//             {
-//                 Edge matching_cluster_edge = stereo_frame_edge_pairs.matching_edge_clusters[i].edge_clusters[j].center_edge;
-//                 double disparity = left_edge.location.x - matching_cluster_edge.location.x;
-
-//                 double rho = dataset.get_left_focal_length() * dataset.get_left_baseline() / disparity;
-//                 double rho_1 = (rho < 0.0) ? (-rho) : (rho);
-//                 Eigen::Vector3d Gamma_1 = rho_1 * gamma_1;
-//                 edge_pairs_and_3D_edges_file << Gamma_1.x() << " " << Gamma_1.y() << " " << Gamma_1.z() << std::endl;
-//             }
-//         }
-//     }
-//     edge_pairs_and_3D_edges_file.close();
 // }
 
 //> Write false negative edge clusters to file
@@ -288,39 +262,6 @@ inline void write_Third_Order_Edges_to_file(Dataset &dataset, const StereoFrame 
         }
     }
     third_order_edges_file.close();
-}
-
-inline void save_Poses_to_File_TUM_Format(Dataset &dataset, const std::vector<Camera_Pose>& poses, const std::vector<double>& timestamps, const std::string& file_name) 
-{
-    std::ofstream file;
-    std::string output_dir = dataset.get_output_path();
-    file.open(output_dir + "/" + file_name + ".txt");
-    file << "timestamp tx ty tz qx qy qz qw" << std::endl;
-    for (size_t i = 0; i < poses.size(); ++i) {
-        int time_stamp = timestamps[i];
-        Camera_Pose pose = poses[i];
-        file << time_stamp << " " << pose.t.x() << " " << pose.t.y() << " " << pose.t.z() \
-             << " " << pose.q.x() << " " << pose.q.y() << " " << pose.q.z() << " " << pose.q.w() << std::endl;
-    }
-    LOG_INFO("Saved poses to TUM format file: " + file_name + ".txt");
-    file.close();
-}
-
-inline void save_Poses_to_File_KITTI_Format(Dataset &dataset, const std::vector<Camera_Pose>& poses, const std::string& file_name) 
-{
-    std::ofstream file;
-    std::string output_dir = dataset.get_output_path();
-    file.open(output_dir + "/" + file_name + ".txt");
-    file << "" << std::endl;
-    for (size_t i = 0; i < poses.size(); ++i) {
-        Camera_Pose pose = poses[i];
-        file << std::setprecision(9) \
-             << pose.R(0, 0) << " " << pose.R(0, 1) << " " << pose.R(0, 2) << " " << pose.t.x() << " "
-             << pose.R(1, 0) << " " << pose.R(1, 1) << " " << pose.R(1, 2) << " " << pose.t.y() << " "
-             << pose.R(2, 0) << " " << pose.R(2, 1) << " " << pose.R(2, 2) << " " << pose.t.z() << "\n";
-    }
-    LOG_INFO("Saved poses to KITTI format file: " + file_name + ".txt");
-    file.close();
 }
 
 #endif

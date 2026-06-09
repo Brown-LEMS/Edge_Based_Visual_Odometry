@@ -125,6 +125,19 @@ Camera_Pose Utility::get_Relative_Pose( const Camera_Pose &source_pose, const Ca
   return Camera_Pose(rel_R, rel_T);
 }
 
+double Utility::evaluate_Relative_Rotation_Accuracy(const Camera_Pose &estimated_pose, const Camera_Pose &ground_truth_pose)
+{
+  Eigen::Matrix3d rel_R = estimated_pose.R * (ground_truth_pose.R).transpose();
+  double theta = acos((rel_R.trace() - 1.0) / 2.0);
+  return rad_to_deg(theta);
+}
+
+double Utility::evaluate_Relative_Translation_Accuracy(const Camera_Pose &estimated_pose, const Camera_Pose &ground_truth_pose)
+{
+  Eigen::Vector3d rel_T = estimated_pose.t - ground_truth_pose.t;
+  return rel_T.norm();
+}
+
 std::pair<cv::Point2d, cv::Point2d> Utility::get_Orthogonal_Shifted_Points(const Edge edgel, double shift_magnitude)
 {
   double shifted_x1 = edgel.location.x + shift_magnitude * (std::sin(edgel.orientation));

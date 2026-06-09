@@ -15,6 +15,97 @@
 
 Temporal_Matches::Temporal_Matches(Dataset::Ptr dataset) : dataset(std::move(dataset)) {}
 
+void Temporal_Matches::propagate_veridical_quads_one_hop(
+    const std::vector<KF_Temporal_Edge_Quads> &quads_source_to_bridge,
+    const std::vector<final_stereo_edge_pair> &mates_source_kf,
+    const std::vector<final_stereo_edge_pair> &mates_bridge,
+    const std::vector<KF_Temporal_Edge_Quads> &quads_bridge_to_dest,
+    const std::vector<final_stereo_edge_pair> &mates_dest,
+    std::vector<KF_Temporal_Edge_Quads> &out_source_to_dest)
+{
+    out_source_to_dest.clear();
+    if (mates_bridge.empty() || mates_dest.empty())
+        return;
+
+    std::vector<const KF_Temporal_Edge_Quads *> kvq_by_bridge_idx(mates_bridge.size(), nullptr);
+    for (const auto &kvq : quads_bridge_to_dest)
+    {
+        if (!kvq.KF_stereo_mate)
+            continue;
+        ptrdiff_t bi = kvq.KF_stereo_mate - mates_bridge.data();
+        if (bi >= 0 && bi < static_cast<ptrdiff_t>(mates_bridge.size()))
+            kvq_by_bridge_idx[static_cast<size_t>(bi)] = &kvq;
+    }
+
+    struct Group
+    {
+        const final_stereo_edge_pair *kf_mate_src = nullptr;
+        Eigen::Vector3d proj_left = Eigen::Vector3d::Zero();
+        Eigen::Vector3d proj_right = Eigen::Vector3d::Zero();
+        double proj_ol = 0.0;
+        double proj_or = 0.0;
+        std::unordered_set<int> seen_cf_dest;
+        std::vector<Veridical_Quad_Entry> entries;
+    };
+    std::unordered_map<const final_stereo_edge_pair *, Group> groups;
+
+    for (const auto &kvq_ab : quads_source_to_bridge)
+    {
+        if (!kvq_ab.KF_stereo_mate)
+            continue;
+        ptrdiff_t src_ki = kvq_ab.KF_stereo_mate - mates_source_kf.data();
+        if (src_ki < 0 || src_ki >= static_cast<ptrdiff_t>(mates_source_kf.size()))
+            continue;
+
+        for (const auto &v_ab : kvq_ab.veridical_quads)
+        {
+            const int b_idx = v_ab.cf_stereo_edge_mate_index;
+            if (b_idx < 0 || b_idx >= static_cast<int>(mates_bridge.size()))
+                continue;
+            const KF_Temporal_Edge_Quads *kvq_bc = kvq_by_bridge_idx[static_cast<size_t>(b_idx)];
+            if (!kvq_bc)
+                continue;
+
+            Group &g = groups[kvq_ab.KF_stereo_mate];
+            if (!g.kf_mate_src)
+            {
+                g.kf_mate_src = kvq_ab.KF_stereo_mate;
+                g.proj_left = kvq_ab.projected_point_left;
+                g.proj_right = kvq_ab.projected_point_right;
+                g.proj_ol = kvq_ab.projected_orientation_left;
+                g.proj_or = kvq_ab.projected_orientation_right;
+            }
+
+            for (const auto &v_bc : kvq_bc->veridical_quads)
+            {
+                const int c_idx = v_bc.cf_stereo_edge_mate_index;
+                if (c_idx < 0 || c_idx >= static_cast<int>(mates_dest.size()))
+                    continue;
+                if (g.seen_cf_dest.count(c_idx))
+                    continue;
+                g.seen_cf_dest.insert(c_idx);
+                g.entries.push_back(v_bc);
+            }
+        }
+    }
+
+    out_source_to_dest.reserve(groups.size());
+    for (auto &pr : groups)
+    {
+        Group &g = pr.second;
+        if (g.entries.empty())
+            continue;
+        KF_Temporal_Edge_Quads kvq;
+        kvq.KF_stereo_mate = g.kf_mate_src;
+        kvq.projected_point_left = g.proj_left;
+        kvq.projected_point_right = g.proj_right;
+        kvq.projected_orientation_left = g.proj_ol;
+        kvq.projected_orientation_right = g.proj_or;
+        kvq.veridical_quads = std::move(g.entries);
+        out_source_to_dest.push_back(std::move(kvq));
+    }
+}
+
 void Temporal_Matches::add_edges_to_spatial_grid(const std::vector<final_stereo_edge_pair> &stereo_edge_mates, SpatialGrid &left_spatial_grids, SpatialGrid &right_spatial_grids)
 {
     // Pre-compute grid cell assignments in parallel (read-only)
@@ -55,114 +146,192 @@ void Temporal_Matches::add_edges_to_spatial_grid(const std::vector<final_stereo_
 }
 
 void Temporal_Matches::build_Veridical_Quads(
-    std::vector<KF_Temporal_Edge_Quads> &out,
+    std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
     const std::vector<final_stereo_edge_pair> &KF_stereo_edge_mates,
     const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
     Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
     const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids)
 {
-    Utility util{};
-    Camera_Pose rel_pose = util.get_Relative_Pose(last_keyframe_stereo.stereo_frame->gt_camera_pose, current_frame_stereo.stereo_frame->gt_camera_pose);
+    if (dataset->has_gt()) {
+        Utility util{};
+        Camera_Pose rel_pose = util.get_Relative_Pose(last_keyframe_stereo.stereo_frame->gt_camera_pose, current_frame_stereo.stereo_frame->gt_camera_pose);
 
-    const double orientation_threshold = 10.0;
-    const double search_radius = 15.0 + DIST_TO_GT_THRESH_QUADS + 3.0;
-    const int img_margin = 10;
+        int num_threads_corr = omp_get_max_threads();
+        std::vector<std::vector<KF_Temporal_Edge_Quads>> thread_quads(num_threads_corr);
 
-    int num_threads_corr = omp_get_max_threads();
-    std::vector<std::vector<KF_Temporal_Edge_Quads>> thread_quads(num_threads_corr);
+        #pragma omp parallel
+        {
+            const int tid = omp_get_thread_num();
+            #pragma omp for schedule(dynamic, 128)
+            for (int i = 0; i < static_cast<int>(KF_stereo_edge_mates.size()); ++i)
+            {
+                const final_stereo_edge_pair *kf_mate = &KF_stereo_edge_mates[i];
 
-#pragma omp parallel
-    {
-        const int tid = omp_get_thread_num();
-#pragma omp for schedule(dynamic, 128)
+                Eigen::Vector3d Gamma_in_left_KF = kf_mate->Gamma_in_left_cam_coord;
+                Eigen::Vector3d Gamma_in_left_CF = rel_pose.R * Gamma_in_left_KF + rel_pose.t;
+                Eigen::Vector3d projected_point_left = dataset->get_left_calib_matrix() * Gamma_in_left_CF;
+                projected_point_left /= projected_point_left.z();
+
+                Eigen::Vector3d Gamma_in_right_CF = dataset->get_relative_rot_left_to_right() * Gamma_in_left_CF + dataset->get_relative_transl_left_to_right();
+                Eigen::Vector3d projected_point_right = dataset->get_right_calib_matrix() * Gamma_in_right_CF;
+                projected_point_right /= projected_point_right.z();
+
+                double projected_orientation_left = orientation_mapping(
+                    kf_mate->left_edge, kf_mate->right_edge,
+                    projected_point_left, true, *last_keyframe_stereo.stereo_frame, *current_frame_stereo.stereo_frame, *dataset);
+                double projected_orientation_right = orientation_mapping(
+                    kf_mate->left_edge, kf_mate->right_edge,
+                    projected_point_right, false, *last_keyframe_stereo.stereo_frame, *current_frame_stereo.stereo_frame, *dataset);
+
+                cv::Point2d proj_left_cv(projected_point_left.x(), projected_point_left.y());
+                cv::Point2d proj_right_cv(projected_point_right.x(), projected_point_right.y());
+                if (projected_point_left.x() <= IMG_MARGIN_QUADS || projected_point_left.y() <= IMG_MARGIN_QUADS ||
+                    projected_point_left.x() >= dataset->get_left_width() - IMG_MARGIN_QUADS || projected_point_left.y() >= dataset->get_left_height() - IMG_MARGIN_QUADS)
+                    continue;
+                if (projected_point_right.x() <= IMG_MARGIN_QUADS || projected_point_right.y() <= IMG_MARGIN_QUADS ||
+                    projected_point_right.x() >= dataset->get_right_width() - IMG_MARGIN_QUADS || projected_point_right.y() >= dataset->get_right_height() - IMG_MARGIN_QUADS)
+                    continue;
+
+                std::vector<int> left_candidates = left_spatial_grids.getCandidatesWithinRadius(proj_left_cv, SEARCH_RADIUS_QUADS);
+                std::vector<int> right_candidates = right_spatial_grids.getCandidatesWithinRadius(proj_right_cv, SEARCH_RADIUS_QUADS);
+                std::unordered_set<int> right_set(right_candidates.begin(), right_candidates.end());
+
+                std::vector<Veridical_Quad_Entry> quads;
+                for (int cf_idx : left_candidates)
+                {
+                    if (right_set.find(cf_idx) == right_set.end())
+                        continue;
+                    if (cf_idx < 0 || cf_idx >= static_cast<int>(CF_stereo_edge_mates.size()))
+                        continue;
+
+                    const Edge &cf_left = CF_stereo_edge_mates[cf_idx].left_edge;
+                    const Edge &cf_right = CF_stereo_edge_mates[cf_idx].right_edge;
+
+                    double dist_left = cv::norm(cf_left.location - proj_left_cv);
+                    double dist_right = cv::norm(cf_right.location - proj_right_cv);
+                    double orient_diff_left = std::abs(rad_to_deg<double>(projected_orientation_left - cf_left.orientation));
+                    if (orient_diff_left > 180.0)
+                        orient_diff_left = 360.0 - orient_diff_left;
+                    double orient_diff_right = std::abs(rad_to_deg<double>(projected_orientation_right - cf_right.orientation));
+                    if (orient_diff_right > 180.0)
+                        orient_diff_right = 360.0 - orient_diff_right;
+
+                    bool veridical_left = (dist_left < DIST_TO_GT_THRESH_QUADS) &&
+                        (orient_diff_left < ORIENT_THRESHOLD_QUADS || std::abs(orient_diff_left - 180.0) < ORIENT_THRESHOLD_QUADS);
+                    bool veridical_right = (dist_right < DIST_TO_GT_THRESH_QUADS) &&
+                        (orient_diff_right < ORIENT_THRESHOLD_QUADS || std::abs(orient_diff_right - 180.0) < ORIENT_THRESHOLD_QUADS);
+
+                    if (!veridical_left || !veridical_right)
+                        continue;
+
+                    Veridical_Quad_Entry qe;
+                    qe.cf_stereo_edge_mate_index = cf_idx;
+                    qe.left_center = cf_left;
+                    qe.right_center = cf_right;
+                    quads.push_back(std::move(qe));
+                }
+
+                if (!quads.empty())
+                {
+                    KF_Temporal_Edge_Quads kvq;
+                    kvq.KF_stereo_mate = kf_mate;
+                    kvq.projected_point_left = projected_point_left;
+                    kvq.projected_point_right = projected_point_right;
+                    kvq.projected_orientation_left = projected_orientation_left;
+                    kvq.projected_orientation_right = projected_orientation_right;
+                    kvq.veridical_quads = std::move(quads);
+                    thread_quads[tid].push_back(std::move(kvq));
+                }
+            }
+        }
+        temporal_quads_by_kf.clear();
+        for (int t = 0; t < num_threads_corr; ++t)
+        {
+            for (auto &kvq : thread_quads[t])
+                temporal_quads_by_kf.push_back(std::move(kvq));
+        }
+    }
+    else {
+        temporal_quads_by_kf.clear();
         for (int i = 0; i < static_cast<int>(KF_stereo_edge_mates.size()); ++i)
         {
             const final_stereo_edge_pair *kf_mate = &KF_stereo_edge_mates[i];
-
-            Eigen::Vector3d Gamma_in_left_KF = kf_mate->Gamma_in_left_cam_coord;
-            Eigen::Vector3d Gamma_in_left_CF = rel_pose.R * Gamma_in_left_KF + rel_pose.t;
-            Eigen::Vector3d projected_point_left = dataset->get_left_calib_matrix() * Gamma_in_left_CF;
-            projected_point_left /= projected_point_left.z();
-
-            Eigen::Vector3d Gamma_in_right_CF = dataset->get_relative_rot_left_to_right() * Gamma_in_left_CF + dataset->get_relative_transl_left_to_right();
-            Eigen::Vector3d projected_point_right = dataset->get_right_calib_matrix() * Gamma_in_right_CF;
-            projected_point_right /= projected_point_right.z();
-
-            double projected_orientation_left = orientation_mapping(
-                kf_mate->left_edge, kf_mate->right_edge,
-                projected_point_left, true, *last_keyframe_stereo.stereo_frame, *current_frame_stereo.stereo_frame, *dataset);
-            double projected_orientation_right = orientation_mapping(
-                kf_mate->left_edge, kf_mate->right_edge,
-                projected_point_right, false, *last_keyframe_stereo.stereo_frame, *current_frame_stereo.stereo_frame, *dataset);
-
-            cv::Point2d proj_left_cv(projected_point_left.x(), projected_point_left.y());
-            cv::Point2d proj_right_cv(projected_point_right.x(), projected_point_right.y());
-            if (projected_point_left.x() <= img_margin || projected_point_left.y() <= img_margin ||
-                projected_point_left.x() >= dataset->get_width() - img_margin || projected_point_left.y() >= dataset->get_height() - img_margin)
-                continue;
-            if (projected_point_right.x() <= img_margin || projected_point_right.y() <= img_margin ||
-                projected_point_right.x() >= dataset->get_width() - img_margin || projected_point_right.y() >= dataset->get_height() - img_margin)
-                continue;
-
-            std::vector<int> left_candidates = left_spatial_grids.getCandidatesWithinRadius(proj_left_cv, search_radius);
-            std::vector<int> right_candidates = right_spatial_grids.getCandidatesWithinRadius(proj_right_cv, search_radius);
-            std::unordered_set<int> right_set(right_candidates.begin(), right_candidates.end());
-
-            std::vector<Veridical_Quad_Entry> quads;
-            for (int cf_idx : left_candidates)
-            {
-                if (right_set.find(cf_idx) == right_set.end())
-                    continue;
-                if (cf_idx < 0 || cf_idx >= static_cast<int>(CF_stereo_edge_mates.size()))
-                    continue;
-
-                const Edge &cf_left = CF_stereo_edge_mates[cf_idx].left_edge;
-                const Edge &cf_right = CF_stereo_edge_mates[cf_idx].right_edge;
-
-                double dist_left = cv::norm(cf_left.location - proj_left_cv);
-                double dist_right = cv::norm(cf_right.location - proj_right_cv);
-                double orient_diff_left = std::abs(rad_to_deg<double>(projected_orientation_left - cf_left.orientation));
-                if (orient_diff_left > 180.0)
-                    orient_diff_left = 360.0 - orient_diff_left;
-                double orient_diff_right = std::abs(rad_to_deg<double>(projected_orientation_right - cf_right.orientation));
-                if (orient_diff_right > 180.0)
-                    orient_diff_right = 360.0 - orient_diff_right;
-
-                bool veridical_left = (dist_left < DIST_TO_GT_THRESH_QUADS) &&
-                    (orient_diff_left < orientation_threshold || std::abs(orient_diff_left - 180.0) < orientation_threshold);
-                bool veridical_right = (dist_right < DIST_TO_GT_THRESH_QUADS) &&
-                    (orient_diff_right < orientation_threshold || std::abs(orient_diff_right - 180.0) < orientation_threshold);
-
-                if (!veridical_left || !veridical_right)
-                    continue;
-
-                Veridical_Quad_Entry qe;
-                qe.cf_stereo_edge_mate_index = cf_idx;
-                qe.left_center = cf_left;
-                qe.right_center = cf_right;
-                quads.push_back(std::move(qe));
-            }
-
-            if (!quads.empty())
-            {
-                KF_Temporal_Edge_Quads kvq;
-                kvq.KF_stereo_mate = kf_mate;
-                kvq.projected_point_left = projected_point_left;
-                kvq.projected_point_right = projected_point_right;
-                kvq.projected_orientation_left = projected_orientation_left;
-                kvq.projected_orientation_right = projected_orientation_right;
-                kvq.veridical_quads = std::move(quads);
-                thread_quads[tid].push_back(std::move(kvq));
-            }
+            KF_Temporal_Edge_Quads kvq;
+            kvq.KF_stereo_mate = kf_mate;
+            temporal_quads_by_kf.push_back(std::move(kvq));
         }
     }
+}
 
-    out.clear();
-    for (int t = 0; t < num_threads_corr; ++t)
-    {
-        for (auto &kvq : thread_quads[t])
-            out.push_back(std::move(kvq));
-    }
+Frame_Evaluation_Metrics Temporal_Matches::run_temporal_quad_pipeline_filters(
+    std::vector<KF_Temporal_Edge_Quads> &temporal_quads_by_kf,
+    const std::vector<final_stereo_edge_pair> &CF_stereo_edge_mates,
+    const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids,
+    const StereoFrame &keyframe, const StereoFrame &current_frame,
+    size_t keyframe_idx, size_t current_frame_idx, Timing_Statistics &timing_statistics)
+{
+    Frame_Evaluation_Metrics frame_metrics;
+
+    std::chrono::high_resolution_clock::time_point start_time, end_time;
+    start_time = std::chrono::high_resolution_clock::now();
+    apply_spatial_grid_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, left_spatial_grids, right_spatial_grids, 30.0);
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_DP = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"Location Proximity", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Location Proximity Filtering")});
+
+    start_time = std::chrono::high_resolution_clock::now();
+    apply_orientation_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 10.0);
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_OR = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"Orientation", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Orientation Filtering")});
+
+    start_time = std::chrono::high_resolution_clock::now();
+    apply_NCC_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 0.8,
+        keyframe.left_image, keyframe.right_image, current_frame.left_image, current_frame.right_image);
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_NCC = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "NCC Filtering")});
+
+    start_time = std::chrono::high_resolution_clock::now();
+    apply_SIFT_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 200.0);
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_SIFT = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "SIFT Filtering")});
+
+    start_time = std::chrono::high_resolution_clock::now();
+    apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.8, "NCC");
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_BNB_NCC = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"BNB-NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB NCC Filtering")});
+
+    start_time = std::chrono::high_resolution_clock::now();
+    apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.8, "SIFT");
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_BNB_SIFT = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"BNB-SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB SIFT Filtering")});
+
+    start_time = std::chrono::high_resolution_clock::now();
+    apply_photometric_refinement_quads(temporal_quads_by_kf, CF_stereo_edge_mates, keyframe, current_frame);
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_Refinement = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"Photometric Refinement", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Photometric Refinement")});
+
+    start_time = std::chrono::high_resolution_clock::now();
+    apply_temporal_edge_clustering_quads(temporal_quads_by_kf, true);
+    end_time = std::chrono::high_resolution_clock::now();
+    timing_statistics.time_Clustering = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    if (dataset->has_gt())
+        frame_metrics.stages.push_back({"Edge Clustering", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Edge Clustering")});
+
+    timing_statistics.total_time = timing_statistics.time_DP + timing_statistics.time_OR + timing_statistics.time_NCC + timing_statistics.time_SIFT + timing_statistics.time_BNB_NCC + timing_statistics.time_BNB_SIFT + timing_statistics.time_Refinement + timing_statistics.time_Clustering;
+    return frame_metrics;
 }
 
 Frame_Evaluation_Metrics Temporal_Matches::get_Temporal_Edge_Pairs_from_Quads(
@@ -172,49 +341,26 @@ Frame_Evaluation_Metrics Temporal_Matches::get_Temporal_Edge_Pairs_from_Quads(
     const SpatialGrid &left_spatial_grids, const SpatialGrid &right_spatial_grids,
     Stereo_Edge_Pairs &last_keyframe_stereo, Stereo_Edge_Pairs &current_frame_stereo,
     const StereoFrame &keyframe, const StereoFrame &current_frame,
-    size_t keyframe_idx, size_t current_frame_idx)
+    size_t keyframe_idx, size_t current_frame_idx, Timing_Statistics &timing_statistics)
 {
-    Frame_Evaluation_Metrics frame_metrics;
+    (void)KF_stereo_edge_mates;
+    (void)last_keyframe_stereo;
+    (void)current_frame_stereo;
 
-    size_t num_quads = 0;
-    for (const auto &kvq : temporal_quads_by_kf)
-        num_quads += kvq.veridical_quads.size();
-    std::cout << "Veridical quads: " << temporal_quads_by_kf.size() << " KF groups, " << num_quads << " total quads" << std::endl;
+    if (dataset->has_gt()) {
+        size_t num_quads = 0;
+        for (const auto &kvq : temporal_quads_by_kf)
+            num_quads += kvq.veridical_quads.size();
+        std::cout << "Veridical quads: " << temporal_quads_by_kf.size() << " KF groups, " << num_quads << " total quads" << std::endl;
+    }
+    else {
+        std::cout << "Temporal KF groups (no disparity GT): " << temporal_quads_by_kf.size()
+                  << " (veridical quads skipped; candidates filled by spatial pipeline)" << std::endl;
+    }
 
-    apply_spatial_grid_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, left_spatial_grids, right_spatial_grids, 30.0);
-    if (dataset->has_gt())
-        frame_metrics.stages.push_back({"Location Proximity", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Location Proximity Filtering")});
-
-    apply_orientation_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 10.0);
-    if (dataset->has_gt())
-        frame_metrics.stages.push_back({"Orientation", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Orientation Filtering")});
-
-    apply_NCC_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 0.8,
-        keyframe.left_image, keyframe.right_image, current_frame.left_image, current_frame.right_image);
-    if (dataset->has_gt())
-        frame_metrics.stages.push_back({"NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "NCC Filtering")});
-
-    apply_SIFT_filtering_quads(temporal_quads_by_kf, CF_stereo_edge_mates, 200.0);
-    if (dataset->has_gt())
-        frame_metrics.stages.push_back({"SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "SIFT Filtering")});
-
-    apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.8, "NCC");
-    if (dataset->has_gt())
-        frame_metrics.stages.push_back({"BNB-NCC", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB NCC Filtering")});
-
-    apply_best_nearly_best_filtering_quads(temporal_quads_by_kf, 0.8, "SIFT");
-    if (dataset->has_gt())
-        frame_metrics.stages.push_back({"BNB-SIFT", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "BNB SIFT Filtering")});
-
-    apply_photometric_refinement_quads(temporal_quads_by_kf, CF_stereo_edge_mates, keyframe, current_frame);
-    if (dataset->has_gt())
-        frame_metrics.stages.push_back({"Photometric Refinement", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Photometric Refinement")});
-
-    apply_temporal_edge_clustering_quads(temporal_quads_by_kf, true);
-    if (dataset->has_gt())
-        frame_metrics.stages.push_back({"Edge Clustering", Evaluate_Temporal_Edge_Pairs_on_Quads(temporal_quads_by_kf, keyframe_idx, current_frame_idx, "Edge Clustering")});
-
-    return frame_metrics;
+    return run_temporal_quad_pipeline_filters(
+        temporal_quads_by_kf, CF_stereo_edge_mates, left_spatial_grids, right_spatial_grids,
+        keyframe, current_frame, keyframe_idx, current_frame_idx, timing_statistics);
 }
 
 Stage_Metrics Temporal_Matches::Evaluate_Temporal_Edge_Pairs_on_Quads(
@@ -344,8 +490,6 @@ void Temporal_Matches::apply_spatial_grid_filtering_quads( \
     for (int i = 0; i < static_cast<int>(quads_by_kf.size()); ++i)
     {
         KF_Temporal_Edge_Quads &kvq = quads_by_kf[i];
-        if (kvq.veridical_quads.empty())
-            continue;
 
         cv::Point2d query_left = kvq.KF_stereo_mate->left_edge.location;
         cv::Point2d query_right = kvq.KF_stereo_mate->right_edge.location;
@@ -1067,13 +1211,8 @@ void Temporal_Matches::write_quads_to_file(const std::vector<KF_Temporal_Edge_Qu
     size_t keyframe_idx, size_t current_frame_idx,
     const std::string &filename_suffix)
 {
-    std::cout << "Writing quads to file..." << std::endl;
-    std::string output_dir = dataset->get_output_path();
-    std::cout << "output_dir: " << output_dir << std::endl;
-
-    if (output_dir.empty())
-        return;
-    std::string file_name = output_dir + "/quads_kf" + std::to_string(keyframe_idx) + "_cf" + std::to_string(current_frame_idx);
+    std::string file_name = dataset->get_output_path() + "/quads_kf" + std::to_string(keyframe_idx) + "_cf" + std::to_string(current_frame_idx);
+    std::cout << "Writing quads to file: " << file_name << std::endl;
     if (!filename_suffix.empty())
         file_name += "_" + filename_suffix;
     file_name += ".txt";

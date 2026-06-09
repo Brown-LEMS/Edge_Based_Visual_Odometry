@@ -150,7 +150,7 @@ Dataset::Dataset(YAML::Node config_map) : config_file(config_map)
         std::cerr << "ERROR: Could not parse YAML file! " << e.what() << std::endl;
     }
 
-    Total_Num_Of_Imgs = 0;
+    Total_Num_of_Stereo_Frames = 0;
 }
 
 void Dataset::load_dataset(const std::string &dataset_type,
@@ -185,7 +185,20 @@ void Dataset::load_dataset(const std::string &dataset_type,
     else if (dataset_type == "ETH3D_slam")
     {
         std::string dataset_path = file_info.dataset_path + "/" + file_info.sequence_name;
-        stereo_iterator = Iterators::createETH3DSLAMIterator(dataset_path);
+        stereo_iterator = Iterators::createETH3DSLAMIterator(
+            dataset_path, camera_info.left.R, camera_info.left.T);
+    }
+
+    Total_Num_of_Stereo_Frames = 0;
+    if (stereo_iterator)
+    {
+        stereo_iterator->reset();
+        StereoFrame scratch;
+        while (stereo_iterator->hasNext() && stereo_iterator->getNext(scratch, false))
+        {
+            Total_Num_of_Stereo_Frames++;
+        }
+        stereo_iterator->reset();
     }
 }
 
@@ -469,31 +482,6 @@ bool Dataset::readDispETH3D(const std::string &disp_file_path, cv::Mat &disparit
         std::cerr << "Error reading ETH3D disparity: " << e.what() << std::endl;
         return false;
     }
-}
-
-void Dataset::PrintDatasetInfo()
-{
-    std::cout << "Left Camera Resolution: " << camera_info.left.resolution[0] << "x" << camera_info.left.resolution[1] << std::endl;
-    std::cout << "\nRight Camera Resolution: " << camera_info.right.resolution[0] << "x" << camera_info.right.resolution[1] << std::endl;
-
-    std::cout << "\nLeft Camera Intrinsics: ";
-    for (const auto &value : camera_info.left.intrinsics)
-        std::cout << value << " ";
-    std::cout << std::endl;
-
-    std::cout << "\nRight Camera Intrinsics: ";
-    for (const auto &value : camera_info.right.intrinsics)
-        std::cout << value << " ";
-    std::cout << std::endl;
-
-    std::cout << "\nStereo Extrinsic Parameters (Left to Right): \n";
-
-    std::cout << "\nRotation Matrix: \n";
-    std::cout << camera_info.left.R << std::endl;
-
-    std::cout << "\nTranslation Vector: \n";
-    std::cout << camera_info.left.T << std::endl;
-    std::cout << std::endl;
 }
 
 #endif
