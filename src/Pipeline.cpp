@@ -45,12 +45,14 @@ bool Pipeline::Add_Stereo_Frame()
         case PipelineStatus::STATUS_GET_STEREO_EDGE_CORRESPONDENCES:
             //> Get stereo edge correspondences
             LOG_STATUS("GET_STEREO_EDGE_CORRESPONDENCES");
-            get_Stereo_Edge_Correspondences();
+            // get_Stereo_Edge_Correspondences();
+            get_Stereo_Edge_Correspondences_GPU();
             break;
         case PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES:
             //> Get temporal edge correspondences (keyframe <-> current frame)
             LOG_STATUS("GET_TEMPORAL_EDGE_CORRESPONDENCES");
-            get_Temporal_Edge_Correspondences();
+            // get_Temporal_Edge_Correspondences();
+            get_Temporal_Edge_Correspondences_GPU();
             break;
         case PipelineStatus::STATUS_GET_POSE_FROM_QUAD_PAIRS:
             //> Get pose from quad pairs
@@ -93,10 +95,6 @@ void Pipeline::prepare_Stereo_Images()
         current_frame.right_disparity_map = (stereo_current_frame_idx < right_ref_disparity_maps.size()) ? right_ref_disparity_maps[stereo_current_frame_idx] : cv::Mat();
     }
 
-    // //> This is optional
-    // const cv::Mat &left_occlusion_mask = (stereo_current_frame_idx < left_occlusion_masks.size()) ? left_occlusion_masks[stereo_current_frame_idx] : cv::Mat();
-    // const cv::Mat &right_occlusion_mask = (stereo_current_frame_idx < right_occlusion_masks.size()) ? right_occlusion_masks[stereo_current_frame_idx] : cv::Mat();
-
     std::cout << std::endl << "Stereo Image Pair #" << stereo_current_frame_idx << std::endl;
 
     cv::Mat left_cur_undistorted, right_cur_undistorted;
@@ -133,6 +131,55 @@ void Pipeline::prepare_Stereo_Images()
     //> Shift to the next status
     status_ = PipelineStatus::STATUS_GET_STEREO_EDGE_CORRESPONDENCES;
     send_control_to_main = false;
+}
+
+void Pipeline::get_Stereo_Edge_Correspondences_GPU() 
+{
+    //> Set up the flattened fundamental matrix, left and right images, and the GPU device
+    prepare_for_GPU_engine = std::make_shared<Prepare_For_GPU_Pipeline>(dataset_, current_frame, DEVICE_ID);
+    left_cf_img_texture_ = prepare_for_GPU_engine->left_image_texture_;
+    right_cf_img_texture_ = prepare_for_GPU_engine->right_image_texture_;
+
+    //> Reset before allocate: frees the previous frame's GPU pipeline before this frame's cudaMalloc traffic (avoids a brief 2x VRAM spike).
+    stereo_matches_engine_GPU.reset();
+
+    Stereo_Matches_GPU_Timing_Statistics stereo_GPU_times;
+
+    //> h_F, left_image_texture_, right_image_texture_ are created and passed to the stereo matches engine
+    stereo_matches_engine_GPU = std::make_shared<Stereo_Matches_GPU_Pipeline>(dataset_, prepare_for_GPU_engine, current_frame, DEVICE_ID);
+    stereo_GPU_times = stereo_matches_engine_GPU->get_stereo_edge_matching_GPU(stereo_current_frame_idx);
+    collect_stereo_GPU_times.push_back(stereo_GPU_times);
+
+    //> Host export and file write (We do not need this if we do GPU stereo + GPU temporal)
+    stereo_matches_engine_GPU->retrieve_stereo_mates(current_frame, current_frame_stereo_edge_mates);
+    std::cout << "Number of stereo edge matches: " << current_frame_stereo_edge_mates.size() << std::endl;
+
+    //> output the results to files
+    stereo_matches_engine_GPU->write_finalized_matches_to_file(stereo_current_frame_idx);
+
+    //> Transfer the ownership from the finished stereo GPU to Pipeline class members
+    set_CF_Stereo_Matches_GPU_Pointers();
+
+    //> Release GPU immediately; nothing else uses stereo_matches_engine_GPU until the next stereo pass.
+    stereo_matches_engine_GPU.reset();
+
+    //> If the current frame is the first frame, make current frame the keyframe
+    if (get_Current_Frame_Index() == 0)
+    {
+        //> The pose of the first frame is the identity pose
+        current_frame.estimated_camera_pose = Camera_Pose(Eigen::Matrix3d::Identity(), Eigen::Vector3d::Zero());
+
+        set_Keyframe();
+        increment_Current_Stereo_Frame_Index();
+        status_ = PipelineStatus::STATUS_IMG_PREPARATION;
+        send_control_to_main = true;
+    }
+    else
+    {
+        //> Shift to the next status
+        status_ = PipelineStatus::STATUS_GET_TEMPORAL_EDGE_CORRESPONDENCES;
+        send_control_to_main = false;
+    }
 }
 
 void Pipeline::get_Stereo_Edge_Correspondences()
@@ -184,93 +231,43 @@ void Pipeline::get_Stereo_Edge_Correspondences()
     }
 }
 
-const Pipeline::AdjacentQuadSnapshot *Pipeline::find_adjacent_snapshot(size_t kf_frame, size_t cf_frame) const
+void Pipeline::get_Temporal_Edge_Correspondences_GPU()
 {
-    for (const auto &s : adjacent_quad_history_)
-    {
-        if (s.kf_frame_idx == kf_frame && s.cf_frame_idx == cf_frame)
-            return &s;
-    }
-    return nullptr;
-}
+    std::cout << "Finding temporal edge correspondences (GPU) (" << get_Keyframe_Index() << "->" << get_Current_Frame_Index() << ")" << std::endl;
 
-void Pipeline::push_adjacent_veridical_snapshot()
-{
-    AdjacentQuadSnapshot snap;
-    snap.kf_frame_idx = stereo_key_frame_idx;
-    snap.cf_frame_idx = stereo_current_frame_idx;
-    snap.kf_stereo_mates = keyframe_stereo_edge_mates;
-    snap.cf_stereo_mates = current_frame_stereo_edge_mates;
-    snap.quads = temporal_quads_by_kf;
-    for (auto &kvq : snap.quads)
-    {
-        ptrdiff_t ki = kvq.KF_stereo_mate - keyframe_stereo_edge_mates.data();
-        if (ki >= 0 && ki < static_cast<ptrdiff_t>(keyframe_stereo_edge_mates.size()))
-            kvq.KF_stereo_mate = snap.kf_stereo_mates.data() + ki;
-    }
-    adjacent_quad_history_.push_back(std::move(snap));
-    while (adjacent_quad_history_.size() > QUAD_PROPAGATION_HISTORY_MAX)
-        adjacent_quad_history_.pop_front();
-}
+    //> Reset before allocate: avoids a brief 2x VRAM spike
+    temporal_matches_engine_GPU.reset();
 
-bool Pipeline::try_propagate_multihop_veridical_quads()
-{
-#if !ENABLE_QUAD_PROPAGATION
-    return false;
-#else
-    if (!dataset_->has_gt())
-        return false;
-    const size_t gap = stereo_current_frame_idx - stereo_key_frame_idx;
-    if (gap <= 1)
-        return false;
+    Temporal_Matches_GPU_Timing_Statistics temporal_GPU_times;
+    temporal_matches_engine_GPU = std::make_shared<Temporal_Matches_GPU_Pipeline>(
+        dataset_, current_frame, 
+        num_of_kf_stereo_matches, num_of_cf_stereo_matches,
+        d_kf_stereo_matches, d_cf_stereo_matches,
+        d_kf_left_patches, d_cf_left_patches,
+        d_kf_right_patches, d_cf_right_patches,
+        d_kf_left_sift_descriptors, d_cf_left_sift_descriptors,
+        left_kf_img_texture_.texObj, right_kf_img_texture_.texObj,
+        right_cf_img_texture_.texObj, left_cf_img_texture_.texObj,
+        DEVICE_ID);
 
-    std::vector<const AdjacentQuadSnapshot *> chain;
-    chain.reserve(gap);
-    for (size_t f = stereo_key_frame_idx; f < stereo_current_frame_idx; ++f)
-    {
-        const AdjacentQuadSnapshot *s = find_adjacent_snapshot(f, f + 1);
-        if (!s)
-            return false;
-        chain.push_back(s);
-    }
+    //> Main temporal edge matching pipeline in GPU
+    temporal_GPU_times = temporal_matches_engine_GPU->get_temporal_edge_matching_GPU();
 
-    std::vector<KF_Temporal_Edge_Quads> acc = chain[0]->quads;
+    //> Retrieve final (kf_mate_idx, cf_mate_idx) pairs for downstream use
+    std::vector<Match_by_Edge_Index> final_quad_matches;
+    temporal_matches_engine_GPU->retrieve_final_matches(final_quad_matches);
 
-    for (size_t i = 1; i < chain.size(); ++i)
-    {
-        std::vector<KF_Temporal_Edge_Quads> next_out;
-        Temporal_Matches::propagate_veridical_quads_one_hop(
-            acc,
-            chain[0]->kf_stereo_mates,
-            chain[i]->kf_stereo_mates,
-            chain[i]->quads,
-            chain[i]->cf_stereo_mates,
-            next_out);
-        acc = std::move(next_out);
-    }
+    //> output the results to files
+    temporal_matches_engine_GPU->write_finalized_matches_to_file(stereo_key_frame_idx, stereo_current_frame_idx);
 
-    if (acc.empty())
-        return false;
+    collect_temporal_GPU_times.push_back(temporal_GPU_times);
+    temporal_matches_engine_GPU.reset();
 
-    temporal_quads_by_kf = std::move(acc);
+    set_Keyframe();
 
-    for (auto &kvq : temporal_quads_by_kf)
-    {
-        if (!kvq.KF_stereo_mate)
-            continue;
-        ptrdiff_t ki = kvq.KF_stereo_mate - chain[0]->kf_stereo_mates.data();
-        if (ki >= 0 && ki < static_cast<ptrdiff_t>(keyframe_stereo_edge_mates.size()))
-            kvq.KF_stereo_mate = keyframe_stereo_edge_mates.data() + ki;
-    }
-
-    size_t total_v = 0;
-    for (const auto &k : temporal_quads_by_kf)
-        total_v += k.veridical_quads.size();
-    std::cout << "Quad propagation (" << stereo_key_frame_idx << "->" << stereo_current_frame_idx << "): "
-              << temporal_quads_by_kf.size() << " KF groups, " << total_v << " chained veridical quads" << std::endl;
-
-    return true;
-#endif
+    status_ = PipelineStatus::STATUS_IMG_PREPARATION;
+    send_control_to_main = true;
+    b_end_pipeline_for_debug = true;
 }
 
 void Pipeline::get_Temporal_Edge_Correspondences()
@@ -446,9 +443,149 @@ void Pipeline::Print_Temporal_Matches_Metrics_Statistics()
     temporal_matches_engine->Temporal_Matches_Metrics_Statistics(all_temporal_matches_metrics);
 }
 
+const Pipeline::AdjacentQuadSnapshot *Pipeline::find_adjacent_snapshot(size_t kf_frame, size_t cf_frame) const
+{
+    for (const auto &s : adjacent_quad_history_)
+    {
+        if (s.kf_frame_idx == kf_frame && s.cf_frame_idx == cf_frame)
+            return &s;
+    }
+    return nullptr;
+}
+
+void Pipeline::push_adjacent_veridical_snapshot()
+{
+    AdjacentQuadSnapshot snap;
+    snap.kf_frame_idx = stereo_key_frame_idx;
+    snap.cf_frame_idx = stereo_current_frame_idx;
+    snap.kf_stereo_mates = keyframe_stereo_edge_mates;
+    snap.cf_stereo_mates = current_frame_stereo_edge_mates;
+    snap.quads = temporal_quads_by_kf;
+    for (auto &kvq : snap.quads)
+    {
+        ptrdiff_t ki = kvq.KF_stereo_mate - keyframe_stereo_edge_mates.data();
+        if (ki >= 0 && ki < static_cast<ptrdiff_t>(keyframe_stereo_edge_mates.size()))
+            kvq.KF_stereo_mate = snap.kf_stereo_mates.data() + ki;
+    }
+    adjacent_quad_history_.push_back(std::move(snap));
+    while (adjacent_quad_history_.size() > QUAD_PROPAGATION_HISTORY_MAX)
+        adjacent_quad_history_.pop_front();
+}
+
+bool Pipeline::try_propagate_multihop_veridical_quads()
+{
+#if !ENABLE_QUAD_PROPAGATION
+    return false;
+#else
+    if (!dataset_->has_gt())
+        return false;
+    const size_t gap = stereo_current_frame_idx - stereo_key_frame_idx;
+    if (gap <= 1)
+        return false;
+
+    std::vector<const AdjacentQuadSnapshot *> chain;
+    chain.reserve(gap);
+    for (size_t f = stereo_key_frame_idx; f < stereo_current_frame_idx; ++f)
+    {
+        const AdjacentQuadSnapshot *s = find_adjacent_snapshot(f, f + 1);
+        if (!s)
+            return false;
+        chain.push_back(s);
+    }
+
+    std::vector<KF_Temporal_Edge_Quads> acc = chain[0]->quads;
+
+    for (size_t i = 1; i < chain.size(); ++i)
+    {
+        std::vector<KF_Temporal_Edge_Quads> next_out;
+        Temporal_Matches::propagate_veridical_quads_one_hop(
+            acc,
+            chain[0]->kf_stereo_mates,
+            chain[i]->kf_stereo_mates,
+            chain[i]->quads,
+            chain[i]->cf_stereo_mates,
+            next_out);
+        acc = std::move(next_out);
+    }
+
+    if (acc.empty())
+        return false;
+
+    temporal_quads_by_kf = std::move(acc);
+
+    for (auto &kvq : temporal_quads_by_kf)
+    {
+        if (!kvq.KF_stereo_mate)
+            continue;
+        ptrdiff_t ki = kvq.KF_stereo_mate - chain[0]->kf_stereo_mates.data();
+        if (ki >= 0 && ki < static_cast<ptrdiff_t>(keyframe_stereo_edge_mates.size()))
+            kvq.KF_stereo_mate = keyframe_stereo_edge_mates.data() + ki;
+    }
+
+    size_t total_v = 0;
+    for (const auto &k : temporal_quads_by_kf)
+        total_v += k.veridical_quads.size();
+    std::cout << "Quad propagation (" << stereo_key_frame_idx << "->" << stereo_current_frame_idx << "): "
+              << temporal_quads_by_kf.size() << " KF groups, " << total_v << " chained veridical quads" << std::endl;
+
+    return true;
+#endif
+}
+
 //> Destructor
 Pipeline::~Pipeline()
 {
+    //> Texture memory is owned/released by Prepare_For_GPU_Pipeline instances.
+    left_kf_img_texture_ = {nullptr, 0};
+    right_kf_img_texture_ = {nullptr, 0};
+    left_cf_img_texture_ = {nullptr, 0};
+    right_cf_img_texture_ = {nullptr, 0};
+    
+    //> free GPU memory
+    auto* released_kf_stereo_matches = d_kf_stereo_matches;
+    if (released_kf_stereo_matches != nullptr) {
+        cudacheck_noexcept( cudaFree(d_kf_stereo_matches) );
+        d_kf_stereo_matches = nullptr;
+    }
+    if (d_cf_stereo_matches != nullptr && d_cf_stereo_matches != released_kf_stereo_matches) {
+        cudacheck_noexcept( cudaFree(d_cf_stereo_matches) );
+        d_cf_stereo_matches = nullptr;
+    }
+    d_cf_stereo_matches = nullptr;
+
+    auto* released_kf_left_patches = d_kf_left_patches;
+    if (released_kf_left_patches != nullptr) {
+        cudacheck_noexcept( cudaFree(d_kf_left_patches) );
+        d_kf_left_patches = nullptr;
+    }
+    if (d_cf_left_patches != nullptr && d_cf_left_patches != released_kf_left_patches) {
+        cudacheck_noexcept( cudaFree(d_cf_left_patches) );
+        d_cf_left_patches = nullptr;
+    }
+    d_cf_left_patches = nullptr;
+
+    auto* released_kf_right_patches = d_kf_right_patches;
+    if (released_kf_right_patches != nullptr) {
+        cudacheck_noexcept( cudaFree(d_kf_right_patches) );
+        d_kf_right_patches = nullptr;
+    }
+    if (d_cf_right_patches != nullptr && d_cf_right_patches != released_kf_right_patches) {
+        cudacheck_noexcept( cudaFree(d_cf_right_patches) );
+        d_cf_right_patches = nullptr;
+    }
+    d_cf_right_patches = nullptr;
+
+    auto* released_kf_left_sift_descriptors = d_kf_left_sift_descriptors;
+    if (released_kf_left_sift_descriptors != nullptr) {
+        cudacheck_noexcept( cudaFree(d_kf_left_sift_descriptors) );
+        d_kf_left_sift_descriptors = nullptr;
+    }
+    if (d_cf_left_sift_descriptors != nullptr && d_cf_left_sift_descriptors != released_kf_left_sift_descriptors) {
+        cudacheck_noexcept( cudaFree(d_cf_left_sift_descriptors) );
+        d_cf_left_sift_descriptors = nullptr;
+    }
+    d_cf_left_sift_descriptors = nullptr;
+
     timing_statistics_file.close();
     stereo_matches_timing_statistics_file.close();
     temporal_matches_timing_statistics_file.close();

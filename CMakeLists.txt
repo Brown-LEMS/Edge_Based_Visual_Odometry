@@ -1,4 +1,4 @@
-CMAKE_MINIMUM_REQUIRED( VERSION 2.8 )
+CMAKE_MINIMUM_REQUIRED(VERSION 3.18)
 message(STATUS "CMake version: ${CMAKE_VERSION}")
 
 set(CMAKE_CXX_STANDARD "17")
@@ -6,15 +6,47 @@ set(CMAKE_CXX_STANDARD "17")
 if(NOT CMAKE_CXX_STANDARD_REQUIRED)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
 endif()
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-PROJECT(EDGE_BASED_VO)
+PROJECT(QUADEDGE_VO)
+
+option(ENABLE_CUDA "Enable CUDA/NVCC build support" ON)
+if(ENABLE_CUDA)
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  # Auto-detect compute capability from nvidia-smi (e.g. "8.6" -> "86").
+  # Users can still override via -DCMAKE_CUDA_ARCHITECTURES=...
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES
+     OR CMAKE_CUDA_ARCHITECTURES STREQUAL ""
+     OR CMAKE_CUDA_ARCHITECTURES STREQUAL "52")
+    execute_process(
+      COMMAND nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits
+      OUTPUT_VARIABLE CUDA_CC_RAW
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE CUDA_CC_QUERY_RESULT
+    )
+    if(CUDA_CC_QUERY_RESULT EQUAL 0 AND CUDA_CC_RAW)
+      string(REPLACE "." "" CUDA_ARCH_FROM_SMI "${CUDA_CC_RAW}")
+      string(REGEX REPLACE "[^0-9;]" "" CUDA_ARCH_FROM_SMI "${CUDA_ARCH_FROM_SMI}")
+      if(CUDA_ARCH_FROM_SMI)
+        set(CMAKE_CUDA_ARCHITECTURES "${CUDA_ARCH_FROM_SMI}" CACHE STRING "CUDA architectures" FORCE)
+      else()
+        set(CMAKE_CUDA_ARCHITECTURES 86 CACHE STRING "CUDA architectures" FORCE)
+      endif()
+    else()
+      set(CMAKE_CUDA_ARCHITECTURES 86 CACHE STRING "CUDA architectures" FORCE)
+    endif()
+  endif()
+  message(STATUS "CUDA compiler: ${CMAKE_CUDA_COMPILER}")
+  message(STATUS "CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+endif()
 
 # Set default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
-
-# set(SAUL_BUILD 1)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g -Wall" CACHE STRING "" FORCE)
 
@@ -121,57 +153,30 @@ message(STATUS "[Libraries]:    ${OpenCV_LIBS}")
 message(STATUS "[Include Path]: ${OpenCV_INCLUDE_DIRS}")
 message( "========================\n")
 
-if(DEFINED SAUL_BUILD)
-  #> for MACOS
-  set(THIRD_PARTY_LIBS
-      ${OpenCV_LIBS}
-      ${Eigen_LIBS}        
-      pthread
-      ${CSparse_LIBRARY}
-      /usr/local/lib/libyaml-cpp.so
-    )
-  # Add glog and gflags only if found and enabled
-  if(USE_GLOGS AND GLOG_FOUND AND GLOG_LIBRARIES)
-    list(APPEND THIRD_PARTY_LIBS ${GLOG_LIBRARIES})
-  endif()
-  if(USE_GLOGS AND GFLAGS_FOUND AND GFLAGS_LIBRARIES)
-    list(APPEND THIRD_PARTY_LIBS ${GFLAGS_LIBRARIES})
-  endif()
-  
-  include_directories(/usr/local/include/yaml-cpp)
-  include_directories(${EIGEN3_INCLUDE_DIR} ${CSPARSE_INCLUDE_DIR})
-  if(USE_GLOGS AND GLOG_FOUND)
-    include_directories(${GLOG_INCLUDE_DIRS})
-  endif()
-  if(USE_GLOGS AND GFLAGS_FOUND)
-    include_directories(${GFLAGS_INCLUDE_DIRS})
-  endif()
-else()
-  #> for Brown CCV Oscars
-  set(THIRD_PARTY_LIBS
-      ${OpenCV_LIBS}
-      ${Eigen_LIBS}
-      ${Boost_LIBS}
-      /gpfs/data/bkimia/cchien3/yaml-cpp/bin/lib64/
-    )
-  # Add glog and gflags only if found and enabled
-  if(USE_GLOGS AND GLOG_FOUND AND GLOG_LIBRARIES)
-    list(APPEND THIRD_PARTY_LIBS ${GLOG_LIBRARIES})
-  endif()
-  if(USE_GLOGS AND GFLAGS_FOUND AND GFLAGS_LIBRARIES)
-    list(APPEND THIRD_PARTY_LIBS ${GFLAGS_LIBRARIES})
-  endif()
-  
-  include_directories(/gpfs/data/bkimia/cchien3/yaml-cpp/bin/include)
-  include_directories(${EIGEN3_INCLUDE_DIR})
-  include_directories(/gpfs/data/bkimia/cchien3/opencv-4.7.0/opencv_install/include/opencv4)
-  link_directories(/gpfs/data/bkimia/cchien3/yaml-cpp/bin/lib64)
-  if(USE_GLOGS AND GLOG_FOUND)
-    include_directories(${GLOG_INCLUDE_DIRS})
-  endif()
-  if(USE_GLOGS AND GFLAGS_FOUND)
-    include_directories(${GFLAGS_INCLUDE_DIRS})
-  endif()
+#> for Brown CCV Oscars
+set(THIRD_PARTY_LIBS
+    ${OpenCV_LIBS}
+    ${Eigen_LIBS}
+    ${Boost_LIBS}
+    /gpfs/data/bkimia/cchien3/yaml-cpp/bin/lib64/
+  )
+# Add glog and gflags only if found and enabled
+if(USE_GLOGS AND GLOG_FOUND AND GLOG_LIBRARIES)
+  list(APPEND THIRD_PARTY_LIBS ${GLOG_LIBRARIES})
+endif()
+if(USE_GLOGS AND GFLAGS_FOUND AND GFLAGS_LIBRARIES)
+  list(APPEND THIRD_PARTY_LIBS ${GFLAGS_LIBRARIES})
+endif()
+
+include_directories(/gpfs/data/bkimia/cchien3/yaml-cpp/bin/include)
+include_directories(${EIGEN3_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIR})
+include_directories(/gpfs/data/bkimia/cchien3/opencv-4.7.0/opencv_install/include/opencv4)
+link_directories(/gpfs/data/bkimia/cchien3/yaml-cpp/bin/lib64)
+if(USE_GLOGS AND GLOG_FOUND)
+  include_directories(${GLOG_INCLUDE_DIRS})
+endif()
+if(USE_GLOGS AND GFLAGS_FOUND)
+  include_directories(${GFLAGS_INCLUDE_DIRS})
 endif()
 
 enable_testing()
@@ -183,4 +188,3 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_subdirectory(src)
 
 add_subdirectory(cmd)
-add_subdirectory(test)

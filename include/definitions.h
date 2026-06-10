@@ -21,8 +21,16 @@
 #define EDGE_CLUSTER_THRESH (0.3) //> in pixels
 #define ORTHOGONAL_SHIFT_MAG (5)  //> in pixels
 #define PATCH_SIZE (7)            //> in pixels
+#define EDGE_PAIR_ORIENTATION_PREFILTER_DEG (10.0)
 #define NCC_THRESH (0.6)
 #define SIFT_THRESHOLD (500.0)
+
+//> Temporal edge matching settings
+#define TEMPORAL_SEARCH_RADIUS_PIXELS (30.0)
+#define TEMPORAL_NCC_THRESHOLD (0.8)
+#define TEMPORAL_SIFT_THRESHOLD (200.0)
+#define TEMPORAL_BNB_NCC_THRESHOLD (0.8)
+#define TEMPORAL_BNB_SIFT_THRESHOLD (0.8)
 
 #define EPIP_TANGENCY_DISPL_THRESH (3) //> in pixels
 #define LOCATION_PERTURBATION (0.4)    //> in pixels
@@ -36,8 +44,6 @@
 #define HUBER_DELTA (1.0) //> Huber threshold
 #define LOWES_RATIO (0.8) //> Suggested in Lowe's paper
 
-//> TODO: remove this
-#define BIDIRECTIONAL_FILTERING (false)
 
 //> precision-recall experiments
 #define DIST_TO_GT_THRESH (1.0) //> in pixels
@@ -96,6 +102,7 @@
 
 //> Print outs
 #define LOG_INFO(info_msg) printf("\033[1;32m[INFO] %s\033[0m\n", std::string(info_msg).c_str());
+#define LOG_WARNING(warning_msg) do { std::cout << "\033[1;36m[WARNING] " << (warning_msg) << "\033[0m\n" << std::flush; } while(0)
 #define LOG_STATUS(status_) printf("\033[1;35m[STATUS] %s\033[0m\n", std::string(status_).c_str());
 #define LOG_ERROR(err_msg) printf("\033[1;31m[ERROR] %s\033[0m\n", std::string(err_msg).c_str());
 #define LOG_TEST(test_msg) printf("\033[1;30m[TEST] %s\033[0m\n", std::string(test_msg).c_str());
