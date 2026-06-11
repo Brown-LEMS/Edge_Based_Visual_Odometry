@@ -403,7 +403,7 @@ float Temporal_Matches_GPU_Pipeline::apply_bnb_sift_filter()
 // ---------------------------------------------------------------------------
 // Stage 7: 2D photometric refinement (Gauss-Newton) + GPU clustering.
 //   Input  : BNB-SIFT survivors; KF/CF geometry from stereo mates; CF image textures.
-//   Output : Temporal_Refined_Match_GPU (valid only) -> clustered Refined_Edge_Hypothesis_Match_GPU.
+//   Output : Temporal_Refined_Match_GPU (valid only) -> clustered Temporal_Refined_Quad_Match_GPU.
 // ---------------------------------------------------------------------------
 float Temporal_Matches_GPU_Pipeline::apply_photometric_refine_and_cluster()
 {
@@ -430,13 +430,13 @@ float Temporal_Matches_GPU_Pipeline::apply_photometric_refine_and_cluster()
 }
 
 // ===========================================================================
-// retrieve_final_matches / retrieve_final_hypothesis_matches
+// retrieve_final_matches / retrieve_final_quad_matches
 // ===========================================================================
 namespace {
 
 // Rank final quads by ambiguity: KF mates with fewer surviving quads come first
 // (1 quad per KF = highest rank / most unambiguous).
-void sort_final_quads_by_kf_mate_count(std::vector<Refined_Edge_Hypothesis_Match_GPU>& matches)
+void sort_final_quads_by_kf_mate_count(std::vector<Temporal_Refined_Quad_Match_GPU>& matches)
 {
     if (matches.size() <= 1) {
         return;
@@ -445,41 +445,77 @@ void sort_final_quads_by_kf_mate_count(std::vector<Refined_Edge_Hypothesis_Match
     std::unordered_map<int, int> quads_per_kf;
     quads_per_kf.reserve(matches.size());
     for (const auto& m : matches) {
-        if (m.left_edge_idx >= 0) {
-            ++quads_per_kf[m.left_edge_idx];
+        if (m.kf_mate_idx >= 0) {
+            ++quads_per_kf[m.kf_mate_idx];
         }
     }
 
     std::stable_sort(matches.begin(), matches.end(),
-        [&quads_per_kf](const Refined_Edge_Hypothesis_Match_GPU& a, const Refined_Edge_Hypothesis_Match_GPU& b) {
-            const int count_a = quads_per_kf[a.left_edge_idx];
-            const int count_b = quads_per_kf[b.left_edge_idx];
+        [&quads_per_kf](const Temporal_Refined_Quad_Match_GPU& a, const Temporal_Refined_Quad_Match_GPU& b) {
+            const int count_a = quads_per_kf[a.kf_mate_idx];
+            const int count_b = quads_per_kf[b.kf_mate_idx];
             if (count_a != count_b) {
                 return count_a < count_b;
             }
-            if (a.left_edge_idx != b.left_edge_idx) {
-                return a.left_edge_idx < b.left_edge_idx;
+            if (a.kf_mate_idx != b.kf_mate_idx) {
+                return a.kf_mate_idx < b.kf_mate_idx;
             }
-            return a.right_edge_idx < b.right_edge_idx;
+            return a.cf_mate_idx < b.cf_mate_idx;
         });
+}
+
+Temporal_Refined_Quad_Match to_host_quad_match(
+    const Temporal_Refined_Quad_Match_GPU& gpu_quad,
+    const std::vector<Merged_Refined_Stereo_Match_GPU>& kf_stereo_mates_host)
+{
+    Temporal_Refined_Quad_Match host_quad{};
+    host_quad.kf_mate_idx = gpu_quad.kf_mate_idx;
+    host_quad.cf_mate_idx = gpu_quad.cf_mate_idx;
+    host_quad.cf_left_x = gpu_quad.cf_left_x;
+    host_quad.cf_left_y = gpu_quad.cf_left_y;
+    host_quad.cf_left_orientation = gpu_quad.cf_left_orientation;
+    host_quad.cf_right_x = gpu_quad.cf_right_x;
+    host_quad.cf_right_y = gpu_quad.cf_right_y;
+    host_quad.cf_right_orientation = gpu_quad.cf_right_orientation;
+    host_quad.photometric_rms = gpu_quad.photometric_rms;
+
+    if (gpu_quad.kf_mate_idx >= 0 && static_cast<size_t>(gpu_quad.kf_mate_idx) < kf_stereo_mates_host.size()) {
+        host_quad.kf_stereo_mate = &kf_stereo_mates_host[static_cast<size_t>(gpu_quad.kf_mate_idx)];
+    }
+    return host_quad;
 }
 
 }  // namespace
 
-void Temporal_Matches_GPU_Pipeline::retrieve_final_hypothesis_matches(
-    std::vector<Refined_Edge_Hypothesis_Match_GPU>& out_matches) const
+void Temporal_Matches_GPU_Pipeline::retrieve_final_quad_matches(
+    std::vector<Temporal_Refined_Quad_Match>& out_matches) const
 {
     out_matches.clear();
     if (d_clustered_matches == nullptr || h_match_count_after_cluster <= 0) {
         return;
     }
 
-    out_matches.resize(static_cast<size_t>(h_match_count_after_cluster));
-    cudacheck(cudaMemcpy(out_matches.data(), d_clustered_matches,
-                         static_cast<size_t>(h_match_count_after_cluster) * sizeof(Refined_Edge_Hypothesis_Match_GPU),
+    std::vector<Temporal_Refined_Quad_Match_GPU> gpu_quads( static_cast<size_t>(h_match_count_after_cluster) );
+    cudacheck(cudaMemcpy(gpu_quads.data(), d_clustered_matches,
+                         static_cast<size_t>(h_match_count_after_cluster) * sizeof(Temporal_Refined_Quad_Match_GPU),
                          cudaMemcpyDeviceToHost));
 
-    sort_final_quads_by_kf_mate_count(out_matches);
+    sort_final_quads_by_kf_mate_count(gpu_quads);
+
+    if (d_kf_stereo_matches != nullptr && num_kf_mates_ > 0) {
+        kf_stereo_mates_host_.resize(num_kf_mates_);
+        cudacheck(cudaMemcpy(kf_stereo_mates_host_.data(), d_kf_stereo_matches,
+                             num_kf_mates_ * sizeof(Merged_Refined_Stereo_Match_GPU),
+                             cudaMemcpyDeviceToHost));
+    } 
+    else {
+        kf_stereo_mates_host_.clear();
+    }
+
+    out_matches.reserve(gpu_quads.size());
+    for (const auto& gpu_quad : gpu_quads) {
+        out_matches.push_back(to_host_quad_match(gpu_quad, kf_stereo_mates_host_));
+    }
 }
 
 void Temporal_Matches_GPU_Pipeline::retrieve_final_matches(
@@ -488,11 +524,11 @@ void Temporal_Matches_GPU_Pipeline::retrieve_final_matches(
     out_matches.clear();
 
     if (d_clustered_matches != nullptr && h_match_count_after_cluster > 0) {
-        std::vector<Refined_Edge_Hypothesis_Match_GPU> hypotheses;
-        retrieve_final_hypothesis_matches(hypotheses);
-        out_matches.reserve(hypotheses.size());
-        for (const auto& h : hypotheses) {
-            out_matches.push_back({h.left_edge_idx, h.right_edge_idx});
+        std::vector<Temporal_Refined_Quad_Match> quads;
+        retrieve_final_quad_matches(quads);
+        out_matches.reserve(quads.size());
+        for (const auto& quad : quads) {
+            out_matches.push_back({quad.kf_mate_idx, quad.cf_mate_idx});
         }
         return;
     }
@@ -508,20 +544,17 @@ void Temporal_Matches_GPU_Pipeline::retrieve_final_matches(
 // ===========================================================================
 // write_finalized_matches_to_file
 // ===========================================================================
-void Temporal_Matches_GPU_Pipeline::write_finalized_matches_to_file(
-    size_t kf_frame_idx, size_t cf_frame_idx) const
+void Temporal_Matches_GPU_Pipeline::write_finalized_matches_to_file( size_t kf_frame_idx, size_t cf_frame_idx ) const
 {
-    std::vector<Refined_Edge_Hypothesis_Match_GPU> hypotheses;
-    retrieve_final_hypothesis_matches(hypotheses);
-    if (hypotheses.empty()) {
+    std::vector<Temporal_Refined_Quad_Match> quads;
+    retrieve_final_quad_matches(quads);
+    if (quads.empty()) {
         LOG_WARNING("write_finalized_matches_to_file: no final temporal matches to write");
         return;
     }
 
     const std::string out_dir = (dataset_ != nullptr) ? dataset_->get_output_path() : std::string("output_files");
-    const std::string fname   = out_dir + "/gpu_temporal_quad_matches_kf"
-                                + std::to_string(kf_frame_idx) + "_cf"
-                                + std::to_string(cf_frame_idx) + ".txt";
+    const std::string fname   = out_dir + "/gpu_temporal_quad_matches_kf" + std::to_string(kf_frame_idx) + "_cf" + std::to_string(cf_frame_idx) + ".txt";
     std::ofstream ofs(fname);
     if (!ofs.is_open()) {
         LOG_ERROR("write_finalized_matches_to_file: cannot open " + fname);
@@ -535,29 +568,19 @@ void Temporal_Matches_GPU_Pipeline::write_finalized_matches_to_file(
            "cf_right_x cf_right_y cf_right_orientation\n";
     ofs.precision(8);
 
-    for (size_t i = 0; i < hypotheses.size(); ++i) {
-        const int kf_idx = hypotheses[i].left_edge_idx;
-        const int cf_idx = hypotheses[i].right_edge_idx;
-        if (kf_idx < 0 || cf_idx < 0
-            || kf_idx >= static_cast<int>(num_kf_mates_)
-            || cf_idx >= static_cast<int>(num_cf_mates_)) {
+    for (const auto& q : quads) {
+        if (q.kf_mate_idx < 0 || q.cf_mate_idx < 0 || q.kf_stereo_mate == nullptr) {
             continue;
         }
-        Merged_Refined_Stereo_Match_GPU kf_mate{};
-        Merged_Refined_Stereo_Match_GPU cf_mate{};
-        if (cudaMemcpy(&kf_mate, d_kf_stereo_matches + kf_idx, sizeof(Merged_Refined_Stereo_Match_GPU), cudaMemcpyDeviceToHost) != cudaSuccess ||
-            cudaMemcpy(&cf_mate, d_cf_stereo_matches + cf_idx, sizeof(Merged_Refined_Stereo_Match_GPU), cudaMemcpyDeviceToHost) != cudaSuccess) {
-            continue;
-        }
-        ofs << kf_idx << " " << cf_idx << " "
+        const Merged_Refined_Stereo_Match_GPU& kf_mate = *q.kf_stereo_mate;
+        ofs << q.kf_mate_idx << " " << q.cf_mate_idx << " "
             << kf_mate.left_location_x << " " << kf_mate.left_location_y << " " << kf_mate.left_orientation << " "
             << kf_mate.merged_right_x << " " << kf_mate.merged_right_y << " " << kf_mate.merged_right_orientation << " "
-            << cf_mate.left_location_x << " " << cf_mate.left_location_y << " " << cf_mate.left_orientation << " "
-            << cf_mate.merged_right_x << " " << cf_mate.merged_right_y << " " << cf_mate.merged_right_orientation << "\n";
+            << q.cf_left_x << " " << q.cf_left_y << " " << q.cf_left_orientation << " "
+            << q.cf_right_x << " " << q.cf_right_y << " " << q.cf_right_orientation << "\n";
     }
     ofs.close();
-    std::cout << "[Temporal GPU] Wrote " << hypotheses.size()
-              << " temporal quad matches to " << fname
+    std::cout << "[Temporal GPU] Wrote " << quads.size() << " temporal quad matches to " << fname
               << " (sorted by quads-per-KF-mate ascending; highest rank = most unambiguous)" << std::endl;
 }
 

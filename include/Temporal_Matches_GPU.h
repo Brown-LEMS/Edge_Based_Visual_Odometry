@@ -15,9 +15,22 @@
 #include "gpu_kernels.h"
 #include "Dataset.h"
 
-// ---------------------------------------------------------------------------
-// Timing breakdown for the temporal GPU pipeline
-// ---------------------------------------------------------------------------
+//> Host-side view of a finalized temporal quad. KF geometry is referenced via
+//> kf_stereo_mate (non-owning); valid until the next retrieve_final_quad_matches call.
+struct Temporal_Refined_Quad_Match {
+    int kf_mate_idx = -1;
+    int cf_mate_idx = -1;
+    const Merged_Refined_Stereo_Match_GPU* kf_stereo_mate = nullptr;
+    float cf_left_x = 0.f;
+    float cf_left_y = 0.f;
+    float cf_left_orientation = 0.f;
+    float cf_right_x = 0.f;
+    float cf_right_y = 0.f;
+    float cf_right_orientation = 0.f;
+    float photometric_rms = 0.f;
+};
+
+//> Timing breakdown for the temporal GPU pipeline
 struct Temporal_Matches_GPU_Timing_Statistics
 {
     float time_build_cf_left_spatial_grid;      //> CF-left edge spatial grid (device-resident edges)
@@ -81,7 +94,7 @@ public:
 
     //> Copy final temporal quads to host, sorted by ascending quads-per-KF-mate (1 = highest rank).
     void retrieve_final_matches(std::vector<Match_by_Edge_Index>& out_matches) const;
-    void retrieve_final_hypothesis_matches(std::vector<Refined_Edge_Hypothesis_Match_GPU>& out_matches) const;
+    void retrieve_final_quad_matches(std::vector<Temporal_Refined_Quad_Match>& out_matches) const;
 
     //> Write final temporal matches to a text file for offline inspection.
     void write_finalized_matches_to_file(size_t kf_frame_idx, size_t cf_frame_idx) const;
@@ -165,11 +178,14 @@ private:
     Temporal_Refined_Match_GPU* d_refined_matches         = nullptr;
     int*                        d_refined_count           = nullptr;
     int                         h_match_count_after_refine = 0;
-    Refined_Edge_Hypothesis_Match_GPU* d_clustered_matches = nullptr;
+    Temporal_Refined_Quad_Match_GPU* d_clustered_matches = nullptr;
     int*                        d_clustered_count         = nullptr;
     int                         h_match_count_after_cluster = 0;
 
     Dataset::Ptr dataset_;
+
+    //> Host cache for KF stereo mates; backs kf_stereo_mate pointers in retrieve_final_quad_matches.
+    mutable std::vector<Merged_Refined_Stereo_Match_GPU> kf_stereo_mates_host_;
 
     float build_cf_left_spatial_grid();
     float generate_temporal_candidates();

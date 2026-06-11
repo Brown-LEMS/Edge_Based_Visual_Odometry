@@ -47,11 +47,10 @@ struct CUDA_Texture_Wrapper {
     cudaTextureObject_t texObj;
 };
 
-//> Per edge-pair hypothesis after photometric refinement (stereo right-side refine;
-//> temporal quads store refined CF-left position in refined_right_* for post-refine NCC).
+//> Per edge-pair hypothesis after stereo photometric refinement (refined right-side location).
 struct Refined_Edge_Hypothesis_Match_GPU {
-    int left_edge_idx;              //> kf_mate_idx in temporal pipeline
-    int right_edge_idx;             //> cf_mate_idx in temporal pipeline
+    int left_edge_idx;
+    int right_edge_idx;
     float refined_right_x;
     float refined_right_y;
     float photometric_rms;
@@ -64,7 +63,25 @@ struct Temporal_Refined_Match_GPU {
     int   cf_mate_idx;
     float cf_left_x;
     float cf_left_y;
+    float cf_left_orientation;
+    float cf_right_x;
+    float cf_right_y;
+    float cf_right_orientation;
     float rms;
+};
+
+//> Final temporal quad after photometric refinement + clustering (device-resident).
+//> KF geometry is not duplicated; resolve via d_kf_stereo_matches[kf_mate_idx].
+struct Temporal_Refined_Quad_Match_GPU {
+    int kf_mate_idx;
+    int cf_mate_idx;
+    float cf_left_x;
+    float cf_left_y;
+    float cf_left_orientation;
+    float cf_right_x;
+    float cf_right_y;
+    float cf_right_orientation;
+    float photometric_rms;
 };
 
 //> The left edge patches are pre-computed and stored in global memory
@@ -452,7 +469,7 @@ float temporal_photometric_refine_and_cluster_pipeline(
     Temporal_Refined_Match_GPU*&                        d_refined_matches,
     int*&                                               d_refined_count,
     int&                                                h_refined_count_out,
-    Refined_Edge_Hypothesis_Match_GPU*&                 d_clustered_matches,
+    Temporal_Refined_Quad_Match_GPU*&                   d_clustered_matches,
     int*&                                               d_clustered_count,
     int&                                                h_clustered_count_out,
     cudaEvent_t                                         start,

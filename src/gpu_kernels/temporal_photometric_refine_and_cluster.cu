@@ -93,10 +93,14 @@ __global__ void temporal_photometric_refine_kernel(
     const int slot = atomicAdd(d_out_count, 1);
     d_out[slot].kf_mate_idx = kf_idx;
     d_out[slot].cf_mate_idx = cf_idx;
-    //> Refined CF-left position: CF_iterated = KF - displacement
-    d_out[slot].cf_left_x   = kf_mate.left_location_x - dx_L;
-    d_out[slot].cf_left_y   = kf_mate.left_location_y - dy_L;
-    d_out[slot].rms         = 0.5f * (rms_L + rms_R);
+    //> Refined CF positions: CF_iterated = KF - displacement
+    d_out[slot].cf_left_x            = kf_mate.left_location_x - dx_L;
+    d_out[slot].cf_left_y            = kf_mate.left_location_y - dy_L;
+    d_out[slot].cf_left_orientation  = cf_mate.left_orientation;
+    d_out[slot].cf_right_x           = kf_mate.merged_right_x - dx_R;
+    d_out[slot].cf_right_y           = kf_mate.merged_right_y - dy_R;
+    d_out[slot].cf_right_orientation = cf_mate.merged_right_orientation;
+    d_out[slot].rms                  = 0.5f * (rms_L + rms_R);
 }
 
 //> Sort comparator for Temporal_Refined_Match_GPU (by kf_mate_idx)
@@ -122,31 +126,31 @@ mark_temporal_segment_head_kernel(
 }
 
 __device__ __forceinline__
-void fill_refined_edge_hypothesis_from_temporal(
+void fill_temporal_refined_quad_from_match(
     const Temporal_Refined_Match_GPU& refined,
-    const Merged_Refined_Stereo_Match_GPU& cf_mate,
-    Refined_Edge_Hypothesis_Match_GPU& out)
+    Temporal_Refined_Quad_Match_GPU& out)
 {
-    out.left_edge_idx  = refined.kf_mate_idx;
-    out.right_edge_idx = refined.cf_mate_idx;
-    //> Temporal refine updates CF-left; stored in refined_right_* for reuse with stereo post-NCC kernels.
-    out.refined_right_x          = refined.cf_left_x;
-    out.refined_right_y          = refined.cf_left_y;
-    out.photometric_rms          = refined.rms;
-    out.source_right_orientation = cf_mate.left_orientation;
+    out.kf_mate_idx           = refined.kf_mate_idx;
+    out.cf_mate_idx           = refined.cf_mate_idx;
+    out.cf_left_x             = refined.cf_left_x;
+    out.cf_left_y             = refined.cf_left_y;
+    out.cf_left_orientation   = refined.cf_left_orientation;
+    out.cf_right_x            = refined.cf_right_x;
+    out.cf_right_y            = refined.cf_right_y;
+    out.cf_right_orientation  = refined.cf_right_orientation;
+    out.photometric_rms       = refined.rms;
 }
 
 //> Assign one thread per segment (unique kf_mate_idx group)
 //> CH Notes: uses union-find to merge refined candidates whose CF-left positions are 
-//  within CLUSTER_DIST_THRESH. Emits one Refined_Edge_Hypothesis_Match_GPU per cluster.
+//  within CLUSTER_DIST_THRESH. Emits one Temporal_Refined_Quad_Match_GPU per cluster.
 __global__ 
 void 
 temporal_cluster_merge_kernel(
     const Temporal_Refined_Match_GPU* __restrict__ sorted,
-    const Merged_Refined_Stereo_Match_GPU* __restrict__ d_cf_stereo_matches,
     const int* __restrict__ seg_starts_ext,   //> length = n_segments+1 (extended)
     int n_segments,
-    Refined_Edge_Hypothesis_Match_GPU* __restrict__ d_out,
+    Temporal_Refined_Quad_Match_GPU* __restrict__ d_out,
     int* __restrict__                 d_out_count)
 {
     const int seg = blockIdx.x * blockDim.x + threadIdx.x;
@@ -163,8 +167,7 @@ temporal_cluster_merge_kernel(
     if (k == 1) {
         const int oid = atomicAdd(d_out_count, 1);
         const Temporal_Refined_Match_GPU& rep = sorted[seg_begin];
-        fill_refined_edge_hypothesis_from_temporal(
-            rep, d_cf_stereo_matches[rep.cf_mate_idx], d_out[oid]);
+        fill_temporal_refined_quad_from_match(rep, d_out[oid]);
         return;
     }
 
@@ -173,8 +176,7 @@ temporal_cluster_merge_kernel(
         for (int t = 0; t < GPU_MERGE_MAX_SEGMENT_SIZE; ++t) {
             const int oid = atomicAdd(d_out_count, 1);
             const Temporal_Refined_Match_GPU& rep = sorted[seg_begin + t];
-            fill_refined_edge_hypothesis_from_temporal(
-                rep, d_cf_stereo_matches[rep.cf_mate_idx], d_out[oid]);
+            fill_temporal_refined_quad_from_match(rep, d_out[oid]);
         }
         return;
     }
@@ -217,8 +219,7 @@ temporal_cluster_merge_kernel(
             emitted[root] = true;
             const int oid = atomicAdd(d_out_count, 1);
             const Temporal_Refined_Match_GPU& rep = sorted[seg_begin + root];
-            fill_refined_edge_hypothesis_from_temporal(
-                rep, d_cf_stereo_matches[rep.cf_mate_idx], d_out[oid]);
+            fill_temporal_refined_quad_from_match(rep, d_out[oid]);
         }
     }
 }
@@ -243,7 +244,7 @@ float temporal_photometric_refine_and_cluster_pipeline(
     Temporal_Refined_Match_GPU*&              d_refined_matches,
     int*&                                     d_refined_count,
     int&                                      h_refined_count_out,
-    Refined_Edge_Hypothesis_Match_GPU*&       d_clustered_matches,
+    Temporal_Refined_Quad_Match_GPU*&         d_clustered_matches,
     int*&                                     d_clustered_count,
     int&                                      h_clustered_count_out,
     cudaEvent_t                               start,
@@ -370,7 +371,7 @@ float temporal_photometric_refine_and_cluster_pipeline(
     // ------------------------------------------------------------------ //
     // Phase 4: cluster + merge within each segment
     // ------------------------------------------------------------------ //
-    const size_t clustered_bytes = static_cast<size_t>(n_ref) * sizeof(Refined_Edge_Hypothesis_Match_GPU);
+    const size_t clustered_bytes = static_cast<size_t>(n_ref) * sizeof(Temporal_Refined_Quad_Match_GPU);
     if (d_clustered_matches == nullptr)
         cudacheck(cudaMalloc(&d_clustered_matches, clustered_bytes));
     if (d_clustered_count == nullptr)
@@ -382,7 +383,6 @@ float temporal_photometric_refine_and_cluster_pipeline(
         const int blocks  = (n_segs + threads - 1) / threads;
         temporal_cluster_merge_kernel<<<blocks, threads>>>(
             d_refined_matches,
-            d_cf_stereo_matches,
             thrust::raw_pointer_cast(d_seg_starts_ext.data()),
             n_segs,
             d_clustered_matches,
